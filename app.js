@@ -13,8 +13,17 @@ function isSpecialBrand(productName) {
          p.includes('jasmine');
 }
 
-const UNWANTED_DUMMY_IDS = ['sp_mg', 'sp_mgold', 'sp_jas', 'p_mg', 'p_mgold', 'p_jas'];
-const UNWANTED_DUMMY_NAMES = [
+const DEMO_SAMPLE_PRODUCT_IDS = [
+  'p1', 'p2', 'p3', 'p4',
+  'sp_mg', 'sp_mgold', 'sp_jas',
+  'p_mg', 'p_mgold', 'p_jas'
+];
+
+const DEMO_SAMPLE_PRODUCT_NAMES = [
+  'wayanadan kaima rice',
+  'jeerakasala rice',
+  'royal 1121 sella basmati',
+  'premium long grain basmati',
   'mohabbath green kaima rice',
   'mohabbath gold biriyani rice',
   'jasmine premium basmati rice',
@@ -23,16 +32,50 @@ const UNWANTED_DUMMY_NAMES = [
   'jasmine premium'
 ];
 
-function isUnwantedDummyProduct(p) {
-  if (!p) return false;
-  if (typeof p === 'string') {
-    const s = p.trim().toLowerCase();
-    return UNWANTED_DUMMY_NAMES.some(dummy => s === dummy || s.includes(dummy));
+function getDeletedProductKeys() {
+  try {
+    const raw = localStorage.getItem('biriyani_rice_deleted_products_v1');
+    const parsed = raw ? JSON.parse(raw) : [];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch (e) {
+    return [];
   }
-  if (p.id && UNWANTED_DUMMY_IDS.includes(p.id)) return true;
-  const name = String(p.name || p.productName || '').trim().toLowerCase();
+}
+
+function recordDeletedProductKey(id, name) {
+  try {
+    const keys = getDeletedProductKeys();
+    if (id && !keys.includes(id)) keys.push(id);
+    if (name) {
+      const lower = name.trim().toLowerCase();
+      if (!keys.includes(lower)) keys.push(lower);
+    }
+    localStorage.setItem('biriyani_rice_deleted_products_v1', JSON.stringify(keys));
+  } catch (e) {}
+}
+
+function unrecordDeletedProductKey(id, name) {
+  try {
+    let keys = getDeletedProductKeys();
+    const idStr = String(id || '');
+    const nameLower = name ? name.trim().toLowerCase() : '';
+    keys = keys.filter(k => k !== idStr && k !== nameLower);
+    localStorage.setItem('biriyani_rice_deleted_products_v1', JSON.stringify(keys));
+  } catch (e) {}
+}
+
+function isDemoSampleProduct(p) {
+  if (!p) return false;
+  const deletedKeys = getDeletedProductKeys();
+  if (p.id && (DEMO_SAMPLE_PRODUCT_IDS.includes(p.id) || deletedKeys.includes(p.id))) return true;
+  const name = String(typeof p === 'string' ? p : (p.name || p.productName || '')).trim().toLowerCase();
   if (!name) return false;
-  return UNWANTED_DUMMY_NAMES.some(dummy => name === dummy || name.includes(dummy));
+  if (deletedKeys.includes(name)) return true;
+  return DEMO_SAMPLE_PRODUCT_NAMES.some(demo => name === demo || (demo.length > 8 && name.includes(demo)));
+}
+
+function isUnwantedDummyProduct(p) {
+  return isDemoSampleProduct(p);
 }
 
 function detectCategoryFromName(name) {
@@ -43,13 +86,7 @@ function detectCategoryFromName(name) {
   return 'Other';
 }
 
-const DEFAULT_PRODUCTS = [
-  { id: 'p1', name: 'Wayanadan Kaima Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 96 },
-  { id: 'p2', name: 'Jeerakasala Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 92 },
-  { id: 'p3', name: 'Royal 1121 Sella Basmati', category: 'Basmati', bagSize: 30, defaultRateKg: 105 },
-  { id: 'p4', name: 'Premium Long Grain Basmati', category: 'Basmati', bagSize: 30, defaultRateKg: 115 }
-];
-
+const DEFAULT_PRODUCTS = [];
 const DEFAULT_BAG_SIZES = [5, 10, 25, 26, 30, 50];
 
 // ==================== PRODUCT IMAGE HELPERS ====================
@@ -577,6 +614,32 @@ function purgeUnwantedDummyProducts(syncToCloud = true) {
     syncCloudConfig();
   }
 }
+
+// 1-Click Action to Clean Demo Products
+function cleanAllDemoProductsPrompt() {
+  const demoCount = products.filter(p => isDemoSampleProduct(p)).length;
+  if (demoCount === 0) {
+    showNotification('✓ All sample products are already cleaned! Only your added products are present.');
+    return;
+  }
+
+  showConfirmModal({
+    title: 'Remove All Sample / Demo Products?',
+    message: `Found <strong>${demoCount}</strong> sample/demo products (such as Wayanadan Kaima, Jeerakasala, Basmati demo varieties). Do you want to remove them and keep <strong>ONLY</strong> the products you added?`,
+    hint: '🛡️ Any products you added or used in your orders will be 100% safely preserved.',
+    confirmText: 'Remove Demo Products',
+    confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
+    onConfirm: () => {
+      products = products.filter(p => !isDemoSampleProduct(p));
+      saveDataToStorage();
+      populateProductDropdown();
+      if (typeof renderProductsManageList === 'function') renderProductsManageList();
+      if (typeof syncCloudConfig === 'function') syncCloudConfig();
+      showNotification('✓ Sample products removed! Only your custom products are now in the catalog.');
+    }
+  });
+}
+window.cleanAllDemoProductsPrompt = cleanAllDemoProductsPrompt;
 
 // ==================== GOOGLE FIREBASE CLOUD REALTIME SYNC ====================
 let db = null;
@@ -5401,11 +5464,6 @@ function addNewProduct() {
 }
 
 function deleteProduct(prodId) {
-  if (products.length <= 1) {
-    alert('At least one rice variety must remain in the catalog.');
-    return;
-  }
-
   const prod = products.find(p => p.id === prodId);
   if (!prod) return;
 
@@ -5422,10 +5480,12 @@ function deleteProduct(prodId) {
       }
 
       const removed = prod;
+      recordDeletedProductKey(removed.id, removed.name);
       products = products.filter(p => p.id !== prodId);
       saveDataToStorage();
       populateProductDropdown();
       renderProductsManageList();
+      if (typeof syncCloudConfig === 'function') syncCloudConfig();
 
       const trashEntry = moveToTrash(
         'product',
@@ -7749,9 +7809,11 @@ function restoreTrashItem(trashId) {
     if (!exists) {
       products.push(item.data);
     }
+    unrecordDeletedProductKey(item.data.id, item.data.name);
     saveDataToStorage();
     populateProductDropdown();
     renderProductsManageList();
+    if (typeof syncCloudConfig === 'function') syncCloudConfig();
     showNotification(`✓ Product '${item.data.name}' restored!`);
 
   } else if (item.type === 'batch_orders') {
