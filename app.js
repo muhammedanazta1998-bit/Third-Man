@@ -194,6 +194,10 @@ function initApp() {
     loadDataFromStorage();
     purgeUnwantedDummyProducts(false);
     extractCustomersFromOrdersIfMissing(false);
+    if (typeof deduplicateCustomersList === 'function') {
+      customers = deduplicateCustomersList(customers, false);
+      saveDataToStorage();
+    }
 
     // Set default order date to today
     const today = new Date().toISOString().split('T')[0];
@@ -505,6 +509,11 @@ function loadDataFromStorage() {
       }
     });
 
+    // Automatic customer deduplication pass
+    if (typeof deduplicateCustomersList === 'function') {
+      customers = deduplicateCustomersList(customers, false);
+    }
+
     loadDistrictTowns();
     loadSavedAreas();
 
@@ -791,6 +800,9 @@ function setupFirestoreRealtimeListeners() {
 
       // Automatically harvest any customer from orders into customer directory
       extractCustomersFromOrdersIfMissing(true);
+      if (typeof deduplicateCustomersList === 'function') {
+        customers = deduplicateCustomersList(customers, true);
+      }
 
       // Ensure products catalog remains clean and verified
       purgeUnwantedDummyProducts(false);
@@ -835,10 +847,18 @@ function setupFirestoreRealtimeListeners() {
         }
       });
 
-      customers = remoteCustomers;
+      // Deduplicate remote customers and remove duplicate documents from cloud
+      if (typeof deduplicateCustomersList === 'function') {
+        customers = deduplicateCustomersList(remoteCustomers, true);
+      } else {
+        customers = remoteCustomers;
+      }
 
       // Ensure any customer from orders is also retained
       extractCustomersFromOrdersIfMissing(false);
+      if (typeof deduplicateCustomersList === 'function') {
+        customers = deduplicateCustomersList(customers, true);
+      }
 
       try {
         localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
@@ -1017,6 +1037,10 @@ function extractCustomersFromOrdersIfMissing(syncToCloud = false) {
       addedCount++;
     }
   });
+
+  if (typeof deduplicateCustomersList === 'function') {
+    customers = deduplicateCustomersList(customers, syncToCloud);
+  }
 
   if (addedCount > 0) {
     try {
@@ -1661,6 +1685,220 @@ function findDuplicateCustomer(name, ownerPhone = '', staffPhone = '', legacyPho
   return null;
 }
 
+// ==================== CUSTOMER DEDUPLICATION & NORMALIZATION ====================
+
+function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false) {
+  const sourceList = Array.isArray(inputList) ? inputList : (Array.isArray(customers) ? customers : []);
+  if (sourceList.length === 0) return [];
+
+  const unique = [];
+  const deletedIds = [];
+
+  sourceList.forEach(rawItem => {
+    if (!rawItem) return;
+    const item = { ...rawItem };
+    const rawName = (item.name || '').trim().replace(/\s+/g, ' ');
+    if (!rawName && !item.id) return;
+    item.name = rawName || 'Customer';
+
+    const cleanP = cleanPhoneNumber(item.phone);
+    const cleanOwn = cleanPhoneNumber(item.ownerPhone);
+    const cleanStf = cleanPhoneNumber(item.staffPhone);
+    const lowerName = item.name.toLowerCase();
+
+    // Find match in unique so far
+    let matchIndex = -1;
+
+    // 1. Match by ID
+    if (item.id) {
+      matchIndex = unique.findIndex(u => u.id && u.id === item.id);
+    }
+
+    // 2. Match by exact normalized name (case-insensitive)
+    if (matchIndex === -1 && lowerName) {
+      matchIndex = unique.findIndex(u => u.name && u.name.trim().toLowerCase() === lowerName);
+    }
+
+    // 3. Match by normalized 10-digit primary phone or owner phone
+    if (matchIndex === -1 && (cleanOwn || cleanP)) {
+      matchIndex = unique.findIndex(u => {
+        const uOwn = cleanPhoneNumber(u.ownerPhone);
+        const uP = cleanPhoneNumber(u.phone);
+        const uStf = cleanPhoneNumber(u.staffPhone);
+        if (cleanOwn && (uOwn === cleanOwn || uP === cleanOwn || uStf === cleanOwn)) return true;
+        if (cleanP && (uP === cleanP || uOwn === cleanP || uStf === cleanP)) return true;
+        return false;
+      });
+    }
+
+    if (matchIndex !== -1) {
+      // Merge item into existing match
+      const target = unique[matchIndex];
+
+      // Prefer non-default location fields
+      if ((!target.district || target.district === 'Ernakulam') && item.district && item.district !== 'Ernakulam') {
+        target.district = item.district;
+      }
+      if ((!target.town || target.town === 'Ernakulam' || target.town === 'Local') && item.town && item.town !== 'Ernakulam' && item.town !== 'Local') {
+        target.town = item.town;
+      }
+      if (!target.landmark && item.landmark) target.landmark = item.landmark;
+      if (!target.panchayath && item.panchayath) target.panchayath = item.panchayath;
+      if (!target.area && item.area) target.area = item.area;
+      if (!target.place && item.place) target.place = item.place;
+      if ((!target.location || target.location === 'Local' || target.location === 'Ernakulam') && item.location && item.location !== 'Local') {
+        target.location = item.location;
+      }
+
+      // Merge category if target is default 'Caterer' and item has specific category
+      if (target.category === 'Caterer' && item.category && item.category !== 'Caterer') {
+        target.category = item.category;
+      }
+
+      // Merge owner/staff details if missing
+      if (!target.ownerName && item.ownerName) target.ownerName = item.ownerName;
+      if (!target.ownerPhone && cleanOwn) target.ownerPhone = cleanOwn;
+      if (!target.staffName && item.staffName) target.staffName = item.staffName;
+      if ((!target.staffRole || target.staffRole === 'Chef / Cook') && item.staffRole) target.staffRole = item.staffRole;
+      if (!target.staffPhone && cleanStf) target.staffPhone = cleanStf;
+      if (!target.phone && (cleanP || cleanOwn)) target.phone = cleanP || cleanOwn;
+
+      // Merge notes
+      if (item.notes && item.notes !== 'Auto-recovered from order' && item.notes !== 'Added from order') {
+        if (!target.notes || target.notes === 'Auto-recovered from order' || target.notes === 'Added from order') {
+          target.notes = item.notes;
+        } else if (!target.notes.includes(item.notes)) {
+          target.notes += ` | ${item.notes}`;
+        }
+      }
+
+      // Merge members array without duplicates
+      const targetMembers = getCustomerMembers(target);
+      const itemMembers = getCustomerMembers(item);
+      itemMembers.forEach(im => {
+        const imP = cleanPhoneNumber(im.phone);
+        const imName = (im.name || '').trim().toLowerCase();
+        const exists = targetMembers.some(tm => {
+          const tmP = cleanPhoneNumber(tm.phone);
+          const tmName = (tm.name || '').trim().toLowerCase();
+          return (imP && tmP && imP === tmP) || (imName && tmName && imName === tmName);
+        });
+        if (!exists) {
+          targetMembers.push({
+            id: 'm_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+            name: im.name,
+            role: im.role || 'Staff',
+            phone: im.phone || '',
+            isPrimary: false
+          });
+        }
+      });
+      target.members = targetMembers;
+
+      // Re-point any orders that used item.id or item.name to target
+      if (item.id && item.id !== target.id) {
+        deletedIds.push(item.id);
+        if (Array.isArray(orders)) {
+          orders.forEach(o => {
+            if (o && o.customer) {
+              if (typeof o.customer === 'object') {
+                if (o.customer.id === item.id || (o.customer.name && o.customer.name.trim().toLowerCase() === lowerName)) {
+                  o.customer.id = target.id;
+                  o.customer.name = target.name;
+                }
+              } else if (typeof o.customer === 'string' && o.customer.trim().toLowerCase() === lowerName) {
+                o.customer = target.name;
+              }
+            }
+          });
+        }
+      }
+    } else {
+      // First time seeing this customer
+      if (!item.id) {
+        item.id = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+      }
+      if (!Array.isArray(item.members) || item.members.length === 0) {
+        item.members = getCustomerMembers(item);
+      }
+      unique.push(item);
+    }
+  });
+
+  // Sync deletions of duplicate documents to Firestore
+  if (syncDeletionsToCloud && deletedIds.length > 0 && typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
+    deletedIds.forEach(dupId => {
+      try {
+        deleteCloudCustomer(dupId);
+      } catch (e) {}
+    });
+  }
+
+  return unique;
+}
+
+function getCanonicalCustomerInfo(rawCustomer) {
+  if (!rawCustomer) {
+    return { id: 'unknown', name: 'Customer', category: 'Caterer', location: 'Local', phone: '' };
+  }
+
+  const rawId = (typeof rawCustomer === 'object' && rawCustomer.id) ? rawCustomer.id : null;
+  const rawName = (typeof rawCustomer === 'string' ? rawCustomer : (rawCustomer.name || '')).trim().replace(/\s+/g, ' ');
+  const rawPhone = (typeof rawCustomer === 'object' && rawCustomer.phone) ? rawCustomer.phone : '';
+  const cleanP = cleanPhoneNumber(rawPhone);
+
+  // 1. Match by customer ID in customers
+  let match = rawId ? customers.find(c => c.id === rawId) : null;
+
+  // 2. Match by normalized name
+  if (!match && rawName) {
+    const lower = rawName.toLowerCase();
+    match = customers.find(c => c.name && c.name.trim().toLowerCase() === lower);
+  }
+
+  // 3. Match by phone
+  if (!match && cleanP) {
+    match = customers.find(c => cleanPhoneNumber(c.phone) === cleanP || cleanPhoneNumber(c.ownerPhone) === cleanP);
+  }
+
+  if (match) {
+    return {
+      id: match.id,
+      name: match.name,
+      category: match.category || 'Caterer',
+      location: getCustomerLocation(match) || 'Local',
+      phone: match.phone || match.ownerPhone || ''
+    };
+  }
+
+  return {
+    id: rawId || ('anon_' + rawName.toLowerCase().replace(/[^a-z0-9]/g, '_')),
+    name: rawName || 'Customer',
+    category: (typeof rawCustomer === 'object' && rawCustomer.category) ? rawCustomer.category : 'Caterer',
+    location: (typeof rawCustomer === 'object') ? getCustomerLocation(rawCustomer) : 'Local',
+    phone: cleanP || rawPhone || ''
+  };
+}
+
+function runManualCustomerDeduplication() {
+  const initialCount = customers.length;
+  const cleaned = deduplicateCustomersList(customers, true);
+  const diff = initialCount - cleaned.length;
+
+  customers = cleaned;
+  saveDataToStorage();
+  populateCustomerDropdown();
+  renderCustomersList();
+  updateDashboard();
+
+  if (diff > 0) {
+    showNotification(`✓ ${diff} duplicate customer(s) merged & cleaned up!`);
+    alert(`Success!\n\n${diff} duplicate customer record(s) have been merged and cleaned up.\nCustomer directory and orders are now unified.`);
+  } else {
+    showNotification('✓ Customer directory is completely clean. No duplicates found!');
+  }
+}
+
 function generateNextOrderId() {
   let maxNum = 1000;
   orders.forEach(o => {
@@ -1755,7 +1993,15 @@ function populateCustomerDropdown() {
   const currentVal = select.value;
   select.innerHTML = '<option value="">-- New Customer (Type Below) --</option>';
 
+  const seenIds = new Set();
+  const seenNames = new Set();
   customers.forEach(c => {
+    if (!c || !c.name) return;
+    const normName = c.name.trim().toLowerCase();
+    if (seenIds.has(c.id) || seenNames.has(normName)) return;
+    seenIds.add(c.id);
+    seenNames.add(normName);
+
     const opt = document.createElement('option');
     opt.value = c.id;
     opt.textContent = `${c.name} [${c.category || 'Caterer'}] (${c.location || 'Local'}) - ${c.phone || 'No Phone'}`;
@@ -1892,7 +2138,10 @@ function openEditOrderModal(orderId) {
     if (delStatus) delStatus.value = order.deliveryStatus || 'Normal';
 
     clearCustomerSearch();
-    const custName = getCustomerName(order.customer);
+    const custInfo = getCanonicalCustomerInfo(order.customer);
+    const selectedCustIdEl = document.getElementById('selectedCustomerId');
+    if (selectedCustIdEl) selectedCustIdEl.value = custInfo.id || '';
+    const custName = custInfo.name;
     const searchInput = document.getElementById('custSearchInput');
     if (searchInput) searchInput.value = custName;
     const nameEl = document.getElementById('customerName');
@@ -2389,7 +2638,19 @@ function showCustomerSearchDropdown(filterQuery = '') {
     return;
   }
 
-  matches.slice(0, 8).forEach(c => {
+  const seenKeys = new Set();
+  const uniqueMatches = [];
+  matches.forEach(c => {
+    if (!c || !c.name) return;
+    const nameKey = c.name.trim().toLowerCase();
+    const idKey = c.id || '';
+    if (seenKeys.has(nameKey) || (idKey && seenKeys.has(idKey))) return;
+    seenKeys.add(nameKey);
+    if (idKey) seenKeys.add(idKey);
+    uniqueMatches.push(c);
+  });
+
+  uniqueMatches.slice(0, 8).forEach(c => {
     const item = document.createElement('div');
     item.className = 'p-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between text-xs transition border-b border-slate-100 last:border-0';
     item.onclick = () => selectCustomerFromSearch(c.id);
@@ -2455,6 +2716,8 @@ function clearCustomerSearch() {
   if (searchInput) searchInput.value = '';
   const nameEl = document.getElementById('customerName');
   if (nameEl) nameEl.value = '';
+  const custIdEl = document.getElementById('selectedCustomerId');
+  if (custIdEl) custIdEl.value = '';
   const clearBtn = document.getElementById('clearCustSearchBtn');
   if (clearBtn) clearBtn.classList.add('hidden');
   const dropdown = document.getElementById('custSearchDropdown');
@@ -2482,6 +2745,9 @@ function updateCustomerPill(name, meta) {
 function selectCustomerFromSearch(custId) {
   const cust = customers.find(c => c.id === custId);
   if (!cust) return;
+
+  const selectedCustIdEl = document.getElementById('selectedCustomerId');
+  if (selectedCustIdEl) selectedCustIdEl.value = cust.id;
 
   const nameEl = document.getElementById('customerName');
   const catEl = document.getElementById('customerCategory');
@@ -2599,7 +2865,26 @@ function saveQuickCustomerAndApply() {
     if (panchayath) locParts.push(`(${panchayath})`);
     const formattedLoc = locParts.length > 0 ? locParts.join(', ') : dist;
 
-    let existingIndex = customers.findIndex(c => c.name && c.name.toLowerCase() === quickName.toLowerCase());
+    let existingIndex = -1;
+    const selectedCustId = document.getElementById('selectedCustomerId')?.value || '';
+    if (selectedCustId) {
+      existingIndex = customers.findIndex(c => c.id === selectedCustId);
+    }
+    if (existingIndex === -1) {
+      const lowerQuick = quickName.toLowerCase();
+      existingIndex = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === lowerQuick);
+    }
+    if (existingIndex === -1 && (ownerPhone || staffPhone)) {
+      existingIndex = customers.findIndex(c => {
+        const cOwn = cleanPhoneNumber(c.ownerPhone);
+        const cStf = cleanPhoneNumber(c.staffPhone);
+        const cP = cleanPhoneNumber(c.phone);
+        if (ownerPhone && (cOwn === ownerPhone || cP === ownerPhone || cStf === ownerPhone)) return true;
+        if (staffPhone && (cStf === staffPhone || cOwn === staffPhone || cP === staffPhone)) return true;
+        return false;
+      });
+    }
+
     if (existingIndex !== -1) {
       customers[existingIndex] = {
         ...customers[existingIndex],
@@ -2617,6 +2902,8 @@ function saveQuickCustomerAndApply() {
         phone: ownerPhone || staffPhone || customers[existingIndex].phone || 'Nil'
       };
       syncCloudCustomer(customers[existingIndex]);
+      const selectedCustIdEl = document.getElementById('selectedCustomerId');
+      if (selectedCustIdEl) selectedCustIdEl.value = customers[existingIndex].id;
     } else {
       const newCust = {
         id: `CUST-${Date.now()}`,
@@ -2636,6 +2923,8 @@ function saveQuickCustomerAndApply() {
       };
       customers.push(newCust);
       syncCloudCustomer(newCust);
+      const selectedCustIdEl = document.getElementById('selectedCustomerId');
+      if (selectedCustIdEl) selectedCustIdEl.value = newCust.id;
     }
     saveDataToStorage();
     populateCustomerDropdown();
@@ -2775,21 +3064,33 @@ function handleSaveOrder(event) {
   // Save/update customer in directory if requested
   const saveCustCheck = document.getElementById('saveCustomerCheckbox');
   const shouldSaveCust = saveCustCheck ? saveCustCheck.checked : true;
-  if (shouldSaveCust && customerName) {
-    let existingIndex = customers.findIndex(c => c.name && c.name.toLowerCase() === customerName.toLowerCase());
-    if (existingIndex === -1 && (cleanOwnerPhone || cleanStaffPhone)) {
-      existingIndex = customers.findIndex(c => {
-        const cOwn = cleanPhoneNumber(c.ownerPhone);
-        const cStf = cleanPhoneNumber(c.staffPhone);
-        const cPh = cleanPhoneNumber(c.phone);
-        return (cleanOwnerPhone && (cOwn === cleanOwnerPhone || cPh === cleanOwnerPhone)) ||
-               (cleanStaffPhone && (cStf === cleanStaffPhone || cPh === cleanStaffPhone));
-      });
-    }
+  let activeCustomerId = document.getElementById('selectedCustomerId')?.value || '';
+  let existingIndex = -1;
 
-    if (existingIndex === -1) {
+  if (activeCustomerId) {
+    existingIndex = customers.findIndex(c => c.id === activeCustomerId);
+  }
+  if (existingIndex === -1 && customerName) {
+    const cleanLower = customerName.trim().toLowerCase();
+    existingIndex = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === cleanLower);
+  }
+  if (existingIndex === -1 && (cleanOwnerPhone || cleanStaffPhone)) {
+    existingIndex = customers.findIndex(c => {
+      const cOwn = cleanPhoneNumber(c.ownerPhone);
+      const cStf = cleanPhoneNumber(c.staffPhone);
+      const cPh = cleanPhoneNumber(c.phone);
+      return (cleanOwnerPhone && (cOwn === cleanOwnerPhone || cPh === cleanOwnerPhone)) ||
+             (cleanStaffPhone && (cStf === cleanStaffPhone || cPh === cleanStaffPhone));
+    });
+  }
+
+  let finalCustomerId = activeCustomerId;
+
+  if (existingIndex === -1) {
+    if (shouldSaveCust && customerName) {
+      finalCustomerId = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
       const newCust = {
-        id: 'c_' + Date.now(),
+        id: finalCustomerId,
         name: customerName,
         category: customerCategory,
         district: customerDistrict,
@@ -2812,7 +3113,10 @@ function handleSaveOrder(event) {
       syncCloudCustomer(newCust);
       populateCustomerDropdown();
       populateSavedAreasDatalists();
-    } else {
+    }
+  } else {
+    finalCustomerId = customers[existingIndex].id;
+    if (shouldSaveCust) {
       let changed = false;
       const target = customers[existingIndex];
       if (customerDistrict && (!target.district || target.district === 'Ernakulam')) { target.district = customerDistrict; changed = true; }
@@ -2891,6 +3195,7 @@ function handleSaveOrder(event) {
         date: orderDate,
         deliveryStatus: deliveryStatus,
         customer: {
+          id: finalCustomerId || (prevOrder.customer && prevOrder.customer.id) || ('c_' + Date.now()),
           name: customerName,
           category: customerCategory,
           district: customerDistrict,
@@ -2931,6 +3236,7 @@ function handleSaveOrder(event) {
       date: orderDate,
       deliveryStatus: deliveryStatus,
       customer: {
+        id: finalCustomerId || ('c_' + Date.now()),
         name: customerName,
         category: customerCategory,
         district: customerDistrict,
@@ -3965,12 +4271,18 @@ function updateTopCustomersWidget(filteredOrders) {
 
   const customerMap = {};
   filteredOrders.forEach(o => {
-    const name = getCustomerName(o.customer);
-    if (!customerMap[name]) customerMap[name] = 0;
-    customerMap[name] += (parseFloat(o.totalKg) || 0);
+    const info = getCanonicalCustomerInfo(o.customer);
+    const key = info.id || info.name.toLowerCase();
+    if (!customerMap[key]) {
+      customerMap[key] = {
+        name: info.name,
+        kg: 0
+      };
+    }
+    customerMap[key].kg += (parseFloat(o.totalKg) || 0);
   });
 
-  const sorted = Object.entries(customerMap).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const sorted = Object.values(customerMap).sort((a, b) => b.kg - a.kg).slice(0, 5);
 
   if (sorted.length === 0) {
     container.innerHTML = '<p class="text-xs text-slate-400 py-3 text-center">No orders in period</p>';
@@ -3978,7 +4290,7 @@ function updateTopCustomersWidget(filteredOrders) {
   }
 
   container.innerHTML = '';
-  sorted.forEach(([name, kg], idx) => {
+  sorted.forEach((itemData, idx) => {
     const rank = idx + 1;
     let badgeColor = 'bg-slate-200 text-slate-700';
     if (rank === 1) badgeColor = 'bg-amber-400 text-amber-950';
@@ -3992,9 +4304,9 @@ function updateTopCustomersWidget(filteredOrders) {
     item.innerHTML = `
       <div class="flex items-center gap-2.5 min-w-0">
         <span class="w-5 h-5 rounded-full ${badgeColor} font-black flex items-center justify-center text-[10px] shrink-0 shadow-sm">${rank}</span>
-        <span class="font-bold text-slate-800 truncate">${escapeHtml(name)}</span>
+        <span class="font-bold text-slate-800 truncate">${escapeHtml(itemData.name)}</span>
       </div>
-      <span class="font-black text-blue-600 shrink-0">${Math.round(kg).toLocaleString('en-IN')} kg</span>
+      <span class="font-black text-blue-600 shrink-0">${Math.round(itemData.kg).toLocaleString('en-IN')} kg</span>
     `;
     container.appendChild(item);
   });
@@ -6073,19 +6385,31 @@ function renderCustomersList() {
     );
   });
 
+  const seenIds = new Set();
+  const seenNames = new Set();
+  const uniqueFiltered = [];
+  filtered.forEach(c => {
+    if (!c || !c.name) return;
+    const norm = c.name.trim().toLowerCase();
+    if (seenIds.has(c.id) || seenNames.has(norm)) return;
+    seenIds.add(c.id);
+    seenNames.add(norm);
+    uniqueFiltered.push(c);
+  });
+
   if (countBadge) countBadge.textContent = customers.length;
   if (filteredBadge) {
     const isFilterActive = (customerDistrictFilter !== 'all' || customerTownFilter !== 'all' || customerAreaFilter !== 'all' || customerCategoryFilter !== 'all');
     if (!isFilterActive) {
-      filteredBadge.textContent = `${filtered.length} customers`;
+      filteredBadge.textContent = `${uniqueFiltered.length} customers`;
     } else {
-      filteredBadge.textContent = `${filtered.length} of ${customers.length}`;
+      filteredBadge.textContent = `${uniqueFiltered.length} of ${customers.length}`;
     }
   }
 
   container.innerHTML = '';
 
-  if (filtered.length === 0) {
+  if (uniqueFiltered.length === 0) {
     const filterDesc = [];
     if (customerDistrictFilter !== 'all') filterDesc.push(`district '${customerDistrictFilter}'`);
     if (customerTownFilter !== 'all') filterDesc.push(`town '${customerTownFilter}'`);
@@ -6098,8 +6422,12 @@ function renderCustomersList() {
     return;
   }
 
-  filtered.forEach(c => {
-    const custOrders = orders.filter(o => getCustomerName(o.customer).toLowerCase() === c.name.toLowerCase());
+  uniqueFiltered.forEach(c => {
+    const custOrders = orders.filter(o => {
+      if (!o || !o.customer) return false;
+      if (typeof o.customer === 'object' && o.customer.id && o.customer.id === c.id) return true;
+      return getCustomerName(o.customer).trim().toLowerCase() === c.name.trim().toLowerCase();
+    });
     const totalKg = custOrders.reduce((sum, o) => sum + (parseFloat(o.totalKg) || 0), 0);
     const totalRevenue = custOrders.reduce((sum, o) => sum + (parseFloat(o.totalAmount) || 0), 0);
     const catBadge = getCustomerCategoryBadge(c.category || 'Caterer');
@@ -6464,7 +6792,11 @@ function openCustomerDetailModal(customerId, openAddFormImmediately = false) {
   }
 
   // Calculate customer lifetime statistics
-  const custOrders = orders.filter(o => getCustomerName(o.customer).toLowerCase() === cust.name.toLowerCase());
+  const custOrders = orders.filter(o => {
+    if (!o || !o.customer) return false;
+    if (typeof o.customer === 'object' && o.customer.id && o.customer.id === cust.id) return true;
+    return getCustomerName(o.customer).trim().toLowerCase() === cust.name.trim().toLowerCase();
+  });
   const totalBags = custOrders.reduce((sum, o) => sum + (parseFloat(o.bagQty) || 0), 0);
   const totalKg = custOrders.reduce((sum, o) => sum + (parseFloat(o.totalKg) || 0), 0);
   const totalRev = custOrders.reduce((sum, o) => sum + (parseFloat(o.totalAmount) || 0), 0);
@@ -6816,7 +7148,11 @@ function handleImportDataJSON(event) {
         restoredOrders = orders.length;
       }
       if (Array.isArray(data.customers)) {
-        customers = data.customers;
+        if (typeof deduplicateCustomersList === 'function') {
+          customers = deduplicateCustomersList(data.customers, true);
+        } else {
+          customers = data.customers;
+        }
         restoredCustomers = customers.length;
       }
       if (Array.isArray(data.products) && data.products.length > 0) {
@@ -8240,25 +8576,25 @@ function renderCustomersLeaderboard() {
 
   const map = {};
   lbOrders.forEach(o => {
-    const name = getCustomerName(o.customer);
-    if (!map[name]) {
-      const custObj = customers.find(c => c.name && c.name.toLowerCase() === name.toLowerCase()) || {};
-      map[name] = {
-        name: name,
-        id: custObj.id || null,
-        category: getCustomerCategory(o.customer) || custObj.category || 'Caterer',
-        location: getCustomerLocation(o.customer) || custObj.location || 'Local',
-        phone: getCustomerPhone(o.customer) || custObj.phone || '',
+    const info = getCanonicalCustomerInfo(o.customer);
+    const key = info.id || info.name.toLowerCase();
+    if (!map[key]) {
+      map[key] = {
+        name: info.name,
+        id: info.id || null,
+        category: info.category || 'Caterer',
+        location: info.location || 'Local',
+        phone: info.phone || '',
         totalKg: 0,
         totalRevenue: 0,
         ordersCount: 0,
         lastDate: o.date
       };
     }
-    map[name].totalKg += (parseFloat(o.totalKg) || 0);
-    map[name].totalRevenue += (parseFloat(o.totalAmount) || 0);
-    map[name].ordersCount += 1;
-    if (o.date > map[name].lastDate) map[name].lastDate = o.date;
+    map[key].totalKg += (parseFloat(o.totalKg) || 0);
+    map[key].totalRevenue += (parseFloat(o.totalAmount) || 0);
+    map[key].ordersCount += 1;
+    if (o.date > map[key].lastDate) map[key].lastDate = o.date;
   });
 
   const list = Object.values(map);
@@ -8541,20 +8877,21 @@ function renderChampionsLeaderboard() {
 
     const custMap = {};
     catOrders.forEach(o => {
-      const name = getCustomerName(o.customer);
-      if (!custMap[name]) {
-        custMap[name] = {
-          name: name,
-          location: getCustomerLocation(o.customer),
-          phone: getCustomerPhone(o.customer),
+      const info = getCanonicalCustomerInfo(o.customer);
+      const key = info.id || info.name.toLowerCase();
+      if (!custMap[key]) {
+        custMap[key] = {
+          name: info.name,
+          location: info.location,
+          phone: info.phone,
           kg: 0,
           revenue: 0,
           orders: 0
         };
       }
-      custMap[name].kg += (parseFloat(o.totalKg) || 0);
-      custMap[name].revenue += (parseFloat(o.totalAmount) || 0);
-      custMap[name].orders += 1;
+      custMap[key].kg += (parseFloat(o.totalKg) || 0);
+      custMap[key].revenue += (parseFloat(o.totalAmount) || 0);
+      custMap[key].orders += 1;
     });
 
     const sorted = Object.values(custMap).sort((a, b) => b.kg - a.kg);
@@ -8621,7 +8958,7 @@ function renderLocationsLeaderboard() {
 
   lbOrders.forEach(o => {
     const loc = getCustomerArea(o.customer) || getCustomerLocation(o.customer) || 'Local Area';
-    const cName = getCustomerName(o.customer);
+    const info = getCanonicalCustomerInfo(o.customer);
     const kg = parseFloat(o.totalKg) || 0;
     const rev = parseFloat(o.totalAmount) || 0;
 
@@ -8631,7 +8968,7 @@ function renderLocationsLeaderboard() {
     locMap[loc].kg += kg;
     locMap[loc].revenue += rev;
     locMap[loc].orders += 1;
-    locMap[loc].buyers.add(cName);
+    locMap[loc].buyers.add(info.name);
   });
 
   const list = Object.values(locMap).sort((a, b) => b.kg - a.kg);
@@ -8685,21 +9022,21 @@ function renderMilestonesLeaderboard() {
 
   const custMap = {};
   orders.forEach(o => {
-    const name = getCustomerName(o.customer);
-    if (!custMap[name]) {
-      const custObj = customers.find(c => c.name && c.name.toLowerCase() === name.toLowerCase()) || {};
-      custMap[name] = {
-        name: name,
-        category: getCustomerCategory(o.customer) || custObj.category || 'Caterer',
-        location: getCustomerLocation(o.customer) || custObj.location || 'Local',
+    const info = getCanonicalCustomerInfo(o.customer);
+    const key = info.id || info.name.toLowerCase();
+    if (!custMap[key]) {
+      custMap[key] = {
+        name: info.name,
+        category: info.category || 'Caterer',
+        location: info.location || 'Local',
         kg: 0,
         revenue: 0,
         orders: 0
       };
     }
-    custMap[name].kg += (parseFloat(o.totalKg) || 0);
-    custMap[name].revenue += (parseFloat(o.totalAmount) || 0);
-    custMap[name].orders += 1;
+    custMap[key].kg += (parseFloat(o.totalKg) || 0);
+    custMap[key].revenue += (parseFloat(o.totalAmount) || 0);
+    custMap[key].orders += 1;
   });
 
   const list = Object.values(custMap);
@@ -9086,3 +9423,8 @@ window.renderMonthlyHistoryList = renderMonthlyHistoryList;
 window.viewMonthOnDashboard = viewMonthOnDashboard;
 window.printMonthlyHistory = printMonthlyHistory;
 window.seedSampleMultiMonthDataPrompt = seedSampleMultiMonthDataPrompt;
+
+// Customer Deduplication Exports
+window.deduplicateCustomersList = deduplicateCustomersList;
+window.getCanonicalCustomerInfo = getCanonicalCustomerInfo;
+window.runManualCustomerDeduplication = runManualCustomerDeduplication;
