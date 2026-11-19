@@ -1,0 +1,2756 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Third Man - Sales & Incentive Dashboard</title>
+  <link rel="icon" id="appFavicon" type="image/svg+xml" href="logo.svg">
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['"Plus Jakarta Sans"', 'sans-serif'],
+          },
+          colors: {
+            navy: {
+              800: '#111c30',
+              850: '#0d1728',
+              900: '#09111e',
+              950: '#050a13',
+            }
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Global Error Logger & Floating Diagnostic Banner -->
+  <script>
+    window.addEventListener('error', function(e) {
+      console.error('Global Error Captured:', e.error || e.message);
+      const banner = document.getElementById('globalAppErrorBanner');
+      const msgEl = document.getElementById('globalAppErrorMessage');
+      if (banner && msgEl) {
+        banner.classList.remove('hidden');
+        const file = e.filename ? e.filename.split('/').pop().split('\\').pop() : 'script';
+        msgEl.textContent = 'App Error: ' + (e.message || 'Script error') + ' (' + file + ':' + (e.lineno || '?') + ')';
+      }
+    });
+  </script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #f1f5f9;
+      color: #1e293b;
+    }
+
+    /* 5 Vibrant Metric Card Gradients matching the reference photo */
+    .metric-card-blue {
+      background: linear-gradient(135deg, #1e40af 0%, #2563eb 60%, #3b82f6 100%);
+    }
+    .metric-card-green {
+      background: linear-gradient(135deg, #065f46 0%, #059669 60%, #10b981 100%);
+    }
+    .metric-card-purple {
+      background: linear-gradient(135deg, #5b21b6 0%, #7c3aed 60%, #8b5cf6 100%);
+    }
+    .metric-card-orange {
+      background: linear-gradient(135deg, #c2410c 0%, #ea580c 60%, #f97316 100%);
+    }
+    .metric-card-teal {
+      background: linear-gradient(135deg, #0e7490 0%, #0891b2 60%, #06b6d4 100%);
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      padding: 0.2rem 0.55rem;
+      border-radius: 9999px;
+      font-size: 0.7rem;
+      font-weight: 700;
+    }
+
+    /* Fullscreen / Expansive Modal Workspace Styles */
+    .modal-expandable {
+      transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    }
+    .fullscreen-modal {
+      width: 100vw !important;
+      height: 100vh !important;
+      max-width: none !important;
+      max-height: 100vh !important;
+      border-radius: 0 !important;
+      margin: 0 !important;
+      border: none !important;
+    }
+
+    /* Print styles */
+    @media print {
+      body * {
+        visibility: hidden;
+      }
+      #invoiceModal, #invoiceModal * {
+        visibility: visible;
+      }
+      #invoiceModal {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background: white !important;
+      }
+      .no-print {
+        display: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="antialiased min-h-screen flex flex-col md:flex-row">
+
+  <!-- Floating Diagnostic Banner (Appears only if an uncaught JS error happens) -->
+  <div id="globalAppErrorBanner" class="hidden fixed top-3 left-1/2 -translate-x-1/2 z-[100] max-w-xl w-[90%] bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center justify-between text-xs font-semibold">
+    <div class="flex items-center gap-2">
+      <span class="text-base">⚠️</span>
+      <span id="globalAppErrorMessage">A script error occurred.</span>
+    </div>
+    <button onclick="document.getElementById('globalAppErrorBanner').remove()" class="text-white/80 hover:text-white font-bold ml-3 text-sm px-2 py-0.5 rounded hover:bg-white/10">✕</button>
+  </div>
+
+  <!-- ==================== LEFT SIDEBAR (Dark Navy) ==================== -->
+  <aside class="w-full md:w-64 bg-[#09111e] text-white flex flex-col justify-between shrink-0 shadow-2xl border-r border-slate-800/80 z-20">
+    <div class="p-5">
+      
+      <!-- Brand Logo / Header -->
+      <div class="flex items-center gap-3 pb-6 border-b border-slate-800/80">
+        <div id="sidebarLogoContainer" onclick="triggerAppLogoUpload()" title="Click to upload/change logo" class="relative group cursor-pointer w-11 h-11 rounded-xl bg-slate-900 border border-slate-700/80 hover:border-cyan-400 flex items-center justify-center text-white shadow-lg shadow-blue-950/50 overflow-hidden shrink-0 transition">
+          <img id="appSidebarLogoImg" src="logo.svg" alt="Third Man Logo" class="w-full h-full object-contain p-1 rounded-xl">
+          <div id="appSidebarLogoFallback" class="hidden flex items-center justify-center text-blue-400">
+            <i data-lucide="package-check" class="w-6 h-6"></i>
+          </div>
+          <!-- Hover Camera Badge -->
+          <div class="absolute inset-0 bg-black/70 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity">
+            <i data-lucide="camera" class="w-4 h-4 text-cyan-300"></i>
+          </div>
+        </div>
+        <div class="min-w-0 flex-1">
+          <h1 class="font-black text-sm tracking-wide text-white uppercase leading-tight truncate">
+            THIRD MAN
+          </h1>
+          <div class="flex items-center justify-between">
+            <p class="text-[11px] font-bold text-cyan-400 tracking-wider uppercase">DASHBOARD</p>
+            <button type="button" onclick="triggerAppLogoUpload()" class="text-[10px] text-slate-400 hover:text-cyan-300 font-medium cursor-pointer" title="Change app logo">Change Logo</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Cloud Sync Status Pill -->
+      <div id="cloudSyncIndicator" title="Google Firebase Realtime Sync Status" class="mt-3 flex items-center justify-between px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-800 text-[11px] text-slate-300 shadow-inner">
+        <div class="flex items-center gap-2 min-w-0">
+          <span id="cloudSyncDot" class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse shrink-0"></span>
+          <span id="cloudSyncText" class="truncate font-semibold text-slate-300">Connecting Cloud...</span>
+        </div>
+        <button type="button" onclick="manualTriggerCloudSync()" title="Force Sync Now" class="text-slate-400 hover:text-white p-0.5 rounded transition">
+          <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+      <!-- Hidden File Input for App Logo -->
+      <input type="file" id="appLogoFileInput" accept="image/*" class="hidden" onchange="handleAppLogoUpload(event)">
+
+      <!-- Navigation Menu -->
+      <nav class="mt-6 space-y-1.5">
+        <a href="#overview" class="flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition">
+          <i data-lucide="layout-dashboard" class="w-4 h-4"></i>
+          <span>Overview</span>
+        </a>
+
+        <button onclick="openNewOrderModal()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <i data-lucide="shopping-cart" class="w-4 h-4 text-emerald-400"></i>
+          <span>New Order</span>
+        </button>
+
+        <button onclick="openCustomersModal()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <i data-lucide="users" class="w-4 h-4 text-purple-400"></i>
+          <span>Customers Directory</span>
+        </button>
+
+        <button onclick="openLeaderboardModal()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <i data-lucide="trophy" class="w-4 h-4 text-amber-400"></i>
+          <span>Sales Leaderboards 🏆</span>
+        </button>
+
+        <button onclick="openMonthlyHistoryModal()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <i data-lucide="history" class="w-4 h-4 text-indigo-400"></i>
+          <span>Monthly Sales &amp; Incentives</span>
+        </button>
+
+        <button onclick="openSettingsModal('products')" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <i data-lucide="package" class="w-4 h-4 text-amber-400"></i>
+          <span>Products &amp; Bags</span>
+        </button>
+
+        <button onclick="showIncentiveDetails()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <i data-lucide="award" class="w-4 h-4 text-yellow-400"></i>
+          <span>Incentive Scheme</span>
+        </button>
+
+        <button onclick="exportDataJSON()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition" title="Download backup of all data">
+          <i data-lucide="download" class="w-4 h-4 text-blue-400"></i>
+          <span>Backup Data (JSON)</span>
+        </button>
+
+        <button onclick="triggerImportDataJSON()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition" title="Restore data from backup JSON">
+          <i data-lucide="upload" class="w-4 h-4 text-emerald-400"></i>
+          <span>Restore Backup (Import)</span>
+        </button>
+        <input type="file" id="importJsonFileInput" accept=".json,application/json" class="hidden" onchange="handleImportDataJSON(event)">
+
+        <!-- Recycle Bin / Trash Nav Button -->
+        <button onclick="openTrashModal()" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group">
+          <div class="flex items-center gap-3">
+            <i data-lucide="trash-2" class="w-4 h-4 text-rose-400 group-hover:text-rose-300 transition"></i>
+            <span>Recycle Bin</span>
+          </div>
+          <span id="trashCountBadge" class="hidden px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/30">0</span>
+        </button>
+
+        <button onclick="openSettingsModal('towns')" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
+          <i data-lucide="settings" class="w-4 h-4 text-slate-400"></i>
+          <span>Settings &amp; Towns</span>
+        </button>
+      </nav>
+
+    </div>
+
+    <!-- Sidebar Bottom Motivation Box (matches the trophy box in photo) -->
+    <div class="p-5">
+      <div class="bg-gradient-to-br from-blue-950/70 to-slate-900/90 rounded-2xl p-4 border border-blue-500/20 text-center relative overflow-hidden shadow-lg">
+        <div class="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center mx-auto mb-2 border border-amber-400/30">
+          <i data-lucide="trophy" class="w-5 h-5"></i>
+        </div>
+        <h4 class="text-xs font-extrabold text-white">Monthly Incentive Goal</h4>
+        <p class="text-[11px] text-slate-300 mt-1 leading-relaxed">
+          "10,000 kg unlock = <strong class="text-amber-300">₹5,000</strong> (+₹1/kg). Plus <strong class="text-amber-300">Mohabbath &amp; Jasmine</strong> bonus up to <strong class="text-amber-300">0.33%</strong>!"
+        </p>
+        <button onclick="showIncentiveDetails()" class="mt-3 text-[10px] bg-blue-600/40 hover:bg-blue-600 text-blue-200 hover:text-white font-bold px-3 py-1.5 rounded-lg transition inline-block">
+          View Scheme Details
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ==================== MAIN CONTENT AREA ==================== -->
+  <main class="flex-1 flex flex-col min-w-0 overflow-y-auto">
+
+    <!-- TOP BAR (OVERVIEW & COMPREHENSIVE DATE/PERIOD FILTERS) -->
+    <div class="bg-white border-b border-slate-200/80 px-4 sm:px-6 py-3.5 sticky top-0 z-10 shadow-sm space-y-3">
+      
+      <!-- Top Row: Title, Active Period Indicator & Primary Actions -->
+      <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+        <div class="flex flex-wrap items-center gap-3">
+          <h1 class="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <span>OVERVIEW</span>
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-normal hidden sm:inline">Performance at a Glance</span>
+          </h1>
+
+          <!-- Active Period Pill -->
+          <div id="activePeriodIndicator" class="inline-flex items-center gap-1.5 px-3 py-1 bg-blue-50 border border-blue-200/80 rounded-full text-xs font-bold text-blue-900 shadow-2xs">
+            <i data-lucide="calendar" class="w-3.5 h-3.5 text-blue-600"></i>
+            <span id="activePeriodLabel">This Month</span>
+            <button type="button" id="btnResetToCurrentMonth" onclick="setFilterPeriod('month')" class="hidden ml-1 hover:text-blue-600 text-slate-400 font-extrabold" title="Reset to This Month">
+              <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Action Buttons: Monthly History Modal, Custom Range Toggle, Print -->
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Monthly History & Incentives Button -->
+          <button type="button" onclick="openMonthlyHistoryModal()" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition active:scale-95">
+            <i data-lucide="history" class="w-4 h-4"></i>
+            <span>Monthly History &amp; Incentives</span>
+          </button>
+
+          <!-- Toggle Custom Date Range Drawer -->
+          <button type="button" id="btnToggleCustomRange" onclick="toggleCustomRangePanel()" class="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 transition active:scale-95">
+            <i data-lucide="calendar-range" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span>Custom Range</span>
+            <i data-lucide="chevron-down" id="customRangeChevron" class="w-3 h-3 transition-transform duration-200"></i>
+          </button>
+
+          <!-- Print Dashboard -->
+          <button type="button" onclick="window.print()" title="Print Dashboard" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 shadow-2xs transition active:scale-95">
+            <i data-lucide="printer" class="w-4 h-4"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Second Row: Quick Presets & Month/Year Stepper Pickers -->
+      <div class="flex flex-wrap items-center justify-between gap-2.5 pt-2 border-t border-slate-100">
+        
+        <!-- Preset Buttons Group -->
+        <div class="bg-slate-100 p-1 rounded-xl flex flex-wrap items-center text-xs font-bold border border-slate-200/80 gap-0.5">
+          <button type="button" onclick="setFilterPeriod('today')" id="btnFilterToday" class="period-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            Today
+          </button>
+          <button type="button" onclick="setFilterPeriod('week')" id="btnFilterWeek" class="period-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            This Week
+          </button>
+          <button type="button" onclick="setFilterPeriod('month')" id="btnFilterMonth" class="period-btn px-2.5 py-1 rounded-lg bg-blue-600 text-white shadow-xs transition">
+            This Month
+          </button>
+          <button type="button" onclick="setFilterPeriod('last_month')" id="btnFilterLastMonth" class="period-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            Last Month
+          </button>
+          <button type="button" onclick="setFilterPeriod('year')" id="btnFilterThisYear" class="period-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            This Year
+          </button>
+          <button type="button" onclick="setFilterPeriod('all')" id="btnFilterAll" class="period-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">
+            All Time
+          </button>
+        </div>
+
+        <!-- Month & Year Selector with Prev/Next Steppers -->
+        <div class="flex items-center gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200">
+          <button type="button" onclick="stepPreviousMonth()" title="Previous Month" class="w-7 h-7 rounded-lg hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+            <i data-lucide="chevron-left" class="w-4 h-4"></i>
+          </button>
+
+          <!-- Month Dropdown -->
+          <select id="filterMonthSelect" onchange="onMonthSelectChange(event)" class="text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:ring-1 focus:ring-blue-500 cursor-pointer">
+            <option value="0">January</option>
+            <option value="1">February</option>
+            <option value="2">March</option>
+            <option value="3">April</option>
+            <option value="4">May</option>
+            <option value="5">June</option>
+            <option value="6">July</option>
+            <option value="7">August</option>
+            <option value="8">September</option>
+            <option value="9">October</option>
+            <option value="10">November</option>
+            <option value="11">December</option>
+          </select>
+
+          <!-- Year Dropdown -->
+          <select id="filterYearSelect" onchange="onYearSelectChange(event)" class="text-xs font-bold text-slate-800 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:ring-1 focus:ring-blue-500 cursor-pointer">
+            <!-- Dynamically populated -->
+          </select>
+
+          <button type="button" onclick="stepNextMonth()" title="Next Month" class="w-7 h-7 rounded-lg hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+            <i data-lucide="chevron-right" class="w-4 h-4"></i>
+          </button>
+        </div>
+
+      </div>
+
+      <!-- Collapsible Custom Date Range Drawer -->
+      <div id="customDateRangePanel" class="hidden bg-slate-50/90 border border-slate-200 rounded-2xl p-3.5 space-y-3 transition-all">
+        <div class="flex flex-col md:flex-row md:items-center justify-between gap-3">
+          
+          <!-- Date Inputs -->
+          <div class="flex flex-wrap items-center gap-3">
+            <div class="flex items-center gap-1.5">
+              <label for="customDateStartInput" class="text-[11px] font-bold text-slate-600 uppercase tracking-wide">From:</label>
+              <input type="date" id="customDateStartInput" class="text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600">
+            </div>
+
+            <div class="flex items-center gap-1.5">
+              <label for="customDateEndInput" class="text-[11px] font-bold text-slate-600 uppercase tracking-wide">To:</label>
+              <input type="date" id="customDateEndInput" class="text-xs font-semibold px-2.5 py-1.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600">
+            </div>
+
+            <button type="button" onclick="applyCustomDateRange()" class="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition active:scale-95 flex items-center gap-1">
+              <i data-lucide="filter" class="w-3.5 h-3.5"></i>
+              <span>Apply Range</span>
+            </button>
+
+            <button type="button" onclick="clearCustomDateRange()" class="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-200 font-bold text-xs rounded-xl transition">
+              Reset
+            </button>
+          </div>
+
+          <!-- Quick Shortcuts (e.g. Jan 1 - Jan 20, Jan 1 - Mar 29, Last 30 Days, Last 90 Days) -->
+          <div class="flex flex-wrap items-center gap-1.5">
+            <span class="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Quick:</span>
+            <button type="button" onclick="setPresetDateRange('2026-01-01', '2026-01-20')" class="px-2 py-1 text-[11px] font-bold bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg transition shadow-2xs">
+              Jan 1 – Jan 20
+            </button>
+            <button type="button" onclick="setPresetDateRange('2026-01-01', '2026-03-29')" class="px-2 py-1 text-[11px] font-bold bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg transition shadow-2xs">
+              Jan 1 – Mar 29
+            </button>
+            <button type="button" onclick="setPresetLastNDays(30)" class="px-2 py-1 text-[11px] font-bold bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg transition shadow-2xs">
+              Last 30 Days
+            </button>
+            <button type="button" onclick="setPresetLastNDays(90)" class="px-2 py-1 text-[11px] font-bold bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg transition shadow-2xs">
+              Last 90 Days
+            </button>
+          </div>
+
+        </div>
+      </div>
+
+    </div>
+
+    <!-- MAIN DASHBOARD BODY -->
+    <div class="p-6 space-y-6">
+
+      <!-- ==================== 4 VIBRANT METRIC CARDS ==================== -->
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+
+        <!-- CARD 1: BLUE (TOTAL AMOUNT OF SALE) -->
+        <div class="metric-card-blue text-white rounded-2xl p-4 shadow-lg flex items-center gap-3.5 relative overflow-hidden">
+          <div class="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+            <i data-lucide="indian-rupee" class="w-5 h-5 text-white"></i>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-blue-100">TOTAL AMOUNT OF SALE</p>
+            <h3 class="text-xl font-black text-white tracking-tight truncate" id="metricTotalRevenue">₹0</h3>
+            <p class="text-[11px] text-blue-100/90 font-semibold truncate flex items-center gap-1" id="metricOrderCount">
+              <span>0 Orders</span>
+            </p>
+          </div>
+        </div>
+
+        <!-- CARD 2: GREEN (TOTAL WEIGHT SOLD) -->
+        <div class="metric-card-green text-white rounded-2xl p-4 shadow-lg flex items-center gap-3.5 relative overflow-hidden">
+          <div class="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+            <i data-lucide="scale" class="w-5 h-5 text-white"></i>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-emerald-100">WEIGHT SOLD</p>
+            <h3 class="text-xl font-black text-white tracking-tight truncate" id="metricTotalKg">0 <span class="text-base font-bold text-white">kg</span></h3>
+            <p class="text-[11px] text-emerald-100/90 font-semibold truncate" id="metricTons">
+              0.00 Metric Tonnes
+            </p>
+          </div>
+        </div>
+
+        <!-- CARD 3: PURPLE (TOTAL BAGS SOLD) -->
+        <div class="metric-card-purple text-white rounded-2xl p-4 shadow-lg flex items-center gap-3.5 relative overflow-hidden">
+          <div class="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+            <i data-lucide="boxes" class="w-5 h-5 text-white"></i>
+          </div>
+          <div class="min-w-0">
+            <p class="text-[10px] font-bold uppercase tracking-wider text-purple-100">BAGS SOLD</p>
+            <h3 class="text-xl font-black text-white tracking-tight truncate" id="metricTotalBags">0 <span class="text-base font-bold text-white">Bags</span></h3>
+            <p class="text-[11px] text-purple-100/90 font-semibold truncate" id="metricBagBreakdown">
+              10kg, 25kg, 50kg Bags
+            </p>
+          </div>
+        </div>
+
+        <!-- CARD 4: ORANGE (INCENTIVE STATUS) -->
+        <div class="metric-card-orange text-white rounded-2xl p-4 shadow-lg flex items-center gap-3.5 relative overflow-hidden cursor-pointer" onclick="showIncentiveDetails()" title="Click for details">
+          <div class="w-11 h-11 rounded-full bg-white/20 flex items-center justify-center shrink-0 shadow-inner">
+            <i data-lucide="award" class="w-5 h-5 text-white"></i>
+          </div>
+          <div class="min-w-0">
+            <div class="flex items-center justify-between">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-orange-100">INCENTIVE</p>
+              <span id="incentivePeriodBadge" class="text-[9px] bg-white/20 text-white px-1.5 py-0.5 rounded-full font-bold">Month</span>
+            </div>
+            <h3 class="text-xl font-black text-white tracking-tight truncate" id="incentiveAmount">₹0</h3>
+            <p class="text-[11px] text-orange-100/90 font-semibold truncate" id="incentiveSubText">
+              Target Progress
+            </p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ==================== MIDDLE ROW: CHARTS & TOP CUSTOMERS ==================== -->
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- DONUT CHART: RESULT SUMMARY (Rice Varieties Sold) - 4 cols -->
+        <div class="lg:col-span-4 bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="pie-chart" class="w-4 h-4 text-purple-600"></i>
+                <span>RICE VARIETY SUMMARY</span>
+              </h3>
+              <span class="text-[10px] bg-slate-100 text-slate-500 font-bold px-2 py-0.5 rounded-full">By Weight (KG)</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mb-4">Distribution of rice varieties sold</p>
+
+            <div class="h-56 relative flex items-center justify-center">
+              <canvas id="ricePieChart"></canvas>
+            </div>
+          </div>
+
+          <div id="topProductSummary" class="text-xs text-slate-600 pt-3 border-t border-slate-100 text-center font-bold">
+            Loading data...
+          </div>
+        </div>
+
+        <!-- BAR CHART: AVERAGE SCORE BY SUBJECT (Sales & Revenue Trend) - 5 cols -->
+        <div class="lg:col-span-5 bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm flex flex-col justify-between">
+          <div>
+            <div class="flex items-center justify-between mb-2">
+              <h3 class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="bar-chart-2" class="w-4 h-4 text-blue-600"></i>
+                <span>SALES &amp; REVENUE TREND</span>
+              </h3>
+              <span class="text-[10px] bg-blue-50 text-blue-600 font-bold px-2 py-0.5 rounded-full" id="chartPeriodLabel">Daily Breakdown</span>
+            </div>
+            <p class="text-[11px] text-slate-400 mb-4">Daily breakdown of kilograms sold &amp; revenue</p>
+
+            <div class="h-56 relative">
+              <canvas id="salesTrendChart"></canvas>
+            </div>
+          </div>
+
+          <!-- Bottom Legend Info -->
+          <div class="pt-3 border-t border-slate-100 flex items-center justify-around text-xs font-semibold text-slate-500">
+            <span class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-blue-600 inline-block"></span>
+              <span>Weight (KG)</span>
+            </span>
+            <span class="flex items-center gap-1.5">
+              <span class="w-3 h-3 rounded-full bg-emerald-500 inline-block"></span>
+              <span>Revenue (₹)</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- RIGHT WIDGETS: TOP PERFORMING CUSTOMERS & INCENTIVE PROGRESS - 3 cols -->
+        <div class="lg:col-span-3 space-y-6">
+
+          <!-- TOP PERFORMING CUSTOMERS (Matches "TOP PERFORMING STUDENTS" in photo) -->
+          <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm">
+            <div class="flex items-center justify-between mb-3">
+              <h3 class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="trophy" class="w-4 h-4 text-amber-500"></i>
+                <span>TOP CUSTOMERS</span>
+              </h3>
+              <div class="flex items-center gap-2">
+                <button onclick="openLeaderboardModal()" class="text-[10px] text-amber-600 font-bold hover:underline flex items-center gap-0.5">
+                  <i data-lucide="trophy" class="w-3 h-3"></i>
+                  <span>Leaderboard</span>
+                </button>
+                <span class="text-slate-300">•</span>
+                <button onclick="openCustomersModal()" class="text-[10px] text-blue-600 font-bold hover:underline">Directory</button>
+              </div>
+            </div>
+
+            <!-- List of Top Customers -->
+            <div id="topCustomersList" class="space-y-2.5">
+              <!-- Dynamically populated or default fallback -->
+              <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 text-xs">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-5 h-5 rounded-full bg-amber-400 text-amber-950 font-black flex items-center justify-center text-[10px] shrink-0">1</span>
+                  <span class="font-bold text-slate-800 truncate">Al-Reem Mandi</span>
+                </div>
+                <span class="font-black text-blue-600 shrink-0">400 kg</span>
+              </div>
+              <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 text-xs">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-5 h-5 rounded-full bg-slate-300 text-slate-800 font-black flex items-center justify-center text-[10px] shrink-0">2</span>
+                  <span class="font-bold text-slate-800 truncate">Malabar Catering</span>
+                </div>
+                <span class="font-black text-blue-600 shrink-0">400 kg</span>
+              </div>
+              <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 text-xs">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-5 h-5 rounded-full bg-amber-600 text-white font-black flex items-center justify-center text-[10px] shrink-0">3</span>
+                  <span class="font-bold text-slate-800 truncate">Rahmath Hotel</span>
+                </div>
+                <span class="font-black text-blue-600 shrink-0">300 kg</span>
+              </div>
+              <div class="flex items-center justify-between p-2 rounded-xl bg-slate-50 text-xs">
+                <div class="flex items-center gap-2.5 min-w-0">
+                  <span class="w-5 h-5 rounded-full bg-slate-200 text-slate-600 font-black flex items-center justify-center text-[10px] shrink-0">4</span>
+                  <span class="font-bold text-slate-800 truncate">Zuhra Wedding</span>
+                </div>
+                <span class="font-black text-blue-600 shrink-0">300 kg</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- INCENTIVE TARGET PROGRESS (Matches "PASS RATE BY CLASS" widget in photo) -->
+          <div class="bg-white rounded-2xl p-5 border border-slate-200/80 shadow-sm cursor-pointer hover:border-amber-300 transition" onclick="showIncentiveDetails()" title="Click to view full incentive slabs & calculation">
+            <div class="flex items-center justify-between mb-1.5">
+              <h3 class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="target" class="w-4 h-4 text-emerald-600"></i>
+                <span>INCENTIVE PROGRESS</span>
+              </h3>
+              <span id="incentivePercent" class="text-xs font-black text-amber-600">0%</span>
+            </div>
+
+            <!-- Active Scheme Date Badge -->
+            <div class="flex items-center justify-between text-[10px] mb-2">
+              <span id="incentiveSchemeDateBadge" class="font-bold text-blue-700 bg-blue-50 border border-blue-200/70 px-2 py-0.5 rounded-md flex items-center gap-1">
+                <i data-lucide="calendar" class="w-3 h-3 text-blue-600"></i>
+                <span>Active: From 01 May 2026</span>
+              </span>
+              <span class="text-slate-400 hover:text-blue-600 text-[10px] font-semibold flex items-center gap-0.5">
+                <span>Details</span>
+                <i data-lucide="chevron-right" class="w-3 h-3"></i>
+              </span>
+            </div>
+
+            <!-- Volume Target Progress: 10,000 kg Slab -->
+            <div class="mt-2.5">
+              <div class="flex justify-between text-[11px] font-bold text-slate-600 mb-1">
+                <span>Volume Slab: <strong id="incentiveKgProgressText" class="text-slate-900">0 / 10,000 kg</strong></span>
+                <span id="incentiveRemainingNote" class="text-amber-700 font-bold text-[10px]">Locked</span>
+              </div>
+              <div class="w-full bg-slate-100 rounded-full h-2.5 p-0.5 border border-slate-200 overflow-hidden">
+                <div id="incentiveProgressBar" class="bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full transition-all duration-700" style="width: 0%"></div>
+              </div>
+            </div>
+
+            <!-- Special Brands Additional Slab (Mohabbath Green, Gold, Jasmine) -->
+            <div class="mt-3 pt-2.5 border-t border-slate-100">
+              <div class="flex items-center justify-between text-[11px] font-bold text-slate-700 mb-1">
+                <span class="flex items-center gap-1">
+                  <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-500"></i>
+                  <span>Special Brands Bonus:</span>
+                </span>
+                <span id="incentiveBrandBadge" class="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded">0%</span>
+              </div>
+              <div class="flex items-center justify-between text-[10px] text-slate-500">
+                <span id="incentiveBrandSalesText">Brands: ₹0</span>
+                <span id="incentiveBrandBonusText" class="font-bold text-amber-600">+₹0</span>
+              </div>
+            </div>
+
+            <p id="incentiveRuleNote" class="text-[10px] text-slate-400 mt-2.5 pt-2 border-t border-slate-100 leading-relaxed">
+              • 10,000 kg unlock = <strong class="text-slate-700">₹5,000 (+₹1/kg)</strong><br>
+              • Special Brands: <strong class="text-amber-700">₹15L (0.15%) • ₹20L (0.25%) • ₹25L+ (0.33%)</strong>
+            </p>
+
+            <div id="incentivePreSchemeNotice" class="hidden mt-2 pt-2 border-t border-dashed border-slate-200"></div>
+          </div>
+
+        </div>
+
+      </div>
+
+      <!-- ==================== BOTTOM ROW: ORDERS TABLE (Matches "CLASS PERFORMANCE OVERVIEW") ==================== -->
+      <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+        
+        <!-- Table Control Header -->
+        <div class="p-5 border-b border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div>
+            <h2 class="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <i data-lucide="clipboard-list" class="w-4 h-4 text-blue-600"></i>
+              <span>ORDERS &amp; SALES REGISTER</span>
+            </h2>
+            <p class="text-xs text-slate-500">Real-time order entries, delivery tracking, and printable slips</p>
+          </div>
+
+          <!-- Search & Filter Controls -->
+          <div class="flex items-center gap-2 w-full sm:w-auto flex-wrap">
+            <div class="relative flex-1 sm:w-60">
+              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
+              <input type="text" id="orderSearchInput" oninput="renderOrdersTable()" placeholder="Search Order ID, Customer, Rice, Notes..." class="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
+            </div>
+
+            <!-- Area / Town Filter -->
+            <select id="orderAreaFilterSelect" onchange="renderOrdersTable()" class="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+              <option value="all">🌍 All Towns / Areas</option>
+            </select>
+
+            <!-- Delivery Priority Filter -->
+            <select id="deliveryStatusFilter" onchange="renderOrdersTable()" class="text-xs bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+              <option value="all">All Deliveries</option>
+              <option value="Urgent">⚡ Urgent Delivery</option>
+              <option value="Normal">🚚 Normal Delivery</option>
+            </select>
+          </div>
+        </div>
+
+        <!-- Orders Table with Dark Navy Header (matching the photo's table) -->
+        <div class="overflow-x-auto">
+          <table class="w-full text-left text-xs">
+            <thead class="bg-[#09111e] text-white uppercase font-bold text-[11px] tracking-wider">
+              <tr>
+                <th class="px-4 py-3.5">Order ID &amp; Date</th>
+                <th class="px-4 py-3.5">Customer &amp; Priority</th>
+                <th class="px-4 py-3.5">Rice Variety &amp; Bags</th>
+                <th class="px-4 py-3.5 text-right">Qty (Bags)</th>
+                <th class="px-4 py-3.5 text-right">Total Weight</th>
+                <th class="px-4 py-3.5 text-right">Rate / KG</th>
+                <th class="px-4 py-3.5 text-right">Total Amount</th>
+                <th class="px-4 py-3.5 text-center">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ordersTableBody" class="divide-y divide-slate-100">
+              <!-- Rendered dynamically -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Empty state -->
+        <div id="noOrdersMessage" class="hidden p-12 text-center">
+          <div class="w-16 h-16 bg-blue-50 text-blue-500 rounded-2xl flex items-center justify-center mx-auto mb-3">
+            <i data-lucide="inbox" class="w-8 h-8"></i>
+          </div>
+          <h3 class="text-sm font-bold text-slate-700">No orders found!</h3>
+          <p class="text-xs text-slate-400 mt-1 mb-4">Click 'New Order' above to get started.</p>
+          <button onclick="openNewOrderModal()" class="inline-flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-xl transition shadow-md shadow-blue-600/30">
+            <i data-lucide="plus" class="w-4 h-4"></i>
+            <span>Add New Order</span>
+          </button>
+        </div>
+
+      </div>
+
+    </div>
+
+    <!-- FOOTER -->
+    <footer class="bg-white border-t border-slate-200 text-slate-400 text-xs py-4 px-6 mt-auto">
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+          <span>Data stored securely in your browser (LocalStorage). Works offline.</span>
+        </div>
+        <div>
+          <span>Third Man - Sales &amp; Incentive Dashboard • v2.0</span>
+        </div>
+      </div>
+    </footer>
+
+  </main>
+
+  <!-- ==================== MODALS ==================== -->
+
+  <!-- 1. NEW ORDER MODAL -->
+  <div id="orderModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 lg:p-6 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-6xl lg:max-w-7xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="bg-[#09111e] text-white p-4 sm:px-6 flex items-center justify-between sticky top-0 z-20 shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-blue-500/20 rounded-xl flex items-center justify-center text-blue-400 border border-blue-500/30">
+            <i data-lucide="shopping-cart" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 id="modalTitleText" class="font-extrabold text-base sm:text-lg leading-tight">New Wholesale Order</h3>
+              <span id="modalOrderIdBadge" class="px-2.5 py-0.5 rounded text-[11px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-500/30">ORD-1005</span>
+            </div>
+            <p class="text-xs text-slate-400">Record wholesale rice order with multi-product &amp; live calculations</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleModalFullscreen('orderModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button type="button" onclick="closeOrderModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body Form -->
+      <form id="orderForm" onsubmit="handleSaveOrder(event)" class="p-4 sm:p-6 overflow-y-auto flex-1 flex flex-col justify-between bg-slate-50/50">
+        
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <!-- LEFT COLUMN: Customer Selection & Order Meta (lg:col-span-5) -->
+          <div class="lg:col-span-5 space-y-4">
+            
+            <!-- Top Row: Order ID, Order Date & Delivery Status -->
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <i data-lucide="hash" class="w-3.5 h-3.5 text-blue-600"></i>
+                  <span>Order ID *</span>
+                </label>
+                <input type="text" id="orderIdDisplay" readonly class="w-full text-xs p-2 bg-slate-100 font-mono font-bold text-blue-800 border border-slate-200 rounded-lg cursor-not-allowed select-all" title="Auto-generated unique Order ID">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <i data-lucide="calendar" class="w-3.5 h-3.5 text-blue-600"></i>
+                  <span>Order Date *</span>
+                </label>
+                <input type="date" id="orderDate" required class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/30">
+              </div>
+
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1 flex items-center gap-1">
+                  <i data-lucide="truck" class="w-3.5 h-3.5 text-blue-600"></i>
+                  <span>Delivery *</span>
+                </label>
+                <select id="orderDeliveryStatus" class="w-full text-xs p-2 bg-white border border-slate-200 rounded-lg font-bold text-slate-800 focus:ring-2 focus:ring-blue-500/30">
+                  <option value="Normal">🚚 Normal Delivery</option>
+                  <option value="Urgent">⚡ Urgent Delivery</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Customer Search & Details -->
+            <div class="space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative">
+              <div class="flex items-center justify-between">
+                <span class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="user" class="w-4 h-4 text-blue-600"></i>
+                  <span>Customer Name &amp; Search</span>
+                </span>
+                <button type="button" onclick="openCustomersModal()" class="text-[11px] text-blue-600 hover:text-blue-800 font-bold underline flex items-center gap-1">
+                  <span>Customer Directory</span>
+                </button>
+              </div>
+
+              <!-- Customer Search with Live Instant Dropdown -->
+              <div class="relative">
+                <label class="block text-[11px] font-bold text-slate-600 mb-1">Search Existing Regular Customer</label>
+                <div class="relative">
+                  <input type="text" id="custSearchInput" oninput="onCustomerSearchInput(this.value)" onfocus="showCustomerSearchDropdown()" placeholder="Type customer name, phone, or location to search..." class="w-full text-xs pl-8 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
+                  <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+                  <button type="button" onclick="clearCustomerSearch()" id="clearCustSearchBtn" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <i data-lucide="x" class="w-4 h-4"></i>
+                  </button>
+                </div>
+
+                <!-- Customer Search Dropdown Results -->
+                <div id="custSearchDropdown" class="hidden absolute left-0 right-0 top-full mt-1 bg-white border border-slate-200 rounded-xl shadow-2xl z-30 max-h-52 overflow-y-auto divide-y divide-slate-100">
+                  <!-- populated dynamically -->
+                </div>
+              </div>
+
+              <!-- Direct Input Fields (Editable manual or auto-filled) -->
+              <div class="space-y-2.5 pt-1">
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Customer / Shop Name *</label>
+                    <input type="text" id="customerName" oninput="onCustomerNameManualChange()" placeholder="e.g. Al-Reem Caterers" required class="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">Customer Type</label>
+                    <select id="customerCategory" class="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30 font-medium">
+                      <option value="Caterer">👨‍🍳 Caterer</option>
+                      <option value="Hotel / Restaurant">🏨 Hotel / Restaurant</option>
+                      <option value="Wholesaler">📦 Wholesaler</option>
+                      <option value="Retailer">🏪 Retailer</option>
+                      <option value="Other">🏷️ Other</option>
+                    </select>
+                  </div>
+                </div>
+
+                <!-- District & Nearest Town Fields -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label class="block text-xs font-bold text-blue-900 mb-1">
+                      District
+                    </label>
+                    <select id="orderDistrictSelect" onchange="onOrderDistrictChange(this.value)" class="w-full text-xs p-2 bg-blue-50/40 border border-blue-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/30 font-bold text-blue-950">
+                      <option value="Ernakulam" selected>📍 Ernakulam</option>
+                      <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                      <option value="Kollam">Kollam</option>
+                      <option value="Pathanamthitta">Pathanamthitta</option>
+                      <option value="Alappuzha">Alappuzha</option>
+                      <option value="Kottayam">Kottayam</option>
+                      <option value="Idukki">Idukki</option>
+                      <option value="Thrissur">Thrissur</option>
+                      <option value="Palakkad">Palakkad</option>
+                      <option value="Malappuram">Malappuram</option>
+                      <option value="Kozhikode">Kozhikode</option>
+                      <option value="Wayanad">Wayanad</option>
+                      <option value="Kannur">Kannur</option>
+                      <option value="Kasaragod">Kasaragod</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <label class="block text-xs font-bold text-blue-900">
+                        Town *
+                      </label>
+                      <button type="button" onclick="openSettingsModal('towns')" class="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline inline-flex items-center gap-0.5" title="Manage or Delete saved towns in Settings">
+                        <i data-lucide="settings" class="w-3 h-3"></i>
+                        <span>Manage / Delete</span>
+                      </button>
+                    </div>
+                    <input type="text" id="orderTownInput" list="orderTownsDatalist" autocomplete="off" placeholder="e.g. Aluva, Kakkanad, Angamaly" class="w-full text-xs p-2 bg-blue-50/30 border border-blue-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/30 font-bold text-slate-800">
+                  </div>
+                </div>
+
+                <!-- Landmark & Panchayath (Optional) Fields -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">
+                      Landmark / Spot <span class="font-normal text-slate-500">(Optional)</span>
+                    </label>
+                    <input type="text" id="orderLandmarkInput" placeholder="e.g. Near Metro Pillar 340, Opp. Bus Stand" class="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30">
+                  </div>
+                  <div>
+                    <label class="block text-xs font-bold text-slate-700 mb-1">
+                      Panchayath / Municipality <span class="font-normal text-slate-400">(Optional)</span>
+                    </label>
+                    <input type="text" id="orderPanchayathInput" placeholder="Optional (e.g. Choornikkara, Vengola)" class="w-full text-xs p-2 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/30">
+                  </div>
+                </div>
+                <input type="hidden" id="customerArea" value="">
+                <input type="hidden" id="customerPlace" value="">
+                <input type="hidden" id="customerLocation" value="">
+
+                <!-- Owner & Staff Contact Fields -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                  <!-- Owner Box -->
+                  <div class="bg-slate-50/70 p-2.5 rounded-xl border border-blue-100 shadow-2xs space-y-1.5">
+                    <span class="text-[11px] font-bold text-blue-900 flex items-center gap-1">
+                      <i data-lucide="crown" class="w-3.5 h-3.5 text-amber-500"></i>
+                      <span>Owner Contact</span>
+                    </span>
+                    <div class="grid grid-cols-2 gap-2">
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Owner Name</label>
+                        <input type="text" id="customerOwnerName" placeholder="e.g. Moideen Haji" class="w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/30">
+                      </div>
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Owner Mobile</label>
+                        <input type="tel" id="customerOwnerPhone" maxlength="14" placeholder="10-digit mobile" class="w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/30 font-mono">
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Staff Box -->
+                  <div class="bg-slate-50/70 p-2.5 rounded-xl border border-indigo-100 shadow-2xs space-y-1.5">
+                    <span class="text-[11px] font-bold text-indigo-900 flex items-center gap-1">
+                      <i data-lucide="chef-hat" class="w-3.5 h-3.5 text-indigo-500"></i>
+                      <span>Staff / Cook Contact</span>
+                    </span>
+                    <div class="grid grid-cols-3 gap-1.5">
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Staff Name</label>
+                        <input type="text" id="customerStaffName" placeholder="e.g. Shafi" class="w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/30">
+                      </div>
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Role</label>
+                        <select id="customerStaffRole" class="w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/30">
+                          <option value="Chef / Cook">👨‍🍳 Chef / Cook</option>
+                          <option value="Manager">👔 Manager</option>
+                          <option value="Purchase In-charge">📦 Purchase</option>
+                          <option value="Supervisor">📋 Supervisor</option>
+                          <option value="Staff">👤 Staff</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Mobile</label>
+                        <input type="tel" id="customerStaffPhone" maxlength="14" placeholder="10-digit mobile" class="w-full text-xs p-1.5 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/30 font-mono">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Hidden customerPhone for legacy compatibility -->
+                <input type="hidden" id="customerPhone" value="">
+              </div>
+
+              <!-- Customer order history alert -->
+              <div id="customerHistoryAlert" class="hidden text-[11px] p-2 bg-amber-50 text-amber-900 border border-amber-200 rounded-lg flex items-center justify-between">
+                <span id="customerHistoryText"></span>
+              </div>
+
+              <div class="flex items-center gap-2 pt-0.5">
+                <input type="checkbox" id="saveCustomerCheckbox" checked class="w-4 h-4 text-blue-600 rounded border-slate-300 focus:ring-blue-500">
+                <label for="saveCustomerCheckbox" class="text-xs text-slate-600 select-none cursor-pointer">
+                  Save / update this customer in the Customers Directory
+                </label>
+              </div>
+            </div>
+
+            <!-- Notes (Paragraph Model) -->
+            <div class="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+              <label class="block text-xs font-bold text-slate-700 mb-1 flex items-center gap-1.5">
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-500"></i>
+                <span>Order Notes / Delivery Instructions</span>
+              </label>
+              <textarea id="orderNotes" rows="2" placeholder="Vehicle number, driver contact details, special packaging remarks..." class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/30 transition"></textarea>
+            </div>
+
+          </div>
+
+          <!-- RIGHT COLUMN: Rice Products & Multi-Item Order (lg:col-span-7) -->
+          <div class="lg:col-span-7 space-y-4">
+            
+            <div class="bg-white p-4 sm:p-5 rounded-2xl border border-blue-200/90 shadow-xs space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div class="text-xs font-black text-blue-950 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="package" class="w-4 h-4 text-blue-600"></i>
+                  <span>Rice Varieties &amp; Quantities</span>
+                </div>
+                <span class="text-[11px] text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2.5 py-0.5 rounded-full">Multi-rice selection supported</span>
+              </div>
+
+              <!-- Dynamic Container for Rice Items -->
+              <div id="orderItemsContainer" class="space-y-3">
+                <!-- Rendered dynamically -->
+              </div>
+
+              <!-- Add Another Product Button -->
+              <button type="button" onclick="addOrderItemRow()" class="w-full py-2.5 px-4 border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/40 hover:bg-blue-50 text-blue-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition shadow-xs">
+                <i data-lucide="plus-circle" class="w-4 h-4 text-blue-600"></i>
+                <span>+ Add Another Rice Brand / Variety</span>
+              </button>
+
+              <!-- Live Order Summary Box -->
+              <div class="bg-gradient-to-r from-blue-50 to-indigo-50/50 p-4 rounded-xl border border-blue-200 grid grid-cols-3 gap-2 text-center shadow-xs">
+                <div>
+                  <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Total Bags</span>
+                  <div class="text-base font-black text-slate-800 mt-0.5" id="summaryTotalBags">0 Bags</div>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Total Weight</span>
+                  <div class="text-base font-black text-blue-900 mt-0.5" id="summaryTotalKg">0 kg</div>
+                </div>
+                <div>
+                  <span class="text-[10px] text-slate-500 uppercase font-bold tracking-wider">Grand Total</span>
+                  <div class="text-lg font-black text-emerald-600 mt-0.5" id="summaryTotalAmount">₹0</div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+        </div>
+
+        <!-- Action Buttons in Modal Footer -->
+        <div class="mt-6 pt-3 flex items-center justify-between gap-2 border-t border-slate-200 bg-white -mx-4 -mb-4 sm:-mx-6 sm:-mb-6 p-4 sm:px-6 rounded-b-2xl sm:rounded-b-3xl shrink-0">
+          <div>
+            <!-- Delete inside edit modal button (hidden during new order creation) -->
+            <button type="button" id="btnDeleteInsideModal" onclick="deleteCurrentEditingOrder()" class="hidden px-3.5 py-2 text-xs font-bold text-rose-600 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 rounded-xl transition flex items-center gap-1.5 border border-rose-200" title="Delete this order permanently">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              <span>Delete Order</span>
+            </button>
+          </div>
+          <div class="flex items-center gap-2.5">
+            <button type="button" onclick="closeOrderModal()" class="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+              Cancel
+            </button>
+            <button type="submit" id="btnSubmitOrder" class="px-5 py-2.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-md shadow-blue-600/30 transition flex items-center gap-1.5 active:scale-95">
+              <i data-lucide="check" class="w-4 h-4"></i>
+              <span id="btnSubmitOrderText">Save Order</span>
+            </button>
+          </div>
+        </div>
+
+      </form>
+    </div>
+  </div>
+
+  <!-- 2. INVOICE / RECEIPT MODAL (FOR PRINTING) -->
+  <div id="invoiceModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl max-w-3xl w-full p-6 sm:p-8 max-h-[92vh] overflow-y-auto">
+      
+      <!-- Action Bar -->
+      <div class="no-print flex items-center justify-between pb-4 mb-4 border-b border-slate-100">
+        <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Invoice Preview</span>
+        <div class="flex items-center gap-2">
+          <button onclick="shareInvoiceOrderToWhatsApp()" class="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow transition" title="Share Order to WhatsApp Group">
+            <i data-lucide="message-circle" class="w-4 h-4"></i>
+            <span>Send to WhatsApp</span>
+          </button>
+          <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition">
+            <i data-lucide="printer" class="w-4 h-4"></i>
+            <span>Print Bill</span>
+          </button>
+          <button type="button" onclick="toggleModalFullscreen('invoiceModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button onclick="closeInvoiceModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Printable Invoice Content -->
+      <div id="invoicePrintArea" class="space-y-6 text-slate-800">
+        <!-- Header -->
+        <div class="flex justify-between items-start border-b border-slate-200 pb-4">
+          <div class="flex items-center gap-3.5">
+            <div id="invoiceLogoBox" class="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
+              <img id="invoiceLogoImg" src="logo.svg" alt="Third Man Logo" class="w-full h-full object-contain p-1">
+              <div id="invoiceLogoFallback" class="hidden w-full h-full flex items-center justify-center bg-blue-50 text-blue-700">
+                <i data-lucide="package-check" class="w-7 h-7"></i>
+              </div>
+            </div>
+            <div>
+              <h2 class="text-xl font-black text-[#09111e] uppercase tracking-wide">THIRD MAN</h2>
+              <p class="text-xs text-slate-500">Wholesale Rice Merchants &amp; Distributors</p>
+              <p class="text-xs text-slate-500">GST: 32AABCB1234F1Z9 | Mob: +91 98470 00000</p>
+            </div>
+          </div>
+          <div class="text-right">
+            <div class="flex items-center justify-end gap-2">
+              <span class="inline-block px-3 py-1 bg-blue-100 text-blue-900 rounded font-black text-xs uppercase tracking-wider">SALE INVOICE</span>
+              <span id="invDeliveryBadge" class="inline-block px-2.5 py-0.5 rounded text-[10px] font-bold"></span>
+            </div>
+            <p class="text-xs font-bold text-slate-700 mt-1" id="invNumber">INV-0001</p>
+            <p class="text-xs text-slate-500" id="invDate">Date: 17 Nov 2026</p>
+          </div>
+        </div>
+
+        <!-- Bill To -->
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200 flex justify-between text-xs">
+          <div>
+            <span class="text-slate-400 font-bold uppercase text-[10px]">BILL TO:</span>
+            <div class="font-extrabold text-sm text-slate-900 mt-0.5" id="invCustomerName">Customer Name</div>
+            <div class="text-slate-600" id="invCustomerLocation">Location</div>
+            <div class="text-slate-600 text-[11px] mt-0.5 space-y-0.5" id="invCustomerContacts">
+              <div id="invCustomerOwnerRow" class="hidden">👑 Owner: <span id="invCustomerOwnerText" class="font-bold text-slate-800"></span></div>
+              <div id="invCustomerStaffRow" class="hidden">👨‍🍳 Staff: <span id="invCustomerStaffText" class="font-bold text-slate-800"></span></div>
+              <div id="invCustomerPhoneRow"><span id="invCustomerPhone">Phone</span></div>
+            </div>
+          </div>
+          <div class="text-right">
+            <span class="text-slate-400 font-bold uppercase text-[10px]">DISPATCH:</span>
+            <div class="font-bold text-slate-800" id="invDispatchType">Wholesale Order</div>
+          </div>
+        </div>
+
+        <!-- Items Table -->
+        <table class="w-full text-xs">
+          <thead>
+            <tr class="bg-[#09111e] text-white font-bold">
+              <th class="p-2.5 text-left rounded-l-lg">Item Description</th>
+              <th class="p-2.5 text-center">Bag Size</th>
+              <th class="p-2.5 text-center">Bags</th>
+              <th class="p-2.5 text-right">Total Weight (KG)</th>
+              <th class="p-2.5 text-right">Rate / KG</th>
+              <th class="p-2.5 text-right rounded-r-lg">Total Amount (₹)</th>
+            </tr>
+          </thead>
+          <tbody id="invItemsTableBody" class="divide-y divide-slate-200 border-b border-slate-200">
+            <!-- Dynamically populated rows -->
+          </tbody>
+        </table>
+
+        <!-- Order Notes / Instructions Box -->
+        <div id="invNotesContainer" class="p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs hidden">
+          <div class="font-bold text-slate-700 mb-0.5 flex items-center gap-1.5">
+            <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span>Order Notes &amp; Delivery Instructions:</span>
+          </div>
+          <div id="invNotesText" class="text-slate-600 whitespace-pre-wrap pl-5"></div>
+        </div>
+
+        <!-- Totals & Balance -->
+        <div class="flex justify-between items-start pt-2">
+          <div class="text-xs text-slate-500 max-w-xs">
+            <p class="font-semibold text-slate-700">Terms &amp; Conditions:</p>
+            <p>1. Goods once sold will not be taken back unless damaged.</p>
+            <p>2. Please verify bag count and weights upon delivery.</p>
+          </div>
+
+          <div class="w-60 space-y-1.5 text-xs">
+            <div class="flex justify-between py-2 border-t-2 border-slate-900 font-black text-sm">
+              <span class="text-slate-900">Total Amount:</span>
+              <span class="text-slate-900" id="invSubTotal">₹23,750</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Signature -->
+        <div class="pt-8 flex justify-between items-end text-xs text-slate-400">
+          <div>Customer Signature</div>
+          <div class="text-right">
+            <div class="font-bold text-slate-700">For Third Man Wholesalers</div>
+            <div class="mt-8 border-t border-slate-300 pt-1">Authorized Signatory</div>
+          </div>
+        </div>
+
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 2B. POST-ORDER WHATSAPP SHARE MODAL -->
+  <div id="orderSuccessWhatsAppModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-5 sm:p-6 space-y-4">
+      
+      <!-- Modal Header -->
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+        <div class="flex items-center gap-2.5">
+          <div class="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center border border-emerald-200">
+            <i data-lucide="check-circle-2" class="w-6 h-6"></i>
+          </div>
+          <div>
+            <h3 class="font-extrabold text-base text-slate-900 leading-tight">Order Recorded!</h3>
+            <p class="text-xs text-slate-500" id="orderSuccessModalSubtext">Share to Company WhatsApp Group</p>
+          </div>
+        </div>
+        <button onclick="closeOrderSuccessModal()" class="text-slate-400 hover:text-slate-700 p-1 rounded-lg hover:bg-slate-100 transition">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Preview of WhatsApp Message -->
+      <div>
+        <div class="flex items-center justify-between mb-1.5">
+          <span class="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+            <i data-lucide="message-circle" class="w-3.5 h-3.5 text-emerald-600"></i>
+            <span>WhatsApp Message Preview</span>
+          </span>
+          <button type="button" onclick="copyWhatsAppMessage()" class="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 hover:underline">
+            <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+            <span>Copy Text</span>
+          </button>
+        </div>
+        <div class="bg-emerald-50/50 border border-emerald-200/80 rounded-xl p-3.5 font-mono text-xs text-slate-800 whitespace-pre-wrap max-h-56 overflow-y-auto select-all leading-relaxed" id="orderSuccessWhatsAppPreview">
+        </div>
+      </div>
+
+      <!-- Action Buttons -->
+      <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+        <button type="button" onclick="closeOrderSuccessModal()" class="px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition">
+          Done / Close
+        </button>
+        <button type="button" onclick="sendSavedOrderToWhatsApp()" class="px-5 py-2.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl shadow-md shadow-emerald-600/30 transition flex items-center gap-2 transform active:scale-95">
+          <i data-lucide="message-circle" class="w-4 h-4"></i>
+          <span>Send to WhatsApp Group</span>
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 3. SETTINGS & PRODUCTS MODAL -->
+  <div id="settingsModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-md z-50 flex items-center justify-center p-2 sm:p-4 lg:p-6 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-6xl lg:max-w-7xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="p-4 sm:px-6 border-b border-slate-200 flex items-center justify-between bg-white shrink-0">
+        <div>
+          <h3 class="font-extrabold text-base sm:text-lg text-slate-900 flex items-center gap-2">
+            <span class="w-8 h-8 rounded-lg bg-blue-500/10 text-blue-600 flex items-center justify-center">
+              <i data-lucide="settings" class="w-5 h-5"></i>
+            </span>
+            <span>Business Settings &amp; Master Data</span>
+          </h3>
+          <p class="text-xs text-slate-500 mt-0.5">Manage Districts &amp; Towns, Rice Products, Bag Sizes, Company Logo &amp; Backups</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleModalFullscreen('settingsModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button onclick="closeSettingsModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Settings Tab Switcher -->
+      <div class="px-4 sm:px-6 bg-slate-100/90 border-b border-slate-200 flex items-center gap-2 overflow-x-auto py-2.5 shrink-0">
+        <button type="button" onclick="setSettingsTab('towns')" id="settingsTabBtn-towns" class="settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs">
+          <i data-lucide="map-pin" class="w-4 h-4"></i>
+          <span>🏙️ Districts &amp; Towns</span>
+        </button>
+        <button type="button" onclick="setSettingsTab('products')" id="settingsTabBtn-products" class="settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-white text-slate-600 hover:text-slate-900 border border-slate-200">
+          <i data-lucide="package" class="w-4 h-4"></i>
+          <span>🌾 Products &amp; Bags</span>
+        </button>
+        <button type="button" onclick="setSettingsTab('general')" id="settingsTabBtn-general" class="settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-white text-slate-600 hover:text-slate-900 border border-slate-200">
+          <i data-lucide="shield-check" class="w-4 h-4"></i>
+          <span>⚙️ Branding &amp; Data Shield</span>
+        </button>
+      </div>
+
+      <!-- ==================== TAB 1: DISTRICTS & TOWNS ==================== -->
+      <div id="settingsTabContent-towns" class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <!-- LEFT: Add New Town Box (lg:col-span-4) -->
+          <div class="lg:col-span-4 space-y-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h4 class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="plus-circle" class="w-4 h-4 text-blue-600"></i>
+                  <span>Add New Town</span>
+                </h4>
+              </div>
+
+              <!-- District Select for adding -->
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">Select District *</label>
+                <select id="newTownDistrictSelect" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500/20">
+                  <option value="Ernakulam" selected>📍 Ernakulam</option>
+                  <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                  <option value="Kollam">Kollam</option>
+                  <option value="Pathanamthitta">Pathanamthitta</option>
+                  <option value="Alappuzha">Alappuzha</option>
+                  <option value="Kottayam">Kottayam</option>
+                  <option value="Idukki">Idukki</option>
+                  <option value="Thrissur">Thrissur</option>
+                  <option value="Palakkad">Palakkad</option>
+                  <option value="Malappuram">Malappuram</option>
+                  <option value="Kozhikode">Kozhikode</option>
+                  <option value="Wayanad">Wayanad</option>
+                  <option value="Kannur">Kannur</option>
+                  <option value="Kasaragod">Kasaragod</option>
+                </select>
+              </div>
+
+              <!-- Town Name Input -->
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">Town Name *</label>
+                <input type="text" id="newTownNameInput" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewDistrictTown();}" placeholder="e.g. Aluva, Kakkanad, Angamaly..." class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-900">
+                <p class="text-[10px] text-slate-400 mt-1">This town will appear in dropdown suggestions under this district.</p>
+              </div>
+
+              <button type="button" onclick="addNewDistrictTown()" class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center justify-center gap-1.5 active:scale-95">
+                <i data-lucide="plus" class="w-4 h-4"></i>
+                <span>Add Town to List</span>
+              </button>
+
+              <!-- Helpful Note -->
+              <div class="p-3 bg-blue-50/70 border border-blue-200/60 rounded-xl text-[11px] text-blue-900 space-y-1">
+                <div class="font-bold flex items-center gap-1">
+                  <i data-lucide="info" class="w-3.5 h-3.5 text-blue-600"></i>
+                  <span>Manage &amp; Clean:</span>
+                </div>
+                <p class="text-[10px] text-blue-800 leading-relaxed">
+                  You can edit spelling mistakes or remove unwanted towns from the list anytime. Removing a town removes it from the suggestions dropdown.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT: Saved Towns Directory & Management (lg:col-span-8) -->
+          <div class="lg:col-span-8 space-y-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div class="flex items-center gap-2">
+                  <h4 class="text-xs font-black text-slate-800 uppercase tracking-wider">Saved Towns Directory</h4>
+                  <span id="settingsTownsCountBadge" class="text-[10px] bg-blue-100 text-blue-800 font-black px-2.5 py-0.5 rounded-full">0 Towns</span>
+                </div>
+
+                <!-- Filter Controls -->
+                <div class="flex items-center gap-2 flex-wrap">
+                  <select id="settingsTownsFilterDistrict" onchange="renderSettingsTownsList()" class="text-xs p-1.5 bg-slate-50 border border-slate-200 rounded-lg font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20">
+                    <option value="all">🌍 All 14 Districts</option>
+                    <option value="Ernakulam" selected>📍 Ernakulam</option>
+                    <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                    <option value="Kollam">Kollam</option>
+                    <option value="Pathanamthitta">Pathanamthitta</option>
+                    <option value="Alappuzha">Alappuzha</option>
+                    <option value="Kottayam">Kottayam</option>
+                    <option value="Idukki">Idukki</option>
+                    <option value="Thrissur">Thrissur</option>
+                    <option value="Palakkad">Palakkad</option>
+                    <option value="Malappuram">Malappuram</option>
+                    <option value="Kozhikode">Kozhikode</option>
+                    <option value="Wayanad">Wayanad</option>
+                    <option value="Kannur">Kannur</option>
+                    <option value="Kasaragod">Kasaragod</option>
+                  </select>
+
+                  <button type="button" onclick="confirmResetDistrictTowns()" title="Reset current district towns to default list" class="px-2.5 py-1.5 text-[11px] font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition inline-flex items-center gap-1">
+                    <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
+                    <span>Reset Towns</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Search Input -->
+              <div class="relative">
+                <input type="text" id="settingsTownsSearchInput" oninput="renderSettingsTownsList()" placeholder="Search town by name..." class="w-full text-xs pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500">
+                <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2"></i>
+              </div>
+
+              <!-- Towns Items Container -->
+              <div id="settingsTownsListContainer" class="space-y-2 max-h-[460px] overflow-y-auto pr-1">
+                <!-- Populated dynamically -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ==================== TAB 2: PRODUCTS & BAG SIZES ==================== -->
+      <div id="settingsTabContent-products" class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 hidden">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <!-- LEFT COLUMN: Add / Edit Product Form (lg:col-span-5) -->
+          <div class="lg:col-span-5 space-y-4">
+            <div id="productFormBox" class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs transition">
+              <div class="flex items-center justify-between mb-3">
+                <h4 id="productFormTitle" class="text-xs font-extrabold text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <i data-lucide="plus-circle" class="w-4 h-4 text-blue-600"></i>
+                  <span>Add New Rice Product</span>
+                </h4>
+                <span id="productEditingBadge" class="hidden text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 border border-amber-300">
+                  Editing Mode
+                </span>
+              </div>
+
+              <!-- Hidden ID for Editing Mode -->
+              <input type="hidden" id="editingProductId" value="">
+
+              <div class="flex flex-col sm:flex-row gap-3.5 items-start">
+                <!-- Product Image Uploader -->
+                <div class="flex flex-col items-center gap-1 shrink-0 self-center sm:self-start">
+                  <label class="block text-[11px] font-bold text-slate-700 text-center">Bag Image</label>
+                  <div onclick="triggerProductImageUpload()" class="w-20 h-20 rounded-xl border-2 border-dashed border-slate-300 hover:border-blue-500 bg-white flex flex-col items-center justify-center cursor-pointer overflow-hidden relative group transition shadow-xs" title="Click to upload or change product bag image">
+                    <img id="productImagePreview" src="" class="w-full h-full object-cover hidden" alt="Product Image">
+                    <div id="productImagePlaceholder" class="flex flex-col items-center justify-center p-1 text-slate-400 group-hover:text-blue-600 transition">
+                      <i data-lucide="image-plus" class="w-5 h-5 mb-0.5"></i>
+                      <span class="text-[9px] font-bold uppercase text-center leading-tight">Add Photo</span>
+                    </div>
+                    <div class="absolute inset-0 bg-black/50 text-white text-[10px] font-bold opacity-0 group-hover:opacity-100 flex items-center justify-center transition">
+                      Change
+                    </div>
+                  </div>
+                  <input type="file" id="productImageInput" accept="image/*" class="hidden" onchange="onProductImageSelected(event)">
+                  <input type="hidden" id="editingProductImage" value="">
+                  <button type="button" id="removeProductImageBtn" onclick="removeProductFormImage()" class="hidden text-[10px] text-rose-600 hover:text-rose-800 font-semibold underline">
+                    Remove
+                  </button>
+                </div>
+
+                <!-- Fields Grid -->
+                <div class="flex-1 w-full space-y-2.5">
+                  <!-- 1. Product Name -->
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Product Name *</label>
+                    <input type="text" id="newProductName" placeholder="e.g. Wayanadan Kaima Rice" class="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-medium">
+                  </div>
+
+                  <!-- 2. Category & 3. Bag Size in 2 columns -->
+                  <div class="grid grid-cols-2 gap-2">
+                    <div>
+                      <label class="block text-[11px] font-bold text-slate-700 mb-1">Category *</label>
+                      <select id="newProductCategory" onchange="onProductCategoryFormChange(this.value)" class="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-semibold text-slate-800">
+                        <option value="Kaima">Kaima</option>
+                        <option value="Kolam">Kolam</option>
+                        <option value="Basmati">Basmati</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label class="block text-[11px] font-bold text-slate-700 mb-1">Bag Size (KG) *</label>
+                      <select id="newProductBagSize" class="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-semibold text-slate-800">
+                        <!-- Dynamically populated from bagSizes -->
+                      </select>
+                    </div>
+                  </div>
+
+                  <!-- 4. Rate per KG -->
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">Rate / KG (₹) *</label>
+                    <input type="number" step="0.5" id="newProductRate" placeholder="e.g. 96" class="w-full text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 font-bold text-slate-900">
+                  </div>
+
+                  <!-- Action Buttons -->
+                  <div class="pt-1 flex items-center gap-2">
+                    <button type="button" onclick="saveProductForm()" id="productSubmitBtn" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-2 rounded-lg transition inline-flex items-center gap-1.5 shadow-sm active:scale-95">
+                      <i data-lucide="plus" class="w-3.5 h-3.5" id="productSubmitBtnIcon"></i>
+                      <span id="productSubmitBtnText">Add Product</span>
+                    </button>
+                    <button type="button" onclick="cancelProductEdit()" id="productCancelBtn" class="hidden text-xs bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-3 py-2 rounded-lg transition">
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: Products Catalog & Bag Sizes (lg:col-span-7) -->
+          <div class="lg:col-span-7 space-y-4">
+            <!-- Products Catalog List -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                <div class="flex items-center gap-2">
+                  <h4 class="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Products Catalog</h4>
+                  <span id="productsCountBadge" class="text-[10px] bg-blue-100 text-blue-800 font-bold px-2.5 py-0.5 rounded-full">0 Varieties</span>
+                </div>
+
+                <!-- Category Filter Tabs: All, Kaima, Kolam, Basmati -->
+                <div class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-xs font-semibold border border-slate-200">
+                  <button onclick="setProductCategoryFilter('all')" id="catFilterAll" class="cat-filter-btn px-2.5 py-1 rounded-lg bg-white shadow-xs text-blue-600 font-bold transition">All</button>
+                  <button onclick="setProductCategoryFilter('Kaima')" id="catFilterKaima" class="cat-filter-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">Kaima</button>
+                  <button onclick="setProductCategoryFilter('Kolam')" id="catFilterKolam" class="cat-filter-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">Kolam</button>
+                  <button onclick="setProductCategoryFilter('Basmati')" id="catFilterBasmati" class="cat-filter-btn px-2.5 py-1 rounded-lg text-slate-600 hover:text-slate-900 transition">Basmati</button>
+                </div>
+              </div>
+
+              <div id="productsManageList" class="space-y-2 max-h-[360px] overflow-y-auto pr-1">
+                <!-- Rendered dynamically -->
+              </div>
+            </div>
+
+            <!-- Bag Size Configuration -->
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+              <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+                <h4 class="text-xs font-bold text-slate-800 uppercase">Available Bag Sizes (KG)</h4>
+                <span class="text-[11px] text-slate-400">Click &times; to remove</span>
+              </div>
+              <div id="bagSizesList" class="flex flex-wrap gap-2">
+                <!-- Rendered badges -->
+              </div>
+              <div class="flex items-center gap-2 pt-1">
+                <input type="number" id="newBagSizeInput" placeholder="New size in KG (e.g. 35)" class="w-48 text-xs p-2 bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600">
+                <button onclick="addNewBagSize()" class="text-xs bg-slate-800 hover:bg-slate-900 text-white font-bold px-3 py-2 rounded-lg transition inline-flex items-center gap-1 shadow-sm">
+                  <i data-lucide="plus" class="w-3 h-3"></i>
+                  <span>Add Bag Size</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ==================== TAB 3: BRANDING & DATA SHIELD ==================== -->
+      <div id="settingsTabContent-general" class="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50 hidden">
+        <div class="max-w-4xl mx-auto space-y-5">
+          <!-- App Brand Logo Section -->
+          <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h4 class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                <i data-lucide="image" class="w-4 h-4 text-blue-600"></i>
+                <span>App Brand Logo</span>
+              </h4>
+              <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Sidebar &amp; Bills</span>
+            </div>
+            <div class="flex items-center gap-4">
+              <!-- Logo Preview Box -->
+              <div class="w-20 h-20 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative group cursor-pointer hover:border-blue-500 transition" onclick="triggerAppLogoUpload()" title="Click to upload logo">
+                <img id="settingsLogoPreviewImg" src="logo.svg" alt="App Logo Preview" class="w-full h-full object-contain p-1">
+                <div id="settingsLogoFallback" class="hidden flex-col items-center justify-center text-slate-400">
+                  <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+                  <span class="text-[9px] font-bold mt-0.5">Upload</span>
+                </div>
+                <div class="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white transition-opacity rounded-2xl">
+                  <i data-lucide="camera" class="w-5 h-5 text-cyan-300"></i>
+                </div>
+              </div>
+              <!-- Upload / Reset Controls -->
+              <div class="flex-1 min-w-0 space-y-1.5">
+                <p class="text-xs text-slate-600 leading-tight">
+                  Upload your company / brand logo (PNG, JPG, SVG, WEBP). It will appear on the sidebar, invoice bills, and browser tab.
+                </p>
+                <div class="flex items-center gap-2 pt-0.5">
+                  <button type="button" onclick="triggerAppLogoUpload()" class="px-3.5 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-xs transition flex items-center gap-1.5 active:scale-95">
+                    <i data-lucide="upload" class="w-3.5 h-3.5"></i>
+                    <span>Upload Logo</span>
+                  </button>
+                  <button type="button" id="btnRemoveLogo" onclick="removeAppLogo()" class="hidden px-3 py-1.5 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center gap-1.5 active:scale-95">
+                    <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+                    <span>Reset to Default</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Accidental Deletion Protection & Reset Section -->
+          <div class="bg-white p-5 sm:p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4 text-xs">
+            <!-- Recycle Bin Link -->
+            <div class="p-4 bg-blue-50/70 border border-blue-200/80 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <span class="font-bold text-blue-950 flex items-center gap-1.5">
+                  <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
+                  <span>Accidental Deletion Shield Active:</span>
+                </span>
+                <span class="text-blue-800 text-[11px] block mt-0.5">Deleted orders, customers, and products are safely preserved in the Recycle Bin.</span>
+              </div>
+              <button onclick="openTrashModal()" class="px-3.5 py-2 rounded-xl bg-blue-600 text-white font-bold hover:bg-blue-700 transition flex items-center gap-1.5 shrink-0 shadow-xs">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                <span>Open Recycle Bin</span>
+              </button>
+            </div>
+
+            <!-- Reset / Clear Option (Fresh Start with Safety Snapshot) -->
+            <div class="p-4 bg-rose-50/60 border border-rose-100 rounded-xl flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <span class="font-bold text-rose-950 block">Fresh Start (Clear Sales Data):</span>
+                <span class="text-slate-500 text-[11px]">Clears sales orders. (An automatic safety backup snapshot is saved so you can restore anytime).</span>
+              </div>
+              <button onclick="resetAllData()" class="px-3.5 py-2 rounded-xl bg-white text-rose-600 hover:bg-rose-600 hover:text-white font-bold border border-rose-200 transition shrink-0 shadow-xs">
+                Clear All Orders
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 3.1 EDIT TOWN NAME MODAL -->
+  <div id="editTownModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 border border-slate-200 space-y-4">
+      <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+        <h4 class="text-sm font-bold text-slate-900 flex items-center gap-1.5">
+          <i data-lucide="edit-3" class="w-4 h-4 text-blue-600"></i>
+          <span>Edit Town Name</span>
+        </h4>
+        <button type="button" onclick="closeEditTownModal()" class="text-slate-400 hover:text-slate-600 p-1">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <input type="hidden" id="editTownDistrict" value="">
+      <input type="hidden" id="editTownOriginalName" value="">
+
+      <div>
+        <label class="block text-[11px] font-bold text-slate-600 mb-1">District</label>
+        <input type="text" id="editTownDistrictDisplay" readonly class="w-full text-xs p-2 bg-slate-100 border border-slate-200 rounded-lg font-bold text-slate-700 cursor-not-allowed">
+      </div>
+
+      <div>
+        <label class="block text-[11px] font-bold text-slate-700 mb-1">Town Name *</label>
+        <input type="text" id="editTownNewName" onkeydown="if(event.key==='Enter'){event.preventDefault();submitEditTownName();}" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 font-bold text-slate-900">
+        <p class="text-[10px] text-slate-400 mt-1">Customers registered under this town will be updated automatically.</p>
+      </div>
+
+      <div class="flex items-center justify-end gap-2 pt-2">
+        <button type="button" onclick="closeEditTownModal()" class="px-3 py-1.5 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition">Cancel</button>
+        <button type="button" onclick="submitEditTownName()" class="px-4 py-1.5 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-sm transition active:scale-95">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 4. INCENTIVE DETAILS EXPLANATION MODAL -->
+  <div id="incentiveDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-5xl lg:max-w-6xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white p-4 sm:px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 bg-amber-500/20 rounded-xl flex items-center justify-center text-amber-400 border border-amber-500/30">
+            <i data-lucide="award" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-bold text-base sm:text-lg text-white leading-tight">Wholesale Incentive Scheme Details</h3>
+            <p class="text-xs text-slate-400">Rules &amp; live calculation breakdown based on current sales</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleModalFullscreen('incentiveDetailModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button type="button" onclick="closeIncentiveDetails()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Two-Column Layout) -->
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50">
+
+        <!-- SCHEME EFFECTIVE DATE CONTROLLER BANNER -->
+        <div class="bg-gradient-to-r from-blue-900 to-indigo-900 text-white rounded-2xl p-4 mb-6 shadow-md border border-blue-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/20 border border-blue-400/30 flex items-center justify-center text-blue-300 shrink-0">
+              <i data-lucide="calendar-clock" class="w-5 h-5"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-xs font-black uppercase tracking-wider text-blue-200">Active Scheme Period</span>
+                <span class="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">May 2026 Onwards</span>
+              </div>
+              <p class="text-xs text-blue-100/90 mt-0.5">
+                Calculations below apply strictly to sales on or after this date. Earlier sales are separated.
+              </p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 bg-blue-950/60 p-1.5 px-3 rounded-xl border border-blue-700/60 shrink-0">
+            <label for="schemeEffectiveDateInput" class="text-xs font-bold text-blue-200 flex items-center gap-1.5">
+              <i data-lucide="calendar" class="w-3.5 h-3.5 text-blue-300"></i>
+              <span>Effective From:</span>
+            </label>
+            <input type="date" id="schemeEffectiveDateInput" onchange="updateSchemeEffectiveDate(this.value)" class="bg-blue-900/90 text-white font-bold text-xs px-2.5 py-1 rounded-lg border border-blue-500/50 focus:outline-none focus:ring-2 focus:ring-blue-400 cursor-pointer">
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <!-- LEFT COLUMN: Rules & Slabs (lg:col-span-6) -->
+          <div class="lg:col-span-6 space-y-4">
+            
+            <!-- SECTION 1: BASE WEIGHT SCHEME -->
+            <div class="p-4 bg-blue-50/70 rounded-2xl border border-blue-200/80 shadow-2xs">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="font-bold text-blue-950 flex items-center gap-1.5 text-xs">
+                  <span>1. General Volume Target (Weight Slab)</span>
+                </h4>
+                <span id="modalVolumeStatusBadge" class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-slate-200 text-slate-700">Locked</span>
+              </div>
+              <p class="text-xs text-blue-900 mb-2.5 leading-relaxed">
+                The incentive slab starts <strong>ONLY after achieving the first 10,000 kg</strong> sales.
+              </p>
+              <ul class="list-disc list-inside space-y-1.5 text-blue-800 text-xs">
+                <li>First <strong>10,000 kg</strong> achieved = <strong>₹5,000</strong> flat incentive</li>
+                <li>Every kg above 10,000 kg = <strong>+ ₹1.00 / kg</strong> extra bonus</li>
+                <li>Below 10,000 kg = <strong>₹0</strong> (Slab unlocks at 10,000 kg)</li>
+              </ul>
+            </div>
+
+            <!-- SECTION 2: SPECIAL BRANDS SCHEME -->
+            <div class="p-4 bg-amber-50/80 rounded-2xl border border-amber-200/80 shadow-2xs">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="font-bold text-amber-950 flex items-center gap-1.5 text-xs">
+                  <i data-lucide="sparkles" class="w-4 h-4 text-amber-600"></i>
+                  <span>2. Special Brands Additional Incentive</span>
+                </h4>
+                <span id="modalBrandStatusBadge" class="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-200 text-amber-900">0%</span>
+              </div>
+              <p class="text-xs text-amber-900 mb-3 leading-relaxed">
+                Additional percentage bonus on total sales value of <strong>Mohabbath Green, Mohabbath Gold, and Jasmine</strong> brands (in addition to normal incentive):
+              </p>
+              <div class="grid grid-cols-3 gap-2.5 text-center text-xs font-bold">
+                <div class="p-2.5 bg-white rounded-xl border border-amber-200 shadow-2xs">
+                  <span class="block text-slate-500 text-[11px]">₹15 Lakhs</span>
+                  <span class="text-amber-700 text-sm font-black">0.15%</span>
+                </div>
+                <div class="p-2.5 bg-white rounded-xl border border-amber-200 shadow-2xs">
+                  <span class="block text-slate-500 text-[11px]">₹20 Lakhs</span>
+                  <span class="text-amber-700 text-sm font-black">0.25%</span>
+                </div>
+                <div class="p-2.5 bg-white rounded-xl border border-amber-200 shadow-2xs">
+                  <span class="block text-slate-500 text-[11px]">₹25 Lakhs+</span>
+                  <span class="text-emerald-700 text-sm font-black">0.33%</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- SECTION 3: PRE-SCHEME SALES (SEPARATED SALES BEFORE EFFECTIVE DATE) -->
+            <div class="p-4 bg-slate-100/90 rounded-2xl border border-slate-300/80 shadow-2xs">
+              <div class="flex items-center justify-between mb-2">
+                <h4 class="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                  <i data-lucide="history" class="w-4 h-4 text-slate-600"></i>
+                  <span>3. Pre-Scheme Sales (<span id="modalPreSchemeDateLabel">Before 01 May 2026</span>)</span>
+                </h4>
+                <span class="text-[10px] font-black px-2 py-0.5 rounded-full bg-slate-200 text-slate-700">Separated</span>
+              </div>
+              <p class="text-xs text-slate-600 mb-2.5 leading-relaxed">
+                Sales recorded before the scheme start date are kept separate and will be evaluated under the previous scheme once the rules are provided.
+              </p>
+              <div class="grid grid-cols-3 gap-2 text-center text-xs">
+                <div class="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <span class="block text-slate-500 text-[10px]">Separated Orders</span>
+                  <span class="text-slate-900 font-bold" id="modalPreSchemeOrdersCount">0</span>
+                </div>
+                <div class="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <span class="block text-slate-500 text-[10px]">Volume</span>
+                  <span class="text-slate-900 font-bold" id="modalPreSchemeKg">0 kg</span>
+                </div>
+                <div class="p-2 bg-white rounded-xl border border-slate-200 shadow-2xs">
+                  <span class="block text-slate-500 text-[10px]">Turnover</span>
+                  <span class="text-slate-900 font-bold" id="modalPreSchemeRevenue">₹0</span>
+                </div>
+              </div>
+              <p class="text-[10px] text-amber-800 font-medium mt-2 flex items-center gap-1">
+                <i data-lucide="info" class="w-3.5 h-3.5 shrink-0 text-amber-600"></i>
+                <span>Previous scheme rules pending from user — currently excluded from active 10T &amp; Brand targets.</span>
+              </p>
+            </div>
+
+          </div>
+
+          <!-- RIGHT COLUMN: CURRENT CALCULATION BREAKDOWN (lg:col-span-6) -->
+          <div class="lg:col-span-6">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+              <p class="font-bold text-slate-800 uppercase text-[11px] tracking-wider pb-2 border-b border-slate-200 flex items-center justify-between">
+                <span>Calculation Breakdown (Active Scheme):</span>
+                <span class="text-emerald-600 font-extrabold text-xs">Live Status</span>
+              </p>
+
+              <!-- 1. Volume Part -->
+              <div class="space-y-2 text-xs">
+                <div class="flex justify-between">
+                  <span class="text-slate-600">Active Scheme Weight (<span id="modalActiveSchemeDateLabel" class="font-bold text-blue-700">From 01 May 2026</span>):</span>
+                  <span class="font-bold text-slate-900" id="modalCalcKg">0 kg</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-600">10,000 kg Base Slab:</span>
+                  <span class="font-bold" id="modalCalcBase">₹0 (Locked)</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-600">Extra Weight Bonus (>10,000 kg @ ₹1/kg):</span>
+                  <span class="font-bold text-slate-900" id="modalCalcExtra">₹0</span>
+                </div>
+                <div class="flex justify-between text-blue-900 font-bold pt-1.5 border-t border-slate-100">
+                  <span>Volume Incentive Subtotal:</span>
+                  <span id="modalCalcVolumeSubtotal">₹0</span>
+                </div>
+              </div>
+
+              <!-- 2. Brand Part -->
+              <div class="space-y-2 text-xs pt-3 border-t border-slate-200">
+                <div class="flex justify-between">
+                  <span class="text-slate-600">Mohabbath &amp; Jasmine Turnover:</span>
+                  <span class="font-bold text-slate-900" id="modalCalcBrandSales">₹0</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-600">Brand Slab Achieved:</span>
+                  <span class="font-bold text-amber-700" id="modalCalcBrandRate">Below ₹15L (0%)</span>
+                </div>
+                <div class="flex justify-between text-amber-900 font-bold pt-1.5 border-t border-slate-100">
+                  <span>Special Brand Bonus:</span>
+                  <span id="modalCalcBrandBonus">₹0</span>
+                </div>
+              </div>
+
+              <!-- Pre-Scheme Notice in Breakdown if earlier orders exist -->
+              <div id="modalPreSchemeSummaryRow" class="hidden flex justify-between items-center bg-slate-100 p-2.5 rounded-xl text-xs text-slate-700">
+                <span class="flex items-center gap-1 font-semibold text-slate-600">
+                  <i data-lucide="info" class="w-3.5 h-3.5 text-slate-500"></i>
+                  <span>Pre-Scheme Orders Excluded:</span>
+                </span>
+                <span class="font-bold text-slate-900"><span id="modalPreSchemeCountInline">0</span> orders (<span id="modalPreSchemeKgInline">0 kg</span>)</span>
+              </div>
+
+              <!-- 3. Grand Total -->
+              <div class="pt-3.5 border-t-2 border-slate-200 flex justify-between items-center text-sm font-black text-slate-900 bg-slate-50 -mx-5 -mb-5 p-4 rounded-b-2xl">
+                <span>Total Incentive Earned:</span>
+                <span class="text-emerald-600 text-xl font-black" id="modalCalcTotal">₹0</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-3.5 bg-white border-t border-slate-200 text-right shrink-0">
+        <button onclick="closeIncentiveDetails()" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition active:scale-95">
+          Close
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 5. CUSTOMERS MANAGEMENT MODAL -->
+  <div id="customersModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-6xl lg:max-w-7xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white p-4 sm:px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center">
+            <i data-lucide="users" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="font-extrabold text-base sm:text-lg text-white leading-tight">Customer Directory</h3>
+              <span id="custCountBadge" class="bg-blue-900/60 text-blue-200 border border-blue-400/30 px-2.5 py-0.5 rounded-full text-[11px] font-bold">0</span>
+            </div>
+            <p class="text-xs text-slate-400">Manage wholesale buyers, catering teams, hotels &amp; contacts</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleModalFullscreen('customersModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button type="button" onclick="closeCustomersModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Two-Column Layout) -->
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+          
+          <!-- LEFT COLUMN: Add / Edit Customer Form Card (lg:col-span-5) -->
+          <div class="lg:col-span-5">
+            <div id="customerFormCard" class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs transition-all">
+              <div class="flex items-center justify-between mb-3 pb-2.5 border-b border-slate-100">
+                <h4 id="custFormTitle" class="text-xs font-bold text-blue-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <i data-lucide="user-plus" id="custFormIcon" class="w-4 h-4 text-blue-600"></i>
+                  <span id="custFormTitleText">Add New Customer</span>
+                </h4>
+                <button type="button" id="custCancelEditBtn" onclick="cancelEditCustomer()" class="hidden text-[11px] text-rose-600 hover:text-rose-800 font-bold flex items-center gap-1 hover:underline">
+                  <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                  <span>Cancel Edit</span>
+                </button>
+              </div>
+
+              <form onsubmit="handleCustomerFormSubmit(event)" class="space-y-3">
+                <input type="hidden" id="custEditId" value="">
+                
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Customer / Shop Name *</label>
+                  <input type="text" id="custNameInput" required placeholder="e.g. Al-Noor Catering / Rahmath Hotel" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Customer Type *</label>
+                  <select id="custCategoryInput" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition font-medium">
+                    <option value="Caterer">👨‍🍳 Caterer</option>
+                    <option value="Hotel / Restaurant">🏨 Hotel / Restaurant</option>
+                    <option value="Wholesaler">📦 Wholesaler</option>
+                    <option value="Retailer">🏪 Retailer</option>
+                    <option value="Other">🏷️ Other</option>
+                  </select>
+                </div>
+
+                <!-- District & Town Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[11px] font-bold text-blue-900 mb-1">
+                      District
+                    </label>
+                    <select id="custDistrictSelect" onchange="onCustDistrictChange(this.value)" class="w-full text-xs p-2.5 bg-blue-50/40 border border-blue-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition font-bold text-blue-950">
+                      <option value="Ernakulam" selected>📍 Ernakulam</option>
+                      <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                      <option value="Kollam">Kollam</option>
+                      <option value="Pathanamthitta">Pathanamthitta</option>
+                      <option value="Alappuzha">Alappuzha</option>
+                      <option value="Kottayam">Kottayam</option>
+                      <option value="Idukki">Idukki</option>
+                      <option value="Thrissur">Thrissur</option>
+                      <option value="Palakkad">Palakkad</option>
+                      <option value="Malappuram">Malappuram</option>
+                      <option value="Kozhikode">Kozhikode</option>
+                      <option value="Wayanad">Wayanad</option>
+                      <option value="Kannur">Kannur</option>
+                      <option value="Kasaragod">Kasaragod</option>
+                    </select>
+                  </div>
+                  <div>
+                    <div class="flex items-center justify-between mb-1">
+                      <label class="block text-[11px] font-bold text-blue-900">
+                        Town *
+                      </label>
+                      <button type="button" onclick="openSettingsModal('towns')" class="text-[10px] text-blue-600 hover:text-blue-800 font-bold underline inline-flex items-center gap-0.5" title="Manage or Delete saved towns in Settings">
+                        <i data-lucide="settings" class="w-3 h-3"></i>
+                        <span>Manage / Delete</span>
+                      </button>
+                    </div>
+                    <input type="text" id="custTownInput" list="custTownsDatalist" autocomplete="off" placeholder="e.g. Aluva, Kakkanad, Angamaly" class="w-full text-xs p-2.5 bg-blue-50/40 border border-blue-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition font-bold text-slate-800">
+                  </div>
+                </div>
+
+                <!-- Landmark & Panchayath Grid -->
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">
+                      Landmark / Spot <span class="font-normal text-slate-500">(Optional)</span>
+                    </label>
+                    <input type="text" id="custLandmarkInput" placeholder="e.g. Near Metro Pillar 340, Opp. Bus Stand" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+                  </div>
+                  <div>
+                    <label class="block text-[11px] font-bold text-slate-700 mb-1">
+                      Panchayath / Municipality <span class="font-normal text-slate-400">(Optional)</span>
+                    </label>
+                    <input type="text" id="custPanchayathInput" placeholder="Optional (e.g. Choornikkara, Vengola)" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+                  </div>
+                </div>
+
+                <!-- Hidden inputs for backward compatibility -->
+                <input type="hidden" id="custAreaInput" value="">
+                <input type="hidden" id="custPlaceInput" value="">
+                <input type="hidden" id="custLocationInput" value="">
+
+                <!-- Owner & Staff Details Groups -->
+                <div class="space-y-2.5 pt-1">
+                  <!-- Owner Box -->
+                  <div class="bg-amber-50/50 p-3 rounded-xl border border-amber-200/80 space-y-2">
+                    <span class="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
+                      <i data-lucide="crown" class="w-3.5 h-3.5 text-amber-500"></i>
+                      <span>Owner Details</span>
+                    </span>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Owner Name</label>
+                        <input type="text" id="custOwnerNameInput" placeholder="e.g. Moideen Haji" class="w-full text-xs p-2 bg-white border border-amber-200 rounded-lg focus:ring-2 focus:ring-blue-500/20">
+                      </div>
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Owner Mobile <span class="text-slate-400 font-normal">(10 digits)</span></label>
+                        <input type="tel" id="custOwnerPhoneInput" maxlength="14" placeholder="10-digit mobile" class="w-full text-xs p-2 bg-white border border-amber-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 font-mono">
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Staff Box -->
+                  <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-200/80 space-y-2">
+                    <span class="text-[11px] font-bold text-indigo-950 flex items-center gap-1.5">
+                      <i data-lucide="chef-hat" class="w-3.5 h-3.5 text-indigo-500"></i>
+                      <span>Staff Details</span>
+                    </span>
+                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Staff Name</label>
+                        <input type="text" id="custStaffNameInput" placeholder="e.g. Ustad Shafi" class="w-full text-xs p-2 bg-white border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20">
+                      </div>
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Role</label>
+                        <select id="custStaffRoleInput" class="w-full text-xs p-2 bg-white border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20">
+                          <option value="Chef / Cook">👨‍🍳 Chef / Cook</option>
+                          <option value="Manager">👔 Manager</option>
+                          <option value="Purchase In-charge">📦 Purchase In-charge</option>
+                          <option value="Supervisor">📋 Supervisor</option>
+                          <option value="Staff">👤 Staff</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Staff Mobile <span class="text-slate-400 font-normal">(10 digits)</span></label>
+                        <input type="tel" id="custStaffPhoneInput" maxlength="14" placeholder="10-digit mobile" class="w-full text-xs p-2 bg-white border border-indigo-200 rounded-lg focus:ring-2 focus:ring-indigo-500/20 font-mono">
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Notes / Address</label>
+                  <input type="text" id="custNotesInput" placeholder="e.g. Regular Basmati buyer, Calicut route" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+                </div>
+                
+                <!-- Hidden legacy custPhoneInput to prevent errors -->
+                <input type="hidden" id="custPhoneInput" value="">
+                
+                <div class="pt-2 flex items-center justify-between gap-2 border-t border-slate-100">
+                  <span class="text-[10px] text-slate-400 hidden sm:inline">💡 Owner &amp; Staff phone numbers are optional (10 digits).</span>
+                  <button type="submit" id="custSubmitBtn" class="w-full sm:w-auto text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-5 py-2.5 rounded-xl transition inline-flex items-center justify-center gap-1.5 shadow-sm active:scale-95">
+                    <i data-lucide="plus" id="custSubmitIcon" class="w-4 h-4"></i>
+                    <span id="custSubmitText">Save Customer</span>
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN: Customers Directory List & Search (lg:col-span-7) -->
+          <div class="lg:col-span-7 bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-100">
+              <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="contact" class="w-4 h-4 text-blue-600"></i>
+                <span>Customer Directory List</span>
+              </h4>
+              <div class="relative w-full sm:w-64">
+                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input type="text" id="custDirectorySearchInput" oninput="renderCustomersList()" placeholder="Search name, town, landmark, panchayath, phone..." class="w-full text-xs pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+              </div>
+            </div>
+
+            <!-- District & Town Filter Bar -->
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
+              <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
+                <!-- District Filter -->
+                <div class="flex items-center gap-1">
+                  <span class="text-[11px] font-bold text-slate-700 flex items-center gap-1 shrink-0">
+                    <i data-lucide="map" class="w-3.5 h-3.5 text-blue-600"></i>
+                    <span>District:</span>
+                  </span>
+                  <select id="custDistrictFilterSelect" onchange="setCustomerDistrictFilter(this.value)" class="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                    <option value="all">🌍 All Districts</option>
+                    <option value="Ernakulam">Ernakulam</option>
+                    <option value="Thrissur">Thrissur</option>
+                    <option value="Palakkad">Palakkad</option>
+                    <option value="Malappuram">Malappuram</option>
+                    <option value="Kozhikode">Kozhikode</option>
+                    <option value="Wayanad">Wayanad</option>
+                    <option value="Kannur">Kannur</option>
+                    <option value="Kasaragod">Kasaragod</option>
+                    <option value="Kottayam">Kottayam</option>
+                    <option value="Alappuzha">Alappuzha</option>
+                    <option value="Idukki">Idukki</option>
+                    <option value="Pathanamthitta">Pathanamthitta</option>
+                    <option value="Kollam">Kollam</option>
+                    <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                  </select>
+                </div>
+
+                <!-- Town Filter -->
+                <div class="flex items-center gap-1">
+                  <span class="text-[11px] font-bold text-slate-700 flex items-center gap-1 shrink-0">
+                    <i data-lucide="map-pin" class="w-3.5 h-3.5 text-rose-500"></i>
+                    <span>Town:</span>
+                  </span>
+                  <select id="custTownFilterSelect" onchange="setCustomerTownFilter(this.value)" class="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
+                    <option value="all">🏙️ All Towns</option>
+                  </select>
+                  <select id="custAreaFilterSelect" onchange="setCustomerTownFilter(this.value)" class="hidden"></select>
+                </div>
+              </div>
+              <span id="custFilteredCountBadge" class="text-[10px] text-slate-500 font-semibold px-2 py-0.5 bg-white border border-slate-200 rounded-md shrink-0">All towns</span>
+            </div>
+
+            <!-- Category Filter Pills -->
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+              <button type="button" onclick="setCustomerCategoryFilter('all')" id="custCatBtn-all" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-bold bg-blue-600 text-white shadow-xs transition">All</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Caterer')" id="custCatBtn-Caterer" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">👨‍🍳 Caterers</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Hotel / Restaurant')" id="custCatBtn-Hotel" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">🏨 Hotels</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Wholesaler')" id="custCatBtn-Wholesaler" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">📦 Wholesalers</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Retailer')" id="custCatBtn-Retailer" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">🏪 Retailers</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Other')" id="custCatBtn-Other" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">🏷️ Others</button>
+            </div>
+
+            <div id="customersListContainer" class="space-y-2 max-h-[58vh] overflow-y-auto pr-1">
+              <!-- Rendered dynamically -->
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Footer -->
+      <div class="p-3.5 bg-white border-t border-slate-200 text-right shrink-0">
+        <button type="button" onclick="closeCustomersModal()" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition active:scale-95">
+          Close Directory
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 9. CUSTOMER PROFILE & TEAM MEMBERS MODAL -->
+  <div id="customerDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-5xl lg:max-w-6xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white p-4 sm:px-6 flex items-start justify-between shrink-0">
+        <div class="flex items-center gap-3.5">
+          <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white flex items-center justify-center shadow-md shadow-blue-500/20 text-xl font-black shrink-0" id="cdCustomerAvatar">
+            C
+          </div>
+          <div>
+            <div class="flex items-center gap-2.5 flex-wrap">
+              <h3 class="font-black text-lg sm:text-xl text-white leading-tight" id="cdCustomerName">Customer Name</h3>
+              <span id="cdCustomerCategoryBadge"></span>
+            </div>
+            <p class="text-xs text-slate-400 flex items-center gap-1 mt-0.5" id="cdCustomerLocation">
+              <span>📍 Local</span>
+            </p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 shrink-0">
+          <button type="button" onclick="startOrderFromCustomerDetail()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl transition inline-flex items-center gap-1.5 shadow-sm active:scale-95">
+            <i data-lucide="plus-circle" class="w-4 h-4"></i>
+            <span class="hidden sm:inline">New Order</span>
+          </button>
+          <button type="button" onclick="toggleModalFullscreen('customerDetailModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button onclick="closeCustomerDetailModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50 space-y-4">
+        
+        <!-- Customer Lifetime Stats Bar -->
+        <div class="grid grid-cols-3 gap-3 p-4 bg-white border border-slate-200 rounded-2xl text-center shadow-xs">
+          <div>
+            <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Total Orders</span>
+            <div class="text-sm sm:text-base font-black text-slate-900 mt-0.5" id="cdStatsOrders">0 Orders</div>
+          </div>
+          <div class="border-x border-slate-100">
+            <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Total Purchased</span>
+            <div class="text-sm sm:text-base font-black text-blue-900 mt-0.5" id="cdStatsKg">0 kg</div>
+          </div>
+          <div>
+            <span class="text-[10px] text-slate-400 uppercase font-bold tracking-wider">Lifetime Value</span>
+            <div class="text-sm sm:text-base font-black text-emerald-700 mt-0.5" id="cdStatsRevenue">₹0</div>
+          </div>
+        </div>
+
+        <!-- Notes / Address alert if present -->
+        <div id="cdNotesBox" class="hidden text-xs p-3 bg-amber-50 text-amber-900 border border-amber-200 rounded-xl">
+          <span class="font-bold text-[11px]">📝 Notes / Address:</span>
+          <span id="cdNotesText" class="text-slate-700 ml-1"></span>
+        </div>
+
+        <!-- Team Members Section -->
+        <div class="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+          <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                <i data-lucide="users" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Team Members &amp; Contacts</span>
+                  <span id="cdMembersCountBadge" class="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full text-[10px] font-extrabold">0</span>
+                </h4>
+                <p class="text-[11px] text-slate-400">Owner, Manager, Usthad / Chef, Purchase In-charge</p>
+              </div>
+            </div>
+            <button type="button" id="cdBtnOpenAddMember" onclick="openAddMemberForm()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 py-1.5 rounded-xl transition inline-flex items-center gap-1.5 border border-indigo-200 shadow-2xs active:scale-95">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+              <span>+ Add Member</span>
+            </button>
+          </div>
+
+          <!-- Add / Edit Member Form Card -->
+          <div id="cdMemberFormCard" class="hidden bg-indigo-50/70 p-4 rounded-xl border border-indigo-200 transition-all">
+            <div class="flex items-center justify-between mb-3 pb-2 border-b border-indigo-200/60">
+              <span class="text-xs font-extrabold text-indigo-950 flex items-center gap-1.5">
+                <i data-lucide="user-check" class="w-4 h-4 text-indigo-600"></i>
+                <span id="cdMemberFormTitle">Add New Team Member</span>
+              </span>
+              <button type="button" onclick="closeAddMemberForm()" class="text-[11px] text-slate-400 hover:text-slate-700 font-bold flex items-center gap-0.5">
+                <i data-lucide="x" class="w-3.5 h-3.5"></i>
+                <span>Close</span>
+              </button>
+            </div>
+            <form onsubmit="handleSaveMember(event)" class="space-y-3">
+              <input type="hidden" id="cdMemberEditId" value="">
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Member Name *</label>
+                  <input type="text" id="cdMemberNameInput" required placeholder="e.g. Ustad Shafi / Moideen" class="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Designation / Role *</label>
+                  <select id="cdMemberRoleSelect" required class="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30 font-medium text-slate-800">
+                    <option value="Owner">👑 Owner</option>
+                    <option value="Managing Partner">🤝 Managing Partner</option>
+                    <option value="Manager">👔 Manager</option>
+                    <option value="Head Chef / Usthad">👨‍🍳 Head Chef / Usthad</option>
+                    <option value="Chef / Cook">🍳 Chef / Cook</option>
+                    <option value="Purchase In-charge">📦 Purchase In-charge</option>
+                    <option value="Supervisor">📋 Supervisor</option>
+                    <option value="Accountant / Billing">💰 Accountant / Billing</option>
+                    <option value="Staff">👤 Staff</option>
+                    <option value="Other">🏷️ Other</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Mobile Number <span class="text-slate-400 font-normal">(10 digits)</span></label>
+                  <input type="tel" id="cdMemberPhoneInput" maxlength="14" placeholder="10-digit mobile" class="w-full text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/30 font-mono">
+                </div>
+              </div>
+              <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+                <label class="flex items-center gap-1.5 text-xs text-slate-700 cursor-pointer select-none">
+                  <input type="checkbox" id="cdMemberIsPrimary" class="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500">
+                  <span>⭐ Set as Primary Contact for Orders &amp; Invoices</span>
+                </label>
+                <div class="flex items-center gap-2 self-end sm:self-auto">
+                  <button type="button" onclick="closeAddMemberForm()" class="text-xs px-3.5 py-1.5 bg-white hover:bg-slate-100 text-slate-600 font-bold rounded-lg border border-slate-200 transition">
+                    Cancel
+                  </button>
+                  <button type="submit" id="cdMemberSubmitBtn" class="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-1.5 rounded-lg transition inline-flex items-center gap-1 shadow-sm active:scale-95">
+                    <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                    <span id="cdMemberSubmitText">Save Member</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+
+          <!-- Members Cards Container -->
+          <div id="cdMembersListContainer" class="space-y-2 max-h-[55vh] overflow-y-auto pr-0.5">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="p-3.5 bg-white border-t border-slate-200 text-right shrink-0">
+        <button onclick="closeCustomerDetailModal()" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition active:scale-95">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 6. SALES LEADERBOARDS MODAL -->
+  <div id="leaderboardModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-6xl lg:max-w-7xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white p-4 sm:px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center shadow-md shadow-amber-500/20">
+            <i data-lucide="trophy" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="font-extrabold text-base sm:text-lg text-white leading-tight">Sales Leaderboards</h3>
+              <span class="text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-400/30">Live Rankings 🏆</span>
+            </div>
+            <p class="text-xs text-slate-400">Track top buyers, rice varieties, categories, routes &amp; milestone achievers</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleModalFullscreen('leaderboardModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button onclick="closeLeaderboardModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Controls Row: Main Tabs & Period Filter -->
+      <div class="p-4 sm:px-6 bg-white border-b border-slate-200 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3 shrink-0">
+        <!-- Main Navigation Tabs -->
+        <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
+          <button type="button" onclick="setLeaderboardTab('customers')" id="lbTabBtn-customers" class="lb-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-xs flex items-center gap-1.5 whitespace-nowrap transition">
+            <i data-lucide="users" class="w-3.5 h-3.5"></i>
+            <span>Top Customers</span>
+          </button>
+          <button type="button" onclick="setLeaderboardTab('products')" id="lbTabBtn-products" class="lb-tab-btn px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1.5 whitespace-nowrap transition">
+            <i data-lucide="package" class="w-3.5 h-3.5"></i>
+            <span>Rice &amp; Bags</span>
+          </button>
+          <button type="button" onclick="setLeaderboardTab('champions')" id="lbTabBtn-champions" class="lb-tab-btn px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1.5 whitespace-nowrap transition">
+            <i data-lucide="award" class="w-3.5 h-3.5"></i>
+            <span>Category Champions</span>
+          </button>
+          <button type="button" onclick="setLeaderboardTab('locations')" id="lbTabBtn-locations" class="lb-tab-btn px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1.5 whitespace-nowrap transition">
+            <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+            <span>Top Routes</span>
+          </button>
+          <button type="button" onclick="setLeaderboardTab('milestones')" id="lbTabBtn-milestones" class="lb-tab-btn px-3.5 py-2 rounded-xl text-xs font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 flex items-center gap-1.5 whitespace-nowrap transition">
+            <i data-lucide="flame" class="w-3.5 h-3.5"></i>
+            <span>Elite 10T Club</span>
+          </button>
+        </div>
+
+        <!-- Period Filter Selector inside Modal -->
+        <div class="bg-slate-100 p-1 rounded-xl flex items-center text-[11px] font-bold border border-slate-200 self-start md:self-auto shrink-0">
+          <button type="button" onclick="setLeaderboardPeriod('today')" id="lbPeriodBtn-today" class="lb-period-btn px-3 py-1.5 rounded-lg text-slate-600 transition">Today</button>
+          <button type="button" onclick="setLeaderboardPeriod('week')" id="lbPeriodBtn-week" class="lb-period-btn px-3 py-1.5 rounded-lg text-slate-600 transition">Week</button>
+          <button type="button" onclick="setLeaderboardPeriod('month')" id="lbPeriodBtn-month" class="lb-period-btn px-3 py-1.5 rounded-lg text-slate-600 transition">Month</button>
+          <button type="button" onclick="setLeaderboardPeriod('all')" id="lbPeriodBtn-all" class="lb-period-btn px-3 py-1.5 rounded-lg bg-amber-500 text-white shadow-sm transition">All-Time</button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Scrollable Tabs Content) -->
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50">
+        
+        <!-- TAB 1: CUSTOMERS LEADERBOARD -->
+        <div id="lbContent-customers" class="space-y-4">
+          <!-- Metric Sort Bar -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-white p-3 rounded-2xl border border-slate-200 shadow-xs">
+            <span class="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+              <i data-lucide="arrow-up-right" class="w-3.5 h-3.5 text-blue-600"></i>
+              <span>Rank Customers By:</span>
+            </span>
+            <div class="flex items-center gap-1.5 text-xs font-bold">
+              <button type="button" onclick="setLeaderboardCustomerMetric('kg')" id="lbMetricBtn-kg" class="lb-cust-metric-btn px-3.5 py-1.5 rounded-xl bg-slate-900 text-white transition">⚖️ Total KG</button>
+              <button type="button" onclick="setLeaderboardCustomerMetric('revenue')" id="lbMetricBtn-revenue" class="lb-cust-metric-btn px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition">💰 Total Revenue (₹)</button>
+              <button type="button" onclick="setLeaderboardCustomerMetric('orders')" id="lbMetricBtn-orders" class="lb-cust-metric-btn px-3.5 py-1.5 rounded-xl bg-slate-100 text-slate-700 hover:bg-slate-200 transition">📦 Most Orders</button>
+            </div>
+          </div>
+
+          <!-- Podium View for Top 3 -->
+          <div id="lbPodiumContainer"></div>
+
+          <!-- Customers Leaderboard Table -->
+          <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+            <div class="overflow-x-auto">
+              <table class="w-full text-left text-xs">
+                <thead class="bg-slate-900 text-white uppercase text-[10px] tracking-wider font-extrabold">
+                  <tr>
+                    <th class="px-4 py-3 text-center w-16">Rank</th>
+                    <th class="px-4 py-3">Customer &amp; Category</th>
+                    <th class="px-4 py-3 text-right">Total Weight</th>
+                    <th class="px-4 py-3 text-right">Revenue (₹)</th>
+                    <th class="px-4 py-3 text-center">Orders</th>
+                    <th class="px-4 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="lbCustomersTableBody" class="divide-y divide-slate-100"></tbody>
+              </table>
+            </div>
+            <div id="lbCustomersEmpty" class="hidden p-8 text-center text-xs text-slate-400">
+              No orders found in this period. Switch to 'All-Time' to see lifetime rankings!
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 2: PRODUCTS & BAG SIZES LEADERBOARD -->
+        <div id="lbContent-products" class="space-y-4 hidden">
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <!-- Top Rice Varieties -->
+            <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+              <h4 class="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                <i data-lucide="package" class="w-4 h-4 text-emerald-600"></i>
+                <span>Top Selling Rice Varieties</span>
+              </h4>
+              <div id="lbProductsList" class="space-y-3"></div>
+            </div>
+
+            <!-- Bag Sizes & Categories -->
+            <div class="space-y-4">
+              <!-- Popular Bag Sizes -->
+              <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+                <h4 class="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                  <i data-lucide="shopping-bag" class="w-4 h-4 text-blue-600"></i>
+                  <span>Most Popular Bag Sizes</span>
+                </h4>
+                <div id="lbBagSizesList" class="space-y-2.5"></div>
+              </div>
+
+              <!-- Rice Categories -->
+              <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+                <h4 class="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5 pb-2 border-b border-slate-100">
+                  <i data-lucide="pie-chart" class="w-4 h-4 text-purple-600"></i>
+                  <span>Rice Category Share</span>
+                </h4>
+                <div id="lbRiceCategoriesList" class="space-y-2.5"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- TAB 3: CATEGORY CHAMPIONS -->
+        <div id="lbContent-champions" class="space-y-4 hidden">
+          <div class="bg-blue-50/70 border border-blue-200 p-4 rounded-2xl text-xs text-blue-900 flex items-center gap-2">
+            <span>👑 <strong>Category Champions:</strong> The #1 highest volume buyers in each customer segment (Caterers, Hotels, Wholesalers, Retailers).</span>
+          </div>
+          <div id="lbChampionsList" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4"></div>
+        </div>
+
+        <!-- TAB 4: LOCATIONS & ROUTES -->
+        <div id="lbContent-locations" class="space-y-4 hidden">
+          <div class="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-3">
+            <div class="flex items-center justify-between pb-2 border-b border-slate-100">
+              <h4 class="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="map-pin" class="w-4 h-4 text-rose-500"></i>
+                <span>Top Delivery Locations &amp; Logistics Routes</span>
+              </h4>
+              <span class="text-[11px] text-slate-500 font-medium">Ranked by Total KG Dispatched</span>
+            </div>
+            <div id="lbLocationsList" class="space-y-2.5"></div>
+          </div>
+        </div>
+
+        <!-- TAB 5: MILESTONE ELITE CLUB -->
+        <div id="lbContent-milestones" class="space-y-4 hidden">
+          <div class="bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-blue-500/10 border border-amber-300/60 p-4 rounded-2xl text-xs text-slate-800 flex items-center justify-between">
+            <div>
+              <span class="font-extrabold text-amber-900">⭐ Milestone Achievement Clubs:</span>
+              <p class="text-slate-600 text-[11px] mt-0.5">Recognizes volume milestones. Reaching 10 Tons qualifies for the ₹5,000+ incentive benchmark!</p>
+            </div>
+            <span class="text-2xl">🏆</span>
+          </div>
+          <div id="lbMilestonesList" class="space-y-4"></div>
+        </div>
+
+      </div>
+
+      <!-- Footer -->
+      <div class="p-3.5 bg-white border-t border-slate-200 text-right shrink-0">
+        <button onclick="closeLeaderboardModal()" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition active:scale-95">
+          Close Leaderboards
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- 7. SAFE CONFIRMATION MODAL (ACCIDENTAL DELETION PREVENTER) -->
+  <div id="safeConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 hidden">
+    <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
+      <div class="flex items-start gap-4">
+        <div id="confirmIconBox" class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
+          <i data-lucide="alert-triangle" class="w-6 h-6"></i>
+        </div>
+        <div class="flex-1 min-w-0">
+          <h3 id="confirmModalTitle" class="text-base font-black text-slate-900 leading-tight">Confirm Deletion</h3>
+          <p id="confirmModalMessage" class="text-xs text-slate-600 mt-1.5 leading-relaxed">Are you sure you want to delete this item?</p>
+          <div id="confirmModalHintBox" class="mt-3 p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+            <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600 shrink-0 mt-0.5"></i>
+            <span id="confirmModalHintText">Don't worry! This item is safely preserved in the Recycle Bin and can be restored anytime.</span>
+          </div>
+        </div>
+      </div>
+      <div class="mt-6 flex items-center justify-end gap-2.5 pt-4 border-t border-slate-100">
+        <button type="button" id="confirmModalCancelBtn" onclick="closeConfirmModal()" class="px-4 py-2 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition">
+          Cancel
+        </button>
+        <button type="button" id="confirmModalOkBtn" class="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-md transition flex items-center gap-1.5 active:scale-95">
+          <span id="confirmModalOkText">Delete</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 8. RECYCLE BIN MODAL -->
+  <div id="trashModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[60] flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-5xl lg:max-w-6xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
+      
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white p-4 sm:px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-xl bg-rose-500/20 border border-rose-500/30 text-rose-400 flex items-center justify-center shadow-xs">
+            <i data-lucide="trash-2" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="font-extrabold text-base sm:text-lg text-white">Recycle Bin</h3>
+              <span id="trashModalTotalBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/30">0 Items</span>
+            </div>
+            <p class="text-xs text-slate-400">Accidentally deleted orders, customers &amp; products are safely preserved here</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="toggleModalFullscreen('trashModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button onclick="closeTrashModal()" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Action & Filter Bar -->
+      <div class="p-4 sm:px-6 bg-white border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+        <!-- Filter Tabs -->
+        <div class="bg-slate-100 p-1 rounded-xl flex items-center text-xs font-bold border border-slate-200">
+          <button type="button" onclick="setTrashFilter('all')" id="trashTabBtn-all" class="trash-tab-btn px-3 py-1.5 rounded-lg bg-blue-600 text-white shadow-xs transition">All</button>
+          <button type="button" onclick="setTrashFilter('order')" id="trashTabBtn-order" class="trash-tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">📦 Orders</button>
+          <button type="button" onclick="setTrashFilter('customer')" id="trashTabBtn-customer" class="trash-tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">👥 Customers</button>
+          <button type="button" onclick="setTrashFilter('product')" id="trashTabBtn-product" class="trash-tab-btn px-3 py-1.5 rounded-lg text-slate-600 hover:text-slate-900 transition">🌾 Products</button>
+        </div>
+
+        <!-- Batch Action Buttons -->
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="restoreAllTrash()" id="btnRestoreAllTrash" class="px-3.5 py-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-xl transition flex items-center gap-1.5 shadow-xs">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            <span>Restore All</span>
+          </button>
+          <button type="button" onclick="emptyTrashPrompt()" id="btnEmptyTrash" class="px-3.5 py-1.5 text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center gap-1.5 shadow-xs">
+            <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            <span>Empty Trash</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50 flex flex-col space-y-3.5">
+        
+        <!-- Search inside Trash -->
+        <div class="relative shrink-0">
+          <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+          <input type="text" id="trashSearchInput" oninput="onTrashSearchInput(event.target.value)" placeholder="Search deleted items by name, order ID, phone or details..." class="w-full text-xs pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition shadow-2xs">
+        </div>
+
+        <!-- Recovery Snapshot Banner (Visible if a pre-reset snapshot exists) -->
+        <div id="safetySnapshotBanner" class="hidden p-3.5 bg-amber-50 border border-amber-300 rounded-2xl flex items-center justify-between text-xs text-amber-950 shrink-0">
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="shield-alert" class="w-5 h-5 text-amber-600 shrink-0"></i>
+            <div>
+              <span class="font-bold">Recovery Snapshot Available:</span>
+              <span id="safetySnapshotInfo" class="text-[11px] text-amber-800 block">Previous cleared sales data is safely backed up.</span>
+            </div>
+          </div>
+          <button type="button" onclick="restoreSafetySnapshot()" class="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl shadow transition text-[11px] flex items-center gap-1 shrink-0">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            <span>Restore Snapshot</span>
+          </button>
+        </div>
+
+        <!-- Trash List Container (Scrollable) -->
+        <div class="flex-1 overflow-y-auto pr-1 space-y-2.5 min-h-[220px]" id="trashItemsContainer">
+          <!-- Rendered items or empty state -->
+        </div>
+
+      </div>
+
+      <!-- Footer Info -->
+      <div class="p-3.5 bg-white border-t border-slate-200 flex items-center justify-between text-xs text-slate-500 shrink-0">
+        <span class="flex items-center gap-1.5 text-emerald-700 font-semibold text-[11px]">
+          <i data-lucide="shield-check" class="w-3.5 h-3.5"></i>
+          <span>Accidental Deletion Shield Active • Data is safely recoverable</span>
+        </span>
+        <button type="button" onclick="closeTrashModal()" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition active:scale-95">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- ==================== MONTHLY SALES & INCENTIVES HISTORY MODAL ==================== -->
+  <div id="monthlyHistoryModal" class="hidden fixed inset-0 z-50 bg-slate-950/70 backdrop-blur-sm flex items-center justify-center p-2 sm:p-4 md:p-6 animate-fade-in">
+    <div class="modal-expandable bg-white rounded-3xl shadow-2xl border border-slate-200/80 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden transition-all duration-300">
+      
+      <!-- Modal Header -->
+      <div class="p-4 sm:px-6 py-4 bg-gradient-to-r from-slate-950 via-slate-900 to-indigo-950 text-white flex items-center justify-between gap-4 shrink-0 border-b border-slate-800">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center border border-indigo-400/30 shrink-0 shadow-inner">
+            <i data-lucide="history" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <div class="flex items-center gap-2">
+              <h3 class="font-extrabold text-base sm:text-lg text-white">Monthly Sales &amp; Incentive History</h3>
+              <span id="historyTotalMonthsBadge" class="px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">12 Months</span>
+            </div>
+            <p class="text-xs text-slate-400">Month-by-month sales volume, 10-Tonne slab unlocks, Mohabbath/Jasmine brand bonuses &amp; net incentive calculations</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="printMonthlyHistory()" title="Print Monthly Report" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="printer" class="w-4 h-4"></i>
+          </button>
+          <button type="button" onclick="toggleModalFullscreen('monthlyHistoryModal')" title="Maximize / Restore Window" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="maximize-2" class="w-4 h-4"></i>
+          </button>
+          <button type="button" onclick="closeMonthlyHistoryModal()" title="Close" class="w-8 h-8 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 flex items-center justify-center transition">
+            <i data-lucide="x" class="w-5 h-5"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Action & Year Filter Bar -->
+      <div class="p-4 sm:px-6 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 shrink-0">
+        <div class="flex flex-wrap items-center gap-3">
+          <div class="flex items-center gap-2">
+            <label for="historyYearSelect" class="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+              <i data-lucide="calendar" class="w-3.5 h-3.5 text-indigo-600"></i>
+              <span>Select Year:</span>
+            </label>
+            <select id="historyYearSelect" onchange="onHistoryYearChange(event)" class="text-xs font-extrabold text-slate-900 bg-white border border-slate-300 rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 shadow-2xs cursor-pointer">
+              <!-- Dynamically populated -->
+            </select>
+          </div>
+
+          <span class="text-xs text-slate-400 hidden sm:inline">•</span>
+
+          <span class="text-xs font-medium text-slate-500">
+            Click <strong class="text-indigo-600 font-bold">"View on Dashboard"</strong> on any month to filter the main app to that exact period.
+          </span>
+        </div>
+
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="seedSampleMultiMonthDataPrompt()" class="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs" title="Load realistic sample data across multiple months to preview history">
+            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
+            <span>Load Sample Multi-Month Sales</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Body (Scrollable) -->
+      <div class="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-50/50 space-y-5">
+        
+        <!-- Annual Summary KPI Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+          <!-- KPI 1: Annual Revenue -->
+          <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+              <i data-lucide="indian-rupee" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Annual Amount of Sale</p>
+              <h4 class="text-lg font-black text-slate-900 truncate" id="histKpiRevenue">₹0</h4>
+              <p class="text-[10px] text-slate-400" id="histKpiOrdersCount">0 Orders Recorded</p>
+            </div>
+          </div>
+
+          <!-- KPI 2: Annual Weight -->
+          <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+              <i data-lucide="weight" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Annual Weight Sold</p>
+              <h4 class="text-lg font-black text-slate-900 truncate" id="histKpiWeight">0 kg</h4>
+              <p class="text-[10px] text-slate-400" id="histKpiTons">0.00 Metric Tonnes</p>
+            </div>
+          </div>
+
+          <!-- KPI 3: Annual Incentive Earned -->
+          <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+              <i data-lucide="award" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Incentive Earned</p>
+              <h4 class="text-lg font-black text-amber-700 truncate" id="histKpiIncentive">₹0</h4>
+              <p class="text-[10px] text-emerald-600 font-semibold" id="histKpiTargetUnlockedMonths">0 Months Target Unlocked</p>
+            </div>
+          </div>
+
+          <!-- KPI 4: Best Performing Month -->
+          <div class="bg-white rounded-2xl p-4 border border-slate-200/80 shadow-2xs flex items-center gap-3">
+            <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center shrink-0">
+              <i data-lucide="trophy" class="w-5 h-5"></i>
+            </div>
+            <div class="min-w-0">
+              <p class="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Best Sales Month</p>
+              <h4 class="text-lg font-black text-slate-900 truncate" id="histKpiBestMonth">—</h4>
+              <p class="text-[10px] text-slate-400" id="histKpiBestMonthStats">Highest Volume &amp; Revenue</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Monthly Breakdown Table Container -->
+        <div class="bg-white border border-slate-200/80 rounded-2xl shadow-sm overflow-hidden">
+          <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+            <h4 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+              <i data-lucide="table" class="w-4 h-4 text-indigo-600"></i>
+              <span>Monthly Performance &amp; Incentive Ledger</span>
+            </h4>
+            <span class="text-xs text-slate-400">All figures calculated automatically from recorded sales</span>
+          </div>
+
+          <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr class="bg-slate-50/80 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                  <th class="py-3 px-4">Month</th>
+                  <th class="py-3 px-3 text-center">Orders</th>
+                  <th class="py-3 px-3 text-center">Bags</th>
+                  <th class="py-3 px-4 text-right">Weight (kg / Tonnes)</th>
+                  <th class="py-3 px-4 text-right">Total Amount of Sale</th>
+                  <th class="py-3 px-4">10T Volume Slab Status</th>
+                  <th class="py-3 px-4">Mohabbath &amp; Jasmine Bonus</th>
+                  <th class="py-3 px-4 text-right">Total Incentive</th>
+                  <th class="py-3 px-4 text-center">Action</th>
+                </tr>
+              </thead>
+              <tbody id="monthlyHistoryTableBody" class="divide-y divide-slate-100">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-white border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500 shrink-0">
+        <div class="flex items-center gap-2 text-[11px] text-slate-500">
+          <i data-lucide="info" class="w-4 h-4 text-indigo-600 shrink-0"></i>
+          <span>Scheme: First 10,000 kg unlocks base ₹5,000 (+₹1/kg thereafter) + Mohabbath &amp; Jasmine turnover bonus (15L: 0.15%, 20L: 0.25%, 25L+: 0.33%).</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button type="button" onclick="printMonthlyHistory()" class="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition flex items-center gap-1.5">
+            <i data-lucide="printer" class="w-3.5 h-3.5"></i>
+            <span>Print Annual Statement</span>
+          </button>
+          <button type="button" onclick="closeMonthlyHistoryModal()" class="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition active:scale-95">
+            Close
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- SHARED DATALISTS: KERALA TOWNS & AREAS -->
+  <datalist id="custTownsDatalist"></datalist>
+  <datalist id="orderTownsDatalist"></datalist>
+  <datalist id="savedAreasDatalist"></datalist>
+
+  <!-- FIREBASE SDKs (Compat version for vanilla JS browser apps) -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <!-- JAVASCRIPT LOGIC -->
+  <script src="app.js"></script>
+</body>
+</html>
