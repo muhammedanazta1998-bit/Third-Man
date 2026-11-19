@@ -5030,42 +5030,100 @@ function closeIncentiveDetails() {
 
 let currentSettingsTab = 'towns';
 
+function updateSettingsDataTab() {
+  const count = trashList ? trashList.length : 0;
+  const countBadge = document.getElementById('settingsTrashCountBadge');
+  if (countBadge) {
+    countBadge.textContent = `${count} ${count === 1 ? 'Item' : 'Items'} in Bin`;
+    if (count > 0) {
+      countBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300';
+    } else {
+      countBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200';
+    }
+  }
+
+  const subText = document.getElementById('settingsTrashSubtext');
+  if (subText) {
+    subText.textContent = count > 0
+      ? `${count} items safely preserved in trash. You can restore them anytime.`
+      : 'Recycle Bin is currently empty. Deleted orders, customers or products will appear here.';
+  }
+
+  // Check safety snapshot
+  const snapshotNotice = document.getElementById('settingsSnapshotNotice');
+  if (snapshotNotice) {
+    const rawSnap = localStorage.getItem(STORAGE_SAFETY_SNAPSHOT);
+    if (rawSnap) {
+      snapshotNotice.classList.remove('hidden');
+    } else {
+      snapshotNotice.classList.add('hidden');
+    }
+  }
+}
+
+function updateSchemeEffectiveDateFromSettings() {
+  const input = document.getElementById('settingsSchemeEffectiveDateInput');
+  if (!input || !input.value) {
+    showNotification('Please select a valid date');
+    return;
+  }
+  updateSchemeEffectiveDate(input.value);
+  showNotification(`Incentive scheme start date updated to ${formatSchemeDate(input.value)}`);
+}
+
 function setSettingsTab(tabName) {
   currentSettingsTab = tabName || 'towns';
+  if (currentSettingsTab === 'general') currentSettingsTab = 'data';
 
   const tabTowns = document.getElementById('settingsTabContent-towns');
   const tabProducts = document.getElementById('settingsTabContent-products');
-  const tabGeneral = document.getElementById('settingsTabContent-general');
+  const tabIncentive = document.getElementById('settingsTabContent-incentive');
+  const tabBranding = document.getElementById('settingsTabContent-branding');
+  const tabData = document.getElementById('settingsTabContent-data');
 
   const btnTowns = document.getElementById('settingsTabBtn-towns');
   const btnProducts = document.getElementById('settingsTabBtn-products');
-  const btnGeneral = document.getElementById('settingsTabBtn-general');
+  const btnIncentive = document.getElementById('settingsTabBtn-incentive');
+  const btnBranding = document.getElementById('settingsTabBtn-branding');
+  const btnData = document.getElementById('settingsTabBtn-data');
+
+  const allTabs = [tabTowns, tabProducts, tabIncentive, tabBranding, tabData];
+  const allBtns = [btnTowns, btnProducts, btnIncentive, btnBranding, btnData];
 
   // Reset tab button styles
-  [btnTowns, btnProducts, btnGeneral].forEach(btn => {
+  allBtns.forEach(btn => {
     if (btn) {
-      btn.className = 'settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-white text-slate-600 hover:text-slate-900 border border-slate-200';
+      btn.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-white text-slate-600 hover:text-slate-900 border border-slate-200';
     }
   });
 
   // Hide all contents
-  if (tabTowns) tabTowns.classList.add('hidden');
-  if (tabProducts) tabProducts.classList.add('hidden');
-  if (tabGeneral) tabGeneral.classList.add('hidden');
+  allTabs.forEach(tab => {
+    if (tab) tab.classList.add('hidden');
+  });
 
   if (currentSettingsTab === 'towns') {
     if (tabTowns) tabTowns.classList.remove('hidden');
-    if (btnTowns) btnTowns.className = 'settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
+    if (btnTowns) btnTowns.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
     renderSettingsTownsList();
   } else if (currentSettingsTab === 'products') {
     if (tabProducts) tabProducts.classList.remove('hidden');
-    if (btnProducts) btnProducts.className = 'settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
+    if (btnProducts) btnProducts.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
     populateBagSizesDropdown();
     renderProductsManageList();
     renderBagSizesBadges();
-  } else if (currentSettingsTab === 'general') {
-    if (tabGeneral) tabGeneral.classList.remove('hidden');
-    if (btnGeneral) btnGeneral.className = 'settings-tab-btn px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
+  } else if (currentSettingsTab === 'incentive') {
+    if (tabIncentive) tabIncentive.classList.remove('hidden');
+    if (btnIncentive) btnIncentive.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
+    const dateInput = document.getElementById('settingsSchemeEffectiveDateInput');
+    if (dateInput) dateInput.value = incentiveSchemeEffectiveDate || '2026-05-01';
+  } else if (currentSettingsTab === 'branding') {
+    if (tabBranding) tabBranding.classList.remove('hidden');
+    if (btnBranding) btnBranding.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
+  } else if (currentSettingsTab === 'data') {
+    if (tabData) tabData.classList.remove('hidden');
+    if (btnData) btnData.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
+    updateSettingsDataTab();
   }
 
   if (window.lucide && typeof lucide.createIcons === 'function') {
@@ -7187,7 +7245,9 @@ function exportDataJSON() {
     orders: orders,
     products: products,
     bagSizes: bagSizes,
-    customers: customers
+    customers: customers,
+    savedDistrictTowns: savedDistrictTowns,
+    savedAreas: savedAreas
   };
 
   const dataStr = 'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(exportPayload, null, 2));
@@ -7197,6 +7257,7 @@ function exportDataJSON() {
   document.body.appendChild(downloadAnchor);
   downloadAnchor.click();
   downloadAnchor.remove();
+  showNotification('Backup JSON exported successfully!');
 }
 
 function triggerImportDataJSON() {
@@ -7240,6 +7301,18 @@ function handleImportDataJSON(event) {
       if (Array.isArray(data.bagSizes) && data.bagSizes.length > 0) {
         bagSizes = data.bagSizes;
       }
+      if (data.savedDistrictTowns && typeof data.savedDistrictTowns === 'object') {
+        savedDistrictTowns = data.savedDistrictTowns;
+        try {
+          localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
+        } catch (err) {}
+      }
+      if (Array.isArray(data.savedAreas)) {
+        savedAreas = data.savedAreas;
+        try {
+          localStorage.setItem(STORAGE_SAVED_AREAS, JSON.stringify(savedAreas));
+        } catch (err) {}
+      }
       if (data.schemeEffectiveDate && /^\d{4}-\d{2}-\d{2}$/.test(data.schemeEffectiveDate.trim())) {
         incentiveSchemeEffectiveDate = data.schemeEffectiveDate.trim();
         try {
@@ -7253,6 +7326,7 @@ function handleImportDataJSON(event) {
       populateCustomerDropdown();
       populateProductDropdown();
       populateBagSizesDropdown();
+      populateSavedAreasDatalists();
       renderCustomersList();
       if (typeof renderProductsManageList === 'function') renderProductsManageList();
       if (typeof renderBagSizesBadges === 'function') renderBagSizesBadges();
@@ -8049,13 +8123,21 @@ function closeConfirmModal() {
 function updateTrashBadges() {
   const count = trashList.length;
   const sideBadge = document.getElementById('trashCountBadge');
+  const sideSettingsIndicator = document.getElementById('settingsTrashCountIndicator');
   const topBadge = document.getElementById('topTrashCountBadge');
   const modalBadge = document.getElementById('trashModalTotalBadge');
+  const settingsBadge = document.getElementById('settingsTrashCountBadge');
 
   if (sideBadge) {
     sideBadge.textContent = count;
     if (count > 0) sideBadge.classList.remove('hidden');
     else sideBadge.classList.add('hidden');
+  }
+
+  if (sideSettingsIndicator) {
+    sideSettingsIndicator.textContent = count;
+    if (count > 0) sideSettingsIndicator.classList.remove('hidden');
+    else sideSettingsIndicator.classList.add('hidden');
   }
 
   if (topBadge) {
@@ -8066,6 +8148,22 @@ function updateTrashBadges() {
 
   if (modalBadge) {
     modalBadge.textContent = `${count} ${count === 1 ? 'Item' : 'Items'}`;
+  }
+
+  if (settingsBadge) {
+    settingsBadge.textContent = `${count} ${count === 1 ? 'Item' : 'Items'} in Bin`;
+    if (count > 0) {
+      settingsBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300';
+    } else {
+      settingsBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200';
+    }
+  }
+
+  const subText = document.getElementById('settingsTrashSubtext');
+  if (subText) {
+    subText.textContent = count > 0
+      ? `${count} items safely preserved in trash. You can restore them anytime.`
+      : 'Recycle Bin is currently empty. Deleted orders, customers or products will appear here.';
   }
 }
 
@@ -8483,6 +8581,8 @@ window.closeInvoiceModal = closeInvoiceModal;
 window.showIncentiveDetails = showIncentiveDetails;
 window.closeIncentiveDetails = closeIncentiveDetails;
 window.updateSchemeEffectiveDate = updateSchemeEffectiveDate;
+window.updateSchemeEffectiveDateFromSettings = updateSchemeEffectiveDateFromSettings;
+window.updateSettingsDataTab = updateSettingsDataTab;
 window.formatSchemeDate = formatSchemeDate;
 window.openSettingsModal = openSettingsModal;
 window.closeSettingsModal = closeSettingsModal;
