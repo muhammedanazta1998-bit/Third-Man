@@ -13,23 +13,38 @@ function isSpecialBrand(productName) {
          p.includes('jasmine');
 }
 
-const DEMO_SAMPLE_PRODUCT_IDS = [
-  'p1', 'p2', 'p3', 'p4',
-  'sp_mg', 'sp_mgold', 'sp_jas',
-  'p_mg', 'p_mgold', 'p_jas'
+// User's 6 official confirmed rice varieties
+const USER_CONFIRMED_PRODUCTS = [
+  { id: 'prod_mg', name: 'Mohabbath Green', category: 'Kaima', bagSize: 26, defaultRateKg: 98 },
+  { id: 'prod_mgold', name: 'Mohabbath Gold', category: 'Kaima', bagSize: 26, defaultRateKg: 104 },
+  { id: 'prod_jas', name: 'Jasmine', category: 'Basmati', bagSize: 30, defaultRateKg: 112 },
+  { id: 'prod_dcw', name: 'DC White', category: 'Kolam', bagSize: 26, defaultRateKg: 90 },
+  { id: 'prod_dcg', name: 'DC Gold', category: 'Kolam', bagSize: 26, defaultRateKg: 92 },
+  { id: 'prod_jmt', name: 'JMT Rose 2nd', category: 'Other', bagSize: 26, defaultRateKg: 88 }
 ];
+
+function isUserConfirmedProduct(p) {
+  if (!p) return false;
+  const name = String(typeof p === 'string' ? p : (p.name || p.productName || '')).trim().toLowerCase();
+  return USER_CONFIRMED_PRODUCTS.some(u => u.name.toLowerCase() === name);
+}
+
+const DEMO_SAMPLE_PRODUCT_IDS = ['p1', 'p2', 'p3', 'p4'];
 
 const DEMO_SAMPLE_PRODUCT_NAMES = [
   'wayanadan kaima rice',
+  'wayanadan kaima',
+  'wayanadan',
   'jeerakasala rice',
+  'jeerakasala',
   'royal 1121 sella basmati',
+  'royal 1121 sella',
+  '1121 sella basmati',
+  'royal basmati',
   'premium long grain basmati',
-  'mohabbath green kaima rice',
-  'mohabbath gold biriyani rice',
-  'jasmine premium basmati rice',
-  'mohabbath green',
-  'mohabbath gold',
-  'jasmine premium'
+  'long grain basmati',
+  'biriyani rice',
+  'rice variety'
 ];
 
 function getDeletedProductKeys() {
@@ -66,12 +81,13 @@ function unrecordDeletedProductKey(id, name) {
 
 function isDemoSampleProduct(p) {
   if (!p) return false;
+  if (isUserConfirmedProduct(p)) return false; // NEVER filter user's official products!
   const deletedKeys = getDeletedProductKeys();
   if (p.id && (DEMO_SAMPLE_PRODUCT_IDS.includes(p.id) || deletedKeys.includes(p.id))) return true;
   const name = String(typeof p === 'string' ? p : (p.name || p.productName || '')).trim().toLowerCase();
   if (!name) return false;
   if (deletedKeys.includes(name)) return true;
-  return DEMO_SAMPLE_PRODUCT_NAMES.some(demo => name === demo || (demo.length > 8 && name.includes(demo)));
+  return DEMO_SAMPLE_PRODUCT_NAMES.some(demo => name === demo || name.startsWith('rice variety') || (demo.length > 8 && name.includes(demo)));
 }
 
 function isUnwantedDummyProduct(p) {
@@ -80,13 +96,14 @@ function isUnwantedDummyProduct(p) {
 
 function detectCategoryFromName(name) {
   const lower = String(name || '').toLowerCase();
-  if (lower.includes('kaima') || lower.includes('jeerakasala') || lower.includes('jeera')) return 'Kaima';
-  if (lower.includes('kolam')) return 'Kolam';
-  if (lower.includes('basmati') || lower.includes('1121') || lower.includes('sella') || lower.includes('long grain')) return 'Basmati';
+  if (lower.includes('mohabbath') || lower.includes('kaima') || lower.includes('jeera')) return 'Kaima';
+  if (lower.includes('dc white') || lower.includes('dc gold') || lower.includes('kolam')) return 'Kolam';
+  if (lower.includes('jasmine') || lower.includes('basmati') || lower.includes('1121') || lower.includes('sella')) return 'Basmati';
+  if (lower.includes('jmt') || lower.includes('rose') || lower.includes('matta')) return 'Other';
   return 'Other';
 }
 
-const DEFAULT_PRODUCTS = [];
+const DEFAULT_PRODUCTS = USER_CONFIRMED_PRODUCTS;
 const DEFAULT_BAG_SIZES = [5, 10, 25, 26, 30, 50];
 
 // ==================== PRODUCT IMAGE HELPERS ====================
@@ -357,34 +374,54 @@ function loadDataFromStorage() {
       }
     }
 
-    products = (loadedProducts && loadedProducts.length > 0)
-      ? loadedProducts.filter(p => !isUnwantedDummyProduct(p))
-      : DEFAULT_PRODUCTS.filter(p => !isUnwantedDummyProduct(p));
+    // Merge existing loaded products with USER_CONFIRMED_PRODUCTS
+    // If a confirmed product already exists in loadedProducts, preserve user's custom rate, bag size, image, etc.
+    const mergedProducts = [];
+    USER_CONFIRMED_PRODUCTS.forEach(baseProd => {
+      const existing = loadedProducts && loadedProducts.find(p => {
+        const pName = (p.name || '').trim().toLowerCase();
+        return pName === baseProd.name.toLowerCase() || p.id === baseProd.id;
+      });
+      if (existing) {
+        mergedProducts.push({
+          ...baseProd,
+          ...existing,
+          id: existing.id || baseProd.id,
+          name: baseProd.name,
+          category: existing.category || baseProd.category,
+          bagSize: parseFloat(existing.bagSize) || baseProd.bagSize,
+          defaultRateKg: parseFloat(existing.defaultRateKg) || parseFloat(existing.rateKg) || baseProd.defaultRateKg,
+          imageUrl: existing.imageUrl || ''
+        });
+      } else {
+        mergedProducts.push({ ...baseProd });
+      }
+    });
+
+    // Also include any other custom products the user may have added via form
+    if (loadedProducts) {
+      loadedProducts.forEach(lp => {
+        if (!isDemoSampleProduct(lp)) {
+          const lpName = (lp.name || '').trim().toLowerCase();
+          const alreadyIn = mergedProducts.some(mp => mp.name.toLowerCase() === lpName || mp.id === lp.id);
+          if (!alreadyIn) {
+            mergedProducts.push(lp);
+          }
+        }
+      });
+    }
+
+    products = mergedProducts.filter(p => !isDemoSampleProduct(p));
 
     // Normalize each product to ensure category, bagSize, and defaultRateKg exist
     products.forEach((p, idx) => {
       if (!p.id) p.id = 'p_' + (idx + 1);
-      if (!p.name) p.name = 'Rice Variety ' + (idx + 1);
       if (!p.category) {
         p.category = detectCategoryFromName(p.name);
       }
-      if (!p.bagSize) {
-        p.bagSize = 26;
-      } else {
-        p.bagSize = parseFloat(p.bagSize) || 26;
-      }
-      if (p.defaultRateKg === undefined) {
-        p.defaultRateKg = parseFloat(p.rateKg) || 90;
-      } else {
-        p.defaultRateKg = parseFloat(p.defaultRateKg) || 90;
-      }
+      p.bagSize = parseFloat(p.bagSize) || 26;
+      p.defaultRateKg = parseFloat(p.defaultRateKg) || 90;
     });
-
-    // HARVEST USER'S CUSTOM PRODUCTS FROM ORDERS HISTORY
-    restoreProductsFromOrdersHistory();
-
-    // Final filter against any unwanted dummy products
-    products = products.filter(p => !isUnwantedDummyProduct(p));
 
     // Save cleaned product list to prevent dummy restoration
     try {
@@ -586,30 +623,30 @@ function purgeUnwantedDummyProducts(syncToCloud = true) {
   if (!Array.isArray(products)) products = [];
 
   // 1. Remove dummy products
-  products = products.filter(p => !isUnwantedDummyProduct(p));
+  products = products.filter(p => !isDemoSampleProduct(p));
 
-  // 2. Harvest any user products from orders
-  restoreProductsFromOrdersHistory();
+  // 2. Ensure all 6 user-confirmed products exist
+  USER_CONFIRMED_PRODUCTS.forEach(baseProd => {
+    const exists = products.some(p => (p.name || '').trim().toLowerCase() === baseProd.name.toLowerCase());
+    if (!exists) {
+      products.push({ ...baseProd });
+    }
+  });
 
   // 3. Final filter
-  products = products.filter(p => !isUnwantedDummyProduct(p));
+  products = products.filter(p => !isDemoSampleProduct(p));
 
-  // 4. If products is completely empty, restore standard clean defaults
-  if (products.length === 0) {
-    products = DEFAULT_PRODUCTS.filter(p => !isUnwantedDummyProduct(p));
-  }
-
-  // 5. Save to localStorage
+  // 4. Save to localStorage
   try {
     localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
     localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
   } catch (e) {}
 
-  // 6. Update UI
+  // 5. Update UI
   populateProductDropdown();
   if (typeof renderProductsManageList === 'function') renderProductsManageList();
 
-  // 7. Sync cleaned config to cloud
+  // 6. Sync cleaned config to cloud
   if (syncToCloud && isFirestoreInitialized && db) {
     syncCloudConfig();
   }
@@ -617,25 +654,23 @@ function purgeUnwantedDummyProducts(syncToCloud = true) {
 
 // 1-Click Action to Clean Demo Products
 function cleanAllDemoProductsPrompt() {
-  const demoCount = products.filter(p => isDemoSampleProduct(p)).length;
-  if (demoCount === 0) {
-    showNotification('✓ All sample products are already cleaned! Only your added products are present.');
-    return;
-  }
-
   showConfirmModal({
-    title: 'Remove All Sample / Demo Products?',
-    message: `Found <strong>${demoCount}</strong> sample/demo products (such as Wayanadan Kaima, Jeerakasala, Basmati demo varieties). Do you want to remove them and keep <strong>ONLY</strong> the products you added?`,
-    hint: '🛡️ Any products you added or used in your orders will be 100% safely preserved.',
-    confirmText: 'Remove Demo Products',
-    confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
+    title: 'Reset to My 6 Confirmed Products?',
+    message: `This will clear all unwanted/sample varieties and lock the catalog to your 6 official rice products:
+      <ul class="list-disc pl-5 mt-2 space-y-1 text-slate-700 font-bold">
+        <li>Mohabbath Green [Kaima • 26kg]</li>
+        <li>Mohabbath Gold [Kaima • 26kg]</li>
+        <li>Jasmine [Basmati • 30kg]</li>
+        <li>DC White [Kolam • 26kg]</li>
+        <li>DC Gold [Kolam • 26kg]</li>
+        <li>JMT Rose 2nd [Other • 26kg]</li>
+      </ul>`,
+    hint: '🛡️ Any custom rates or images you set for these products will be preserved.',
+    confirmText: 'Keep Only My Products',
+    confirmClass: 'bg-blue-600 hover:bg-blue-700 text-white',
     onConfirm: () => {
-      products = products.filter(p => !isDemoSampleProduct(p));
-      saveDataToStorage();
-      populateProductDropdown();
-      if (typeof renderProductsManageList === 'function') renderProductsManageList();
-      if (typeof syncCloudConfig === 'function') syncCloudConfig();
-      showNotification('✓ Sample products removed! Only your custom products are now in the catalog.');
+      purgeUnwantedDummyProducts(true);
+      showNotification('✓ Products catalog locked to your 6 official varieties!');
     }
   });
 }
@@ -757,8 +792,7 @@ function setupFirestoreRealtimeListeners() {
       // Automatically harvest any customer from orders into customer directory
       extractCustomersFromOrdersIfMissing(true);
 
-      // Automatically harvest products from cloud orders if missing
-      restoreProductsFromOrdersHistory();
+      // Ensure products catalog remains clean and verified
       purgeUnwantedDummyProducts(false);
 
       updateDashboard();
@@ -825,7 +859,7 @@ function setupFirestoreRealtimeListeners() {
       const cfg = doc.data();
       if (Array.isArray(cfg.products) && cfg.products.length > 0) {
         // Filter out any unwanted dummy products from cloud config
-        const cleanCloudProducts = cfg.products.filter(p => !isUnwantedDummyProduct(p));
+        const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
 
         // Merge with existing user products so local additions are never wiped
         cleanCloudProducts.forEach(cp => {
@@ -834,11 +868,16 @@ function setupFirestoreRealtimeListeners() {
           }
         });
 
-        // Harvest any products from orders history
-        restoreProductsFromOrdersHistory();
+        // Ensure 6 confirmed products exist
+        USER_CONFIRMED_PRODUCTS.forEach(baseProd => {
+          const exists = products.some(p => (p.name || '').trim().toLowerCase() === baseProd.name.toLowerCase());
+          if (!exists) {
+            products.push({ ...baseProd });
+          }
+        });
 
         // Purge dummy products
-        products = products.filter(p => !isUnwantedDummyProduct(p));
+        products = products.filter(p => !isDemoSampleProduct(p));
 
         localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
         localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
@@ -5085,7 +5124,7 @@ function setProductCategoryFilter(category) {
   currentProductCategoryFilter = category;
 
   // Update button active styling
-  ['all', 'Kaima', 'Kolam', 'Basmati'].forEach(cat => {
+  ['all', 'Kaima', 'Kolam', 'Basmati', 'Other'].forEach(cat => {
     const btn = document.getElementById(`catFilter${cat}`);
     if (btn) {
       if (cat.toLowerCase() === category.toLowerCase()) {
