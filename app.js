@@ -144,6 +144,12 @@ function initApp() {
     // Load and apply App Brand Logo
     loadAppLogo();
 
+    // Restore or initialize active view (overview vs sales-register)
+    try {
+      const savedActiveView = localStorage.getItem('biriyani_rice_active_view') || 'overview';
+      switchMainView(savedActiveView);
+    } catch (e) {}
+
     // Initialize Lucide icons safely
     if (window.lucide && typeof lucide.createIcons === 'function') {
       lucide.createIcons();
@@ -1536,6 +1542,11 @@ function openNewOrderModal(preselectedCustomerId = null) {
     const notesEl = document.getElementById('orderNotes');
     if (notesEl) notesEl.value = '';
 
+    // Clear customer search and pill
+    clearCustomerSearch();
+    const pill = document.getElementById('selectedCustomerPill');
+    if (pill) pill.classList.add('hidden');
+
     // 6. Reset items
     orderItems = [];
     addOrderItemRow();
@@ -1581,8 +1592,12 @@ function openEditOrderModal(orderId) {
     if (delStatus) delStatus.value = order.deliveryStatus || 'Normal';
 
     clearCustomerSearch();
+    const custName = getCustomerName(order.customer);
+    const searchInput = document.getElementById('custSearchInput');
+    if (searchInput) searchInput.value = custName;
     const nameEl = document.getElementById('customerName');
-    if (nameEl) nameEl.value = getCustomerName(order.customer);
+    if (nameEl) nameEl.value = custName;
+    updateCustomerPill(custName, `${getCustomerTown(order.customer) || getCustomerDistrict(order.customer)} • ${getCustomerCategory(order.customer) || 'Caterer'}`);
     const catEl = document.getElementById('customerCategory');
     if (catEl) catEl.value = getCustomerCategory(order.customer) || 'Caterer';
 
@@ -1963,11 +1978,20 @@ function calculateOrderTotals() {
 // ==================== CUSTOMER AUTO-COMPLETE ====================
 
 function onCustomerSearchInput(query) {
+  const nameEl = document.getElementById('customerName');
+  if (nameEl) nameEl.value = query;
+
   const clearBtn = document.getElementById('clearCustSearchBtn');
   if (clearBtn) {
     if (query && query.trim()) clearBtn.classList.remove('hidden');
     else clearBtn.classList.add('hidden');
   }
+
+  const pill = document.getElementById('selectedCustomerPill');
+  if (pill && (!query || !query.trim())) {
+    pill.classList.add('hidden');
+  }
+
   showCustomerSearchDropdown(query);
 }
 
@@ -2017,7 +2041,7 @@ function showCustomerSearchDropdown(filterQuery = '') {
           <div class="text-xs text-slate-500 mb-2">No existing customer matching "<strong>${escapedQuery}</strong>"</div>
           <button type="button" onclick="quickCreateCustomerFromSearch(decodeURIComponent('${encodedQuery}'))" class="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-sm active:scale-95">
             <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
-            <span>+ Use as New Customer</span>
+            <span>+ Add as New Customer</span>
           </button>
         </div>
       `;
@@ -2073,7 +2097,6 @@ function quickCreateCustomerFromSearch(name) {
   const nameEl = document.getElementById('customerName');
   const searchInput = document.getElementById('custSearchInput');
   const dropdown = document.getElementById('custSearchDropdown');
-  const ownerNameEl = document.getElementById('customerOwnerName');
   const clearBtn = document.getElementById('clearCustSearchBtn');
 
   if (nameEl) nameEl.value = name;
@@ -2081,8 +2104,9 @@ function quickCreateCustomerFromSearch(name) {
   if (clearBtn) clearBtn.classList.remove('hidden');
   if (dropdown) dropdown.classList.add('hidden');
 
+  updateCustomerPill(name, 'New Customer (Unsaved)');
   updateCustomerHistoryAlert('');
-  if (ownerNameEl) ownerNameEl.focus();
+  openQuickNewCustomerModal();
 }
 
 function hideCustomerSearchDropdown() {
@@ -2095,10 +2119,30 @@ function hideCustomerSearchDropdown() {
 function clearCustomerSearch() {
   const searchInput = document.getElementById('custSearchInput');
   if (searchInput) searchInput.value = '';
+  const nameEl = document.getElementById('customerName');
+  if (nameEl) nameEl.value = '';
   const clearBtn = document.getElementById('clearCustSearchBtn');
   if (clearBtn) clearBtn.classList.add('hidden');
   const dropdown = document.getElementById('custSearchDropdown');
   if (dropdown) dropdown.classList.add('hidden');
+  const pill = document.getElementById('selectedCustomerPill');
+  if (pill) pill.classList.add('hidden');
+  updateCustomerHistoryAlert('');
+}
+
+function updateCustomerPill(name, meta) {
+  const pill = document.getElementById('selectedCustomerPill');
+  const nameText = document.getElementById('selectedCustomerNameText');
+  const metaText = document.getElementById('selectedCustomerMetaText');
+
+  if (!pill) return;
+  if (name && name.trim()) {
+    if (nameText) nameText.textContent = name;
+    if (metaText) metaText.textContent = meta || 'Customer';
+    pill.classList.remove('hidden');
+  } else {
+    pill.classList.add('hidden');
+  }
 }
 
 function selectCustomerFromSearch(custId) {
@@ -2147,11 +2191,124 @@ function selectCustomerFromSearch(custId) {
 
   if (searchInput) searchInput.value = cust.name || '';
   if (clearBtn) clearBtn.classList.remove('hidden');
-
   if (dropdown) dropdown.classList.add('hidden');
 
+  updateCustomerPill(cust.name, `${getCustomerTown(cust) || getCustomerDistrict(cust)} • ${cust.category || 'Caterer'}`);
   updateCustomerHistoryAlert(cust.name);
   refreshItemRatesForCustomer(cust.name);
+}
+
+function openQuickNewCustomerModal(isEdit = false) {
+  const modal = document.getElementById('quickNewCustomerModal');
+  if (!modal) return;
+
+  const currentName = (document.getElementById('customerName')?.value || document.getElementById('custSearchInput')?.value || '').trim();
+  const quickNameInput = document.getElementById('quickCustNameInput');
+  if (quickNameInput) quickNameInput.value = currentName;
+
+  const titleEl = document.getElementById('quickCustModalTitle');
+  if (titleEl) {
+    titleEl.textContent = isEdit ? 'Edit Customer Details' : 'Add New Customer';
+  }
+
+  modal.classList.remove('hidden');
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function closeQuickNewCustomerModal() {
+  const modal = document.getElementById('quickNewCustomerModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function onQuickCustNameInput(val) {
+  const nameEl = document.getElementById('customerName');
+  const searchInput = document.getElementById('custSearchInput');
+  if (nameEl) nameEl.value = val;
+  if (searchInput) searchInput.value = val;
+}
+
+function saveQuickCustomerAndApply() {
+  const quickName = (document.getElementById('quickCustNameInput')?.value || '').trim();
+  if (!quickName) {
+    alert('Please enter a Customer or Shop Name.');
+    return;
+  }
+
+  const nameEl = document.getElementById('customerName');
+  const searchInput = document.getElementById('custSearchInput');
+  if (nameEl) nameEl.value = quickName;
+  if (searchInput) searchInput.value = quickName;
+
+  const town = document.getElementById('orderTownInput')?.value.trim() || '';
+  const dist = document.getElementById('orderDistrictSelect')?.value || 'Ernakulam';
+  const cat = document.getElementById('customerCategory')?.value || 'Caterer';
+
+  updateCustomerPill(quickName, `${town || dist} • ${cat}`);
+
+  const saveCheck = document.getElementById('saveCustomerCheckbox');
+  if (!saveCheck || saveCheck.checked) {
+    const ownerName = document.getElementById('customerOwnerName')?.value.trim() || '';
+    const ownerPhone = cleanPhoneNumber(document.getElementById('customerOwnerPhone')?.value.trim() || '');
+    const staffName = document.getElementById('customerStaffName')?.value.trim() || '';
+    const staffRole = document.getElementById('customerStaffRole')?.value || 'Chef / Cook';
+    const staffPhone = cleanPhoneNumber(document.getElementById('customerStaffPhone')?.value.trim() || '');
+    const landmark = document.getElementById('orderLandmarkInput')?.value.trim() || '';
+    const panchayath = document.getElementById('orderPanchayathInput')?.value.trim() || '';
+
+    let locParts = [];
+    if (landmark) locParts.push(landmark);
+    if (town) locParts.push(town);
+    if (dist && dist.toLowerCase() !== town.toLowerCase()) locParts.push(dist);
+    if (panchayath) locParts.push(`(${panchayath})`);
+    const formattedLoc = locParts.length > 0 ? locParts.join(', ') : dist;
+
+    let existingIndex = customers.findIndex(c => c.name && c.name.toLowerCase() === quickName.toLowerCase());
+    if (existingIndex !== -1) {
+      customers[existingIndex] = {
+        ...customers[existingIndex],
+        category: cat,
+        district: dist,
+        town: town,
+        landmark: landmark,
+        panchayath: panchayath,
+        location: formattedLoc,
+        ownerName: ownerName || customers[existingIndex].ownerName,
+        ownerPhone: ownerPhone || customers[existingIndex].ownerPhone,
+        staffName: staffName || customers[existingIndex].staffName,
+        staffRole: staffRole || customers[existingIndex].staffRole,
+        staffPhone: staffPhone || customers[existingIndex].staffPhone,
+        phone: ownerPhone || staffPhone || customers[existingIndex].phone || 'Nil'
+      };
+      syncCloudCustomer(customers[existingIndex]);
+    } else {
+      const newCust = {
+        id: `CUST-${Date.now()}`,
+        name: quickName,
+        category: cat,
+        district: dist,
+        town: town,
+        landmark: landmark,
+        panchayath: panchayath,
+        location: formattedLoc,
+        ownerName: ownerName,
+        ownerPhone: ownerPhone,
+        staffName: staffName,
+        staffRole: staffRole,
+        staffPhone: staffPhone,
+        phone: ownerPhone || staffPhone || 'Nil'
+      };
+      customers.push(newCust);
+      syncCloudCustomer(newCust);
+    }
+    saveDataToStorage();
+    populateCustomerDropdown();
+  }
+
+  closeQuickNewCustomerModal();
+  showNotification(`Customer '${quickName}' applied to order!`);
 }
 
 function onCustomerNameManualChange() {
@@ -3448,6 +3605,10 @@ function updateDashboard() {
     // 5. Orders Register Table
     renderOrdersTable();
 
+    // 5.1 Update Sidebar Order Count Badge
+    const sideBadge = document.getElementById('sidebarOrderCountBadge');
+    if (sideBadge) sideBadge.textContent = orders.length;
+
     // 6. Update Leaderboards if modal is open
     const lbModal = document.getElementById('leaderboardModal');
     if (lbModal && !lbModal.classList.contains('hidden')) {
@@ -3661,6 +3822,60 @@ function updateCharts(filteredOrders) {
   }
 }
 
+// ==================== MAIN VIEW SWITCHING (OVERVIEW vs SALES REGISTER) ====================
+
+let currentMainView = 'overview'; // 'overview' or 'sales-register'
+
+function switchMainView(viewName) {
+  currentMainView = viewName || 'overview';
+
+  const overviewView = document.getElementById('viewOverview');
+  const salesRegisterView = document.getElementById('viewSalesRegister');
+  const navBtnOverview = document.getElementById('navBtnOverview');
+  const navBtnSalesRegister = document.getElementById('navBtnSalesRegister');
+  const mainTitle = document.getElementById('mainViewHeaderTitle');
+  const mainSubtitle = document.getElementById('mainViewHeaderSubtitle');
+
+  if (currentMainView === 'sales-register') {
+    if (overviewView) overviewView.classList.add('hidden');
+    if (salesRegisterView) salesRegisterView.classList.remove('hidden');
+
+    if (mainTitle) mainTitle.textContent = 'SALES REGISTER';
+    if (mainSubtitle) mainSubtitle.textContent = 'Order Entries & Dispatch Ledger';
+
+    if (navBtnOverview) {
+      navBtnOverview.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition';
+    }
+    if (navBtnSalesRegister) {
+      navBtnSalesRegister.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition group';
+    }
+
+    renderOrdersTable();
+  } else {
+    // 'overview'
+    if (overviewView) overviewView.classList.remove('hidden');
+    if (salesRegisterView) salesRegisterView.classList.add('hidden');
+
+    if (mainTitle) mainTitle.textContent = 'OVERVIEW';
+    if (mainSubtitle) mainSubtitle.textContent = 'Performance at a Glance';
+
+    if (navBtnOverview) {
+      navBtnOverview.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition';
+    }
+    if (navBtnSalesRegister) {
+      navBtnSalesRegister.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group';
+    }
+  }
+
+  try {
+    localStorage.setItem('biriyani_rice_active_view', currentMainView);
+  } catch (e) {}
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
 // ==================== ORDERS TABLE ====================
 
 function renderOrdersTable() {
@@ -3670,15 +3885,38 @@ function renderOrdersTable() {
 
   const filteredOrders = getFilteredOrders();
   const searchQuery = (document.getElementById('orderSearchInput')?.value || '').toLowerCase();
-  const deliveryFilter = document.getElementById('deliveryStatusFilter')?.value || 'all';
   const orderAreaFilterVal = (document.getElementById('orderAreaFilterSelect')?.value || 'all').toLowerCase();
+  const orderDateFilterVal = document.getElementById('orderDateFilter')?.value || '';
+  const orderAmountFilterVal = document.getElementById('orderAmountFilterSelect')?.value || 'all';
+  const orderSortVal = document.getElementById('orderSortSelect')?.value || 'date-desc';
 
-  const displayOrders = filteredOrders.filter(o => {
-    if (deliveryFilter !== 'all') {
-      const orderDelivery = o.deliveryStatus || 'Normal';
-      if (orderDelivery !== deliveryFilter) return false;
+  // Toggle clear date button visibility
+  const clearDateBtn = document.getElementById('clearDateBtn');
+  if (clearDateBtn) {
+    if (orderDateFilterVal) {
+      clearDateBtn.classList.remove('hidden');
+    } else {
+      clearDateBtn.classList.add('hidden');
+    }
+  }
+
+  let displayOrders = filteredOrders.filter(o => {
+    // Specific Date Filter
+    if (orderDateFilterVal) {
+      const orderDateStr = String(o.date || '').split('T')[0];
+      if (orderDateStr !== orderDateFilterVal) return false;
     }
 
+    // Sale Amount Filter
+    if (orderAmountFilterVal !== 'all') {
+      const amt = parseFloat(o.totalAmount) || 0;
+      if (orderAmountFilterVal === 'above-1lakh' && amt < 100000) return false;
+      if (orderAmountFilterVal === '50k-1lakh' && (amt < 50000 || amt >= 100000)) return false;
+      if (orderAmountFilterVal === '25k-50k' && (amt < 25000 || amt >= 50000)) return false;
+      if (orderAmountFilterVal === 'below-25k' && amt >= 25000) return false;
+    }
+
+    // Area filter
     if (orderAreaFilterVal !== 'all') {
       const custArea = getCustomerArea(o.customer).toLowerCase();
       const custLoc = getCustomerLocation(o.customer).toLowerCase();
@@ -3713,7 +3951,60 @@ function renderOrdersTable() {
     return true;
   });
 
+  // Sorting: Default is date-desc (newest order on top)
+  displayOrders.sort((a, b) => {
+    if (orderSortVal === 'date-asc') {
+      const tA = new Date(a.date || 0).getTime();
+      const tB = new Date(b.date || 0).getTime();
+      if (tA !== tB) return tA - tB;
+      const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      return numA - numB;
+    } else if (orderSortVal === 'amount-desc') {
+      const amtA = parseFloat(a.totalAmount) || 0;
+      const amtB = parseFloat(b.totalAmount) || 0;
+      if (amtB !== amtA) return amtB - amtA;
+      return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+    } else if (orderSortVal === 'amount-asc') {
+      const amtA = parseFloat(a.totalAmount) || 0;
+      const amtB = parseFloat(b.totalAmount) || 0;
+      if (amtA !== amtB) return amtA - amtB;
+      return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+    } else if (orderSortVal === 'qty-desc') {
+      const qtyA = (a.bagQty !== undefined) ? a.bagQty : (a.items || []).reduce((s, i) => s + (i.bagQty || 0), 0);
+      const qtyB = (b.bagQty !== undefined) ? b.bagQty : (b.items || []).reduce((s, i) => s + (i.bagQty || 0), 0);
+      if (qtyB !== qtyA) return qtyB - qtyA;
+      return new Date(b.date || 0).getTime() - new Date(a.date || 0).getTime();
+    } else {
+      // Default: date-desc (Newest order always on top)
+      const tA = new Date(a.date || 0).getTime();
+      const tB = new Date(b.date || 0).getTime();
+      if (tB !== tA) return tB - tA;
+      const numA = parseInt(String(a.id || '').replace(/\D/g, ''), 10) || 0;
+      const numB = parseInt(String(b.id || '').replace(/\D/g, ''), 10) || 0;
+      return numB - numA;
+    }
+  });
+
   tbody.innerHTML = '';
+
+  // Update header summary mini stats
+  const regCountEl = document.getElementById('registerOrdersCountBadge');
+  if (regCountEl) regCountEl.textContent = `${displayOrders.length} Orders`;
+
+  const totalFilteredBags = displayOrders.reduce((sum, o) => {
+    return sum + ((o.bagQty !== undefined) ? (parseFloat(o.bagQty) || 0) : (o.items || []).reduce((is, it) => is + (parseFloat(it.bagQty) || 0), 0));
+  }, 0);
+  const totalFilteredSale = displayOrders.reduce((sum, o) => sum + (parseFloat(o.totalAmount) || 0), 0);
+
+  const regBagsEl = document.getElementById('registerTotalBagsText');
+  if (regBagsEl) regBagsEl.textContent = `${Math.round(totalFilteredBags).toLocaleString('en-IN')} Bags`;
+
+  const regSaleEl = document.getElementById('registerTotalSaleText');
+  if (regSaleEl) regSaleEl.textContent = `₹${Math.round(totalFilteredSale).toLocaleString('en-IN')}`;
+
+  const sideBadge = document.getElementById('sidebarOrderCountBadge');
+  if (sideBadge) sideBadge.textContent = orders.length;
 
   if (displayOrders.length === 0) {
     if (emptyState) emptyState.classList.remove('hidden');
@@ -3725,11 +4016,6 @@ function renderOrdersTable() {
   displayOrders.forEach(o => {
     const tr = document.createElement('tr');
     tr.className = 'hover:bg-slate-50 transition border-b border-slate-100';
-
-    const isUrgent = (o.deliveryStatus === 'Urgent');
-    const deliveryBadge = isUrgent
-      ? '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-rose-100 text-rose-800 border border-rose-200">⚡ Urgent</span>'
-      : '<span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">🚚 Normal</span>';
 
     const items = (o.items && o.items.length > 0) ? o.items : [
       {
@@ -3745,7 +4031,7 @@ function renderOrdersTable() {
     let itemsHtml = '';
     const hasSpecialBrand = items.some(it => isSpecialBrand(it.productName));
     const specialBrandTag = hasSpecialBrand
-      ? '<span class="px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-bold inline-flex items-center gap-0.5">⭐ Bonus Brand</span>'
+      ? '<span class="px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-bold inline-flex items-center gap-0.5">⭐ Bonus</span>'
       : '';
 
     if (items.length === 1) {
@@ -3777,88 +4063,36 @@ function renderOrdersTable() {
 
     const totalBagsCount = (o.bagQty !== undefined) ? o.bagQty : items.reduce((s, i) => s + (i.bagQty || 0), 0);
 
-    const custCat = getCustomerCategory(o.customer);
-    const catBadge = custCat ? getCustomerCategoryBadge(custCat) : '';
-
-    const ownerName = getCustomerOwnerName(o.customer);
-    const ownerPhone = getCustomerOwnerPhone(o.customer);
-    const staffName = getCustomerStaffName(o.customer);
-    const staffRole = getCustomerStaffRole(o.customer);
-    const staffPhone = getCustomerStaffPhone(o.customer);
-    const mainPhone = getCustomerPhone(o.customer);
-
-    let contactSnippets = [];
-    if (ownerName || ownerPhone) {
-      contactSnippets.push(`👑 <span class="text-slate-700 font-medium">${escapeHtml(ownerName || 'Owner')}</span>${ownerPhone ? ` (<a href="tel:${escapeHtml(ownerPhone)}" class="font-mono text-blue-700 hover:underline font-bold">${escapeHtml(ownerPhone)}</a>)` : ''}`);
-    }
-    if (staffName || staffPhone) {
-      contactSnippets.push(`👨‍🍳 <span class="text-slate-500 font-medium text-[10px]">${escapeHtml(staffRole || 'Staff')}:</span> <span class="text-slate-700 font-medium">${escapeHtml(staffName || 'Staff')}</span>${staffPhone ? ` (<a href="tel:${escapeHtml(staffPhone)}" class="font-mono text-indigo-700 hover:underline font-bold">${escapeHtml(staffPhone)}</a>)` : ''}`);
-    }
-    if (contactSnippets.length === 0 && mainPhone !== 'Nil') {
-      contactSnippets.push(`📱 <a href="tel:${escapeHtml(mainPhone)}" class="font-mono text-slate-700 font-bold hover:underline">${escapeHtml(mainPhone)}</a>`);
-    }
-
-    const contactsHtml = contactSnippets.length > 0
-      ? `<div class="text-[11px] text-slate-500 mt-0.5 space-y-0.5">${contactSnippets.join('<br>')}</div>`
-      : '';
-
-    const oDist = getCustomerDistrict(o.customer);
-    const oTown = getCustomerTown(o.customer);
-    const oLandmark = getCustomerLandmark(o.customer);
-    const oPanch = getCustomerPanchayath(o.customer);
-
-    let oLocChips = [];
-    if (oLandmark) {
-      oLocChips.push(`<span>📍 ${escapeHtml(oLandmark)}</span>`);
-    }
-    if (oTown) {
-      oLocChips.push(`<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">🏙️ ${escapeHtml(oTown)}${oDist && oDist.toLowerCase() !== oTown.toLowerCase() ? `, ${escapeHtml(oDist)}` : ''}</span>`);
-    } else if (oDist) {
-      oLocChips.push(`<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">📍 ${escapeHtml(oDist)}</span>`);
-    }
-    if (oPanch) {
-      oLocChips.push(`<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">🏛️ ${escapeHtml(oPanch)}</span>`);
-    }
-
-    const locSnippet = oLocChips.length > 0
-      ? `<div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1.5 flex-wrap">${oLocChips.join(' ')}</div>`
-      : `<div class="text-[11px] text-slate-500 mt-0.5">📍 ${escapeHtml(getCustomerLocation(o.customer))}</div>`;
-
     tr.innerHTML = `
-      <td class="px-4 py-3">
+      <td class="px-4 py-3 whitespace-nowrap">
         <div class="font-mono font-bold text-blue-700 text-xs">${escapeHtml(o.id)}</div>
         <div class="text-[11px] text-slate-500 font-medium">${escapeHtml(o.date)}</div>
       </td>
       <td class="px-4 py-3">
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <span class="font-bold text-slate-900 text-xs">${escapeHtml(getCustomerName(o.customer))}</span>
-          ${catBadge}
-          ${deliveryBadge}
-        </div>
-        ${locSnippet}
-        ${contactsHtml}
+        <div class="font-bold text-slate-900 text-xs sm:text-sm tracking-tight">${escapeHtml(getCustomerName(o.customer))}</div>
         ${o.notes ? `
-          <div class="text-[11px] text-slate-600 bg-amber-50/80 border border-amber-200/60 rounded-md p-1.5 mt-1 max-w-[260px] whitespace-pre-wrap leading-tight">
-            <span class="font-bold text-amber-900 text-[10px]">📝 Note:</span> ${escapeHtml(o.notes)}
+          <div class="text-[10px] text-slate-500 mt-0.5 flex items-start gap-1 max-w-[260px]">
+            <span class="font-semibold text-slate-700 shrink-0">📝 Note:</span>
+            <span class="truncate" title="${escapeHtml(o.notes)}">${escapeHtml(o.notes)}</span>
           </div>
         ` : ''}
       </td>
       <td class="px-4 py-3">
         ${itemsHtml}
       </td>
-      <td class="px-4 py-3 text-right font-black text-slate-800">
+      <td class="px-4 py-3 text-right font-black text-slate-800 whitespace-nowrap">
         ${totalBagsCount} <span class="text-[10px] text-slate-400 font-normal">Bags</span>
       </td>
-      <td class="px-4 py-3 text-right font-black text-blue-950">
+      <td class="px-4 py-3 text-right font-black text-blue-950 whitespace-nowrap">
         ${(parseFloat(o.totalKg) || 0).toLocaleString('en-IN')} <span class="text-[10px] text-slate-500 font-normal">kg</span>
       </td>
-      <td class="px-4 py-3 text-right font-medium text-slate-600">
+      <td class="px-4 py-3 text-right font-medium text-slate-600 whitespace-nowrap">
         ${rateDisplay}
       </td>
-      <td class="px-4 py-3 text-right">
+      <td class="px-4 py-3 text-right whitespace-nowrap">
         <div class="font-black text-slate-900">₹${(parseFloat(o.totalAmount) || 0).toLocaleString('en-IN')}</div>
       </td>
-      <td class="px-4 py-3 text-center">
+      <td class="px-4 py-3 text-center whitespace-nowrap">
         <div class="flex items-center justify-center gap-1.5">
           <button onclick="openEditOrderModal('${o.id}')" title="Edit Order" class="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition">
             <i data-lucide="edit-3" class="w-4 h-4"></i>
@@ -3881,6 +4115,25 @@ function renderOrdersTable() {
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
   }
+}
+
+function toggleOrderSort(field) {
+  const select = document.getElementById('orderSortSelect');
+  if (!select) return;
+  if (field === 'date') {
+    select.value = (select.value === 'date-desc') ? 'date-asc' : 'date-desc';
+  } else if (field === 'amount') {
+    select.value = (select.value === 'amount-desc') ? 'amount-asc' : 'amount-desc';
+  } else if (field === 'qty') {
+    select.value = (select.value === 'qty-desc') ? 'qty-asc' : 'qty-desc';
+  }
+  renderOrdersTable();
+}
+
+function clearOrderDateFilter() {
+  const input = document.getElementById('orderDateFilter');
+  if (input) input.value = '';
+  renderOrdersTable();
 }
 
 // ==================== WHATSAPP GROUP SHARING ====================
@@ -7436,6 +7689,11 @@ window.showCustomerSearchDropdown = showCustomerSearchDropdown;
 window.hideCustomerSearchDropdown = hideCustomerSearchDropdown;
 window.clearCustomerSearch = clearCustomerSearch;
 window.selectCustomerFromSearch = selectCustomerFromSearch;
+window.openQuickNewCustomerModal = openQuickNewCustomerModal;
+window.closeQuickNewCustomerModal = closeQuickNewCustomerModal;
+window.onQuickCustNameInput = onQuickCustNameInput;
+window.saveQuickCustomerAndApply = saveQuickCustomerAndApply;
+window.updateCustomerPill = updateCustomerPill;
 window.onCustomerNameManualChange = onCustomerNameManualChange;
 window.openCustomersModal = openCustomersModal;
 window.closeCustomersModal = closeCustomersModal;
