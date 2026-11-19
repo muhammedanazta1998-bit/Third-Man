@@ -113,6 +113,7 @@ let currentTrashSearch = '';
 function initApp() {
   try {
     loadDataFromStorage();
+    extractCustomersFromOrdersIfMissing(false);
 
     // Set default order date to today
     const today = new Date().toISOString().split('T')[0];
@@ -399,7 +400,8 @@ let isFirestoreInitialized = false;
 let isReceivingCloudOrders = false;
 let isReceivingCloudCustomers = false;
 let isReceivingCloudSettings = false;
-let hasPerformedInitialCloudSeed = false;
+let hasPerformedInitialOrdersCloudSeed = false;
+let hasPerformedInitialCustomersCloudSeed = false;
 
 const FIREBASE_CONFIG = {
   apiKey: "AIzaSyDvU5PL0rINxwGwyZlpvdY6el0dLbz4UYY",
@@ -477,7 +479,7 @@ function setupFirestoreRealtimeListeners() {
   // 1. Orders Realtime Listener
   db.collection('orders').onSnapshot(snapshot => {
     // If cloud is empty initially, seed local orders up to cloud
-    if (snapshot.empty && orders.length > 0 && !hasPerformedInitialCloudSeed) {
+    if (snapshot.empty && orders.length > 0 && !hasPerformedInitialOrdersCloudSeed) {
       seedLocalOrdersToCloud();
       return;
     }
@@ -500,10 +502,13 @@ function setupFirestoreRealtimeListeners() {
         localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
       } catch (e) {}
 
+      // Automatically harvest any customer from orders into customer directory
+      extractCustomersFromOrdersIfMissing(true);
+
       updateDashboard();
       isReceivingCloudOrders = false;
       updateCloudSyncStatus('synced', 'Live Synced 🟢');
-    } else if (snapshot.empty && hasPerformedInitialCloudSeed) {
+    } else if (snapshot.empty && hasPerformedInitialOrdersCloudSeed) {
       orders = [];
       try {
         localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
@@ -520,8 +525,13 @@ function setupFirestoreRealtimeListeners() {
 
   // 2. Customers Realtime Listener
   db.collection('customers').onSnapshot(snapshot => {
-    if (snapshot.empty && customers.length > 0 && !hasPerformedInitialCloudSeed) {
+    if (snapshot.empty && customers.length > 0 && !hasPerformedInitialCustomersCloudSeed) {
       seedLocalCustomersToCloud();
+      return;
+    }
+
+    if (snapshot.empty && customers.length === 0 && orders.length > 0) {
+      extractCustomersFromOrdersIfMissing(true);
       return;
     }
 
@@ -536,6 +546,10 @@ function setupFirestoreRealtimeListeners() {
       });
 
       customers = remoteCustomers;
+
+      // Ensure any customer from orders is also retained
+      extractCustomersFromOrdersIfMissing(false);
+
       try {
         localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
       } catch (e) {}
@@ -590,7 +604,7 @@ function setupFirestoreRealtimeListeners() {
 
 function seedLocalOrdersToCloud() {
   if (!db || orders.length === 0) return;
-  hasPerformedInitialCloudSeed = true;
+  hasPerformedInitialOrdersCloudSeed = true;
   updateCloudSyncStatus('syncing', 'Uploading Local Orders...');
   
   const batch = db.batch();
@@ -609,7 +623,8 @@ function seedLocalOrdersToCloud() {
 
 function seedLocalCustomersToCloud() {
   if (!db || customers.length === 0) return;
-  hasPerformedInitialCloudSeed = true;
+  hasPerformedInitialCustomersCloudSeed = true;
+  updateCloudSyncStatus('syncing', 'Uploading Customers...');
   const batch = db.batch();
   customers.forEach(cust => {
     if (cust) {
@@ -619,7 +634,76 @@ function seedLocalCustomersToCloud() {
       batch.set(ref, sanitizeForFirestore(cust));
     }
   });
-  batch.commit().catch(err => console.error('Initial customers seed error:', err));
+  batch.commit().then(() => {
+    updateCloudSyncStatus('synced', 'Live Synced 🟢');
+  }).catch(err => console.error('Initial customers seed error:', err));
+}
+
+// Automatically harvests and preserves customer directory from orders history
+function extractCustomersFromOrdersIfMissing(syncToCloud = false) {
+  if (!Array.isArray(orders) || orders.length === 0) return;
+  if (!Array.isArray(customers)) customers = [];
+
+  let addedCount = 0;
+  orders.forEach(ord => {
+    if (!ord || !ord.customer) return;
+    const c = ord.customer;
+    const cName = (typeof c === 'string' ? c : (c.name || '')).trim();
+    if (!cName) return;
+
+    const cPhone = (typeof c === 'object' && c.phone) ? String(c.phone).trim() : '';
+    const cOwnerPhone = (typeof c === 'object' && c.ownerPhone) ? String(c.ownerPhone).trim() : '';
+    const cStaffPhone = (typeof c === 'object' && c.staffPhone) ? String(c.staffPhone).trim() : '';
+
+    const cleanP = cleanPhoneNumber(cPhone);
+    const cleanOwn = cleanPhoneNumber(cOwnerPhone);
+
+    const exists = customers.some(existing => {
+      const nameMatch = existing.name && existing.name.trim().toLowerCase() === cName.toLowerCase();
+      const phoneMatch = cleanP && existing.phone && cleanPhoneNumber(existing.phone) === cleanP;
+      const ownMatch = cleanOwn && existing.ownerPhone && cleanPhoneNumber(existing.ownerPhone) === cleanOwn;
+      return nameMatch || phoneMatch || ownMatch;
+    });
+
+    if (!exists) {
+      const newCust = {
+        id: (typeof c === 'object' && c.id) ? c.id : ('c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+        name: cName,
+        category: (typeof c === 'object' && c.category) ? c.category : 'Caterer',
+        district: (typeof c === 'object' && c.district) ? c.district : 'Ernakulam',
+        town: (typeof c === 'object' && (c.town || c.area || c.location)) ? (c.town || c.area || c.location) : 'Ernakulam',
+        landmark: (typeof c === 'object' && (c.landmark || c.place)) ? (c.landmark || c.place) : '',
+        panchayath: (typeof c === 'object' && c.panchayath) ? c.panchayath : '',
+        area: (typeof c === 'object' && (c.area || c.town || c.location)) ? (c.area || c.town || c.location) : 'Ernakulam',
+        place: (typeof c === 'object' && (c.place || c.landmark)) ? (c.place || c.landmark) : '',
+        location: (typeof c === 'object' && (c.location || c.town)) ? c.location : 'Ernakulam',
+        ownerName: (typeof c === 'object' && c.ownerName) ? c.ownerName : '',
+        ownerPhone: cOwnerPhone || cPhone,
+        staffName: (typeof c === 'object' && c.staffName) ? c.staffName : '',
+        staffRole: (typeof c === 'object' && c.staffRole) ? c.staffRole : '',
+        staffPhone: cStaffPhone,
+        phone: cPhone || cOwnerPhone,
+        notes: (typeof c === 'object' && c.notes) ? c.notes : 'Auto-recovered from order',
+        createdAt: ord.date ? new Date(ord.date).toISOString() : new Date().toISOString()
+      };
+      if (typeof getCustomerMembers === 'function') {
+        newCust.members = getCustomerMembers(newCust);
+      }
+      customers.push(newCust);
+      addedCount++;
+    }
+  });
+
+  if (addedCount > 0) {
+    try {
+      localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+    } catch (e) {}
+    populateCustomerDropdown();
+    if (typeof renderCustomersList === 'function') renderCustomersList();
+    if (syncToCloud && isFirestoreInitialized && db) {
+      seedLocalCustomersToCloud();
+    }
+  }
 }
 
 function syncCloudOrder(order) {
@@ -8114,6 +8198,44 @@ document.addEventListener('keydown', (e) => {
 const STORAGE_APP_LOGO = 'thirdman_app_logo';
 const DEFAULT_LOGO_URL = 'logo.svg';
 
+const EMBEDDED_DEFAULT_LOGO_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1e3a8a"/>
+      <stop offset="100%" stop-color="#09111e"/>
+    </linearGradient>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#fbbf24"/>
+      <stop offset="100%" stop-color="#d97706"/>
+    </linearGradient>
+    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.4"/>
+    </filter>
+  </defs>
+  <rect x="10" y="10" width="180" height="180" rx="42" fill="url(#bgGrad)" stroke="url(#goldGrad)" stroke-width="4" filter="url(#shadow)"/>
+  <g fill="url(#goldGrad)" opacity="0.95">
+    <ellipse cx="44" cy="70" rx="7" ry="13" transform="rotate(-35 44 70)"/>
+    <ellipse cx="36" cy="95" rx="7" ry="13" transform="rotate(-20 36 95)"/>
+    <ellipse cx="38" cy="122" rx="7" ry="13" transform="rotate(10 38 122)"/>
+    <ellipse cx="50" cy="146" rx="7" ry="12" transform="rotate(35 50 146)"/>
+  </g>
+  <g fill="url(#goldGrad)" opacity="0.95">
+    <ellipse cx="156" cy="70" rx="7" ry="13" transform="rotate(35 156 70)"/>
+    <ellipse cx="164" cy="95" rx="7" ry="13" transform="rotate(20 164 95)"/>
+    <ellipse cx="162" cy="122" rx="7" ry="13" transform="rotate(-10 162 122)"/>
+    <ellipse cx="150" cy="146" rx="7" ry="12" transform="rotate(-35 150 146)"/>
+  </g>
+  <circle cx="100" cy="95" r="45" fill="#0b1324" stroke="url(#cyanGrad)" stroke-width="2.5"/>
+  <path d="M86 58 L100 44 L114 58 L107 63 L100 56 L93 63 Z" fill="url(#goldGrad)"/>
+  <text x="100" y="107" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="1">TM</text>
+  <rect x="28" y="152" width="144" height="26" rx="13" fill="url(#goldGrad)"/>
+  <text x="100" y="169" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="11" font-weight="900" fill="#09111e" text-anchor="middle" letter-spacing="1.5">THIRD MAN</text>
+</svg>`);
+
 function loadAppLogo() {
   try {
     const customLogo = localStorage.getItem(STORAGE_APP_LOGO);
@@ -8125,7 +8247,7 @@ function loadAppLogo() {
     }
   } catch (err) {
     console.error('Error loading app logo:', err);
-    applyAppLogo(DEFAULT_LOGO_URL, false);
+    applyAppLogo(EMBEDDED_DEFAULT_LOGO_SVG, false);
   }
 }
 
@@ -8138,6 +8260,17 @@ function applyAppLogo(logoUrl, isCustom = false) {
   const settingsFallback = document.getElementById('settingsLogoFallback');
   const favicon = document.getElementById('appFavicon');
   const removeBtn = document.getElementById('btnRemoveLogo');
+
+  const bindImgFallback = (img) => {
+    if (!img) return;
+    img.onerror = function() {
+      this.onerror = null;
+      this.src = EMBEDDED_DEFAULT_LOGO_SVG;
+    };
+  };
+  bindImgFallback(sidebarImg);
+  bindImgFallback(invoiceImg);
+  bindImgFallback(settingsImg);
 
   if (logoUrl) {
     if (sidebarImg) {
@@ -8293,6 +8426,8 @@ window.getCustomerPanchayath = getCustomerPanchayath;
 window.saveNewDistrictTown = saveNewDistrictTown;
 window.loadAppLogo = loadAppLogo;
 window.applyAppLogo = applyAppLogo;
+window.EMBEDDED_DEFAULT_LOGO_SVG = EMBEDDED_DEFAULT_LOGO_SVG;
+window.extractCustomersFromOrdersIfMissing = extractCustomersFromOrdersIfMissing;
 window.triggerAppLogoUpload = triggerAppLogoUpload;
 window.handleAppLogoUpload = handleAppLogoUpload;
 window.removeAppLogo = removeAppLogo;

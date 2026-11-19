@@ -139,7 +139,7 @@
       <!-- Brand Logo / Header -->
       <div class="flex items-center gap-3 pb-6 border-b border-slate-800/80">
         <div id="sidebarLogoContainer" onclick="triggerAppLogoUpload()" title="Click to upload/change logo" class="relative group cursor-pointer w-11 h-11 rounded-xl bg-slate-900 border border-slate-700/80 hover:border-cyan-400 flex items-center justify-center text-white shadow-lg shadow-blue-950/50 overflow-hidden shrink-0 transition">
-          <img id="appSidebarLogoImg" src="logo.svg" alt="Third Man Logo" class="w-full h-full object-contain p-1 rounded-xl">
+          <img id="appSidebarLogoImg" src="logo.svg" alt="Third Man Logo" onerror="this.onerror=null;if(window.EMBEDDED_DEFAULT_LOGO_SVG)this.src=window.EMBEDDED_DEFAULT_LOGO_SVG;" class="w-full h-full object-contain p-1 rounded-xl">
           <div id="appSidebarLogoFallback" class="hidden flex items-center justify-center text-blue-400">
             <i data-lucide="package-check" class="w-6 h-6"></i>
           </div>
@@ -1078,7 +1078,7 @@
         <div class="flex justify-between items-start border-b border-slate-200 pb-4">
           <div class="flex items-center gap-3.5">
             <div id="invoiceLogoBox" class="w-14 h-14 rounded-2xl bg-white border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-2xs">
-              <img id="invoiceLogoImg" src="logo.svg" alt="Third Man Logo" class="w-full h-full object-contain p-1">
+              <img id="invoiceLogoImg" src="logo.svg" alt="Third Man Logo" onerror="this.onerror=null;if(window.EMBEDDED_DEFAULT_LOGO_SVG)this.src=window.EMBEDDED_DEFAULT_LOGO_SVG;" class="w-full h-full object-contain p-1">
               <div id="invoiceLogoFallback" class="hidden w-full h-full flex items-center justify-center bg-blue-50 text-blue-700">
                 <i data-lucide="package-check" class="w-7 h-7"></i>
               </div>
@@ -1527,7 +1527,7 @@
             <div class="flex items-center gap-4">
               <!-- Logo Preview Box -->
               <div class="w-20 h-20 rounded-2xl bg-slate-50 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden shrink-0 shadow-inner relative group cursor-pointer hover:border-blue-500 transition" onclick="triggerAppLogoUpload()" title="Click to upload logo">
-                <img id="settingsLogoPreviewImg" src="logo.svg" alt="App Logo Preview" class="w-full h-full object-contain p-1">
+                <img id="settingsLogoPreviewImg" src="logo.svg" alt="App Logo Preview" onerror="this.onerror=null;if(window.EMBEDDED_DEFAULT_LOGO_SVG)this.src=window.EMBEDDED_DEFAULT_LOGO_SVG;" class="w-full h-full object-contain p-1">
                 <div id="settingsLogoFallback" class="hidden flex-col items-center justify-center text-slate-400">
                   <i data-lucide="upload-cloud" class="w-6 h-6"></i>
                   <span class="text-[9px] font-bold mt-0.5">Upload</span>
