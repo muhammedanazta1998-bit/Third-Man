@@ -6016,85 +6016,200 @@ function closeCustomersModal() {
 
 function handleCustomerFormSubmit(event) {
   event.preventDefault();
-  const editId = document.getElementById('custEditId')?.value.trim();
-  const name = document.getElementById('custNameInput')?.value.trim();
-  const category = document.getElementById('custCategoryInput')?.value || 'Caterer';
-  const district = document.getElementById('custDistrictSelect')?.value || 'Ernakulam';
-  const town = document.getElementById('custTownInput')?.value.trim() || document.getElementById('custAreaInput')?.value.trim() || '';
-  const landmark = document.getElementById('custLandmarkInput')?.value.trim() || document.getElementById('custPlaceInput')?.value.trim() || '';
-  const panchayath = document.getElementById('custPanchayathInput')?.value.trim() || '';
-  const loc = document.getElementById('custLocationInput')?.value.trim();
-  const ownerName = document.getElementById('custOwnerNameInput')?.value.trim() || '';
-  const rawOwnerPhone = document.getElementById('custOwnerPhoneInput')?.value.trim() || '';
-  const staffName = document.getElementById('custStaffNameInput')?.value.trim() || '';
-  const staffRole = document.getElementById('custStaffRoleInput')?.value || 'Chef / Cook';
-  const rawStaffPhone = document.getElementById('custStaffPhoneInput')?.value.trim() || '';
-  const rawLegacyPhone = document.getElementById('custPhoneInput')?.value.trim() || '';
-  const notes = document.getElementById('custNotesInput')?.value.trim();
+  try {
+    const editId = document.getElementById('custEditId')?.value.trim();
+    const name = document.getElementById('custNameInput')?.value.trim();
+    const category = document.getElementById('custCategoryInput')?.value || 'Caterer';
+    const district = document.getElementById('custDistrictSelect')?.value || 'Ernakulam';
+    const town = document.getElementById('custTownInput')?.value.trim() || document.getElementById('custAreaInput')?.value.trim() || '';
+    const landmark = document.getElementById('custLandmarkInput')?.value.trim() || document.getElementById('custPlaceInput')?.value.trim() || '';
+    const panchayath = document.getElementById('custPanchayathInput')?.value.trim() || '';
+    const loc = document.getElementById('custLocationInput')?.value.trim();
+    const ownerName = document.getElementById('custOwnerNameInput')?.value.trim() || '';
+    const rawOwnerPhone = document.getElementById('custOwnerPhoneInput')?.value.trim() || '';
+    const staffName = document.getElementById('custStaffNameInput')?.value.trim() || '';
+    const staffRole = document.getElementById('custStaffRoleInput')?.value || 'Chef / Cook';
+    const rawStaffPhone = document.getElementById('custStaffPhoneInput')?.value.trim() || '';
+    const rawLegacyPhone = document.getElementById('custPhoneInput')?.value.trim() || '';
+    const notes = document.getElementById('custNotesInput')?.value.trim();
 
-  if (!name) {
-    alert('Please enter a customer or shop name.');
-    return;
-  }
-
-  if (town) {
-    saveNewDistrictTown(district, town);
-  }
-
-  let locParts = [];
-  if (landmark) locParts.push(landmark);
-  if (town) locParts.push(town);
-  if (district && district.toLowerCase() !== (town || '').toLowerCase()) locParts.push(district);
-  if (panchayath) locParts.push(`(${panchayath})`);
-  const combinedLoc = locParts.length > 0 ? locParts.join(', ') : (loc || 'Ernakulam');
-
-  const area = town;
-  const place = landmark || town;
-
-  // Validate owner phone: optional, but strictly 10 digits if provided
-  let cleanOwnerPhone = '';
-  if (rawOwnerPhone) {
-    cleanOwnerPhone = cleanPhoneNumber(rawOwnerPhone);
-    if (cleanOwnerPhone.length !== 10) {
-      alert('Please enter a valid 10-digit mobile number for Owner (or leave blank). You entered: ' + rawOwnerPhone);
+    if (!name) {
+      alert('Please enter a customer or shop name.');
       return;
     }
-  }
 
-  // Validate staff phone: optional, but strictly 10 digits if provided
-  let cleanStaffPhone = '';
-  if (rawStaffPhone) {
-    cleanStaffPhone = cleanPhoneNumber(rawStaffPhone);
-    if (cleanStaffPhone.length !== 10) {
-      alert('Please enter a valid 10-digit mobile number for Staff (or leave blank). You entered: ' + rawStaffPhone);
+    if (town) {
+      saveNewDistrictTown(district, town);
+    }
+
+    let locParts = [];
+    if (landmark) locParts.push(landmark);
+    if (town) locParts.push(town);
+    if (district && district.toLowerCase() !== (town || '').toLowerCase()) locParts.push(district);
+    if (panchayath) locParts.push(`(${panchayath})`);
+    const combinedLoc = locParts.length > 0 ? locParts.join(', ') : (loc || 'Ernakulam');
+
+    const area = town;
+    const place = landmark || town;
+
+    // Validate owner phone: optional, but strictly 10 digits if provided
+    let cleanOwnerPhone = '';
+    if (rawOwnerPhone) {
+      cleanOwnerPhone = cleanPhoneNumber(rawOwnerPhone);
+      if (cleanOwnerPhone.length !== 10) {
+        alert('Please enter a valid 10-digit mobile number for Owner (or leave blank). You entered: ' + rawOwnerPhone);
+        return;
+      }
+    }
+
+    // Validate staff phone: optional, but strictly 10 digits if provided
+    let cleanStaffPhone = '';
+    if (rawStaffPhone) {
+      cleanStaffPhone = cleanPhoneNumber(rawStaffPhone);
+      if (cleanStaffPhone.length !== 10) {
+        alert('Please enter a valid 10-digit mobile number for Staff (or leave blank). You entered: ' + rawStaffPhone);
+        return;
+      }
+    }
+
+    const primaryPhone = cleanOwnerPhone || cleanStaffPhone || cleanPhoneNumber(rawLegacyPhone) || '';
+
+    // Duplicate checks
+    const duplicate = findDuplicateCustomer(name, cleanOwnerPhone, cleanStaffPhone, primaryPhone, editId || null);
+    if (duplicate) {
+      if (duplicate.type === 'name') {
+        alert(`A customer with the name "${name}" already exists in the directory.`);
+      } else if (duplicate.type === 'ownerPhone') {
+        alert(`Owner phone "${cleanOwnerPhone}" is already registered for "${duplicate.customer.name}".`);
+      } else if (duplicate.type === 'staffPhone') {
+        alert(`Staff phone "${cleanStaffPhone}" is already registered for "${duplicate.customer.name}".`);
+      } else if (duplicate.type === 'phone') {
+        alert(`Phone number "${primaryPhone}" is already registered for "${duplicate.customer.name}".`);
+      }
       return;
     }
-  }
 
-  const primaryPhone = cleanOwnerPhone || cleanStaffPhone || cleanPhoneNumber(rawLegacyPhone) || '';
+    if (editId) {
+      // Update existing customer
+      let idx = customers.findIndex(c => c.id === editId);
+      if (idx === -1) {
+        // Fallback: search by name
+        idx = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === name.trim().toLowerCase());
+      }
 
-  // Duplicate checks
-  const duplicate = findDuplicateCustomer(name, cleanOwnerPhone, cleanStaffPhone, primaryPhone, editId || null);
-  if (duplicate) {
-    if (duplicate.type === 'name') {
-      alert(`A customer with the name "${name}" already exists in the directory.`);
-    } else if (duplicate.type === 'ownerPhone') {
-      alert(`Owner phone "${cleanOwnerPhone}" is already registered for "${duplicate.customer.name}".`);
-    } else if (duplicate.type === 'staffPhone') {
-      alert(`Staff phone "${cleanStaffPhone}" is already registered for "${duplicate.customer.name}".`);
-    } else if (duplicate.type === 'phone') {
-      alert(`Phone number "${primaryPhone}" is already registered for "${duplicate.customer.name}".`);
-    }
-    return;
-  }
+      if (idx !== -1) {
+        const prevName = customers[idx].name;
+        customers[idx] = {
+          ...customers[idx],
+          name: name,
+          category: category,
+          district: district,
+          town: town,
+          landmark: landmark,
+          panchayath: panchayath,
+          area: area,
+          place: place,
+          ownerName: ownerName,
+          ownerPhone: cleanOwnerPhone,
+          staffName: staffName,
+          staffRole: staffRole,
+          staffPhone: cleanStaffPhone,
+          phone: primaryPhone || customers[idx].phone || '',
+          location: combinedLoc || 'Ernakulam',
+          notes: notes || ''
+        };
 
-  if (editId) {
-    // Update existing customer
-    const idx = customers.findIndex(c => c.id === editId);
-    if (idx !== -1) {
-      const prevName = customers[idx].name;
-      customers[idx] = {
-        ...customers[idx],
+        // Keep members in sync if owner or staff contact fields were updated
+        if (Array.isArray(customers[idx].members)) {
+          if (ownerName || cleanOwnerPhone) {
+            const ownerMember = customers[idx].members.find(m => m.role === 'Owner' || m.isPrimary);
+            if (ownerMember) {
+              if (ownerName) ownerMember.name = ownerName;
+              if (cleanOwnerPhone) ownerMember.phone = cleanOwnerPhone;
+            }
+          }
+          if (staffName || cleanStaffPhone) {
+            const staffMember = customers[idx].members.find(m => m.role === staffRole || m.role === 'Chef / Cook' || m.role === 'Staff');
+            if (staffMember) {
+              if (staffName) staffMember.name = staffName;
+              if (staffRole) staffMember.role = staffRole;
+              if (cleanStaffPhone) staffMember.phone = cleanStaffPhone;
+            }
+          }
+        }
+
+        // Also update customer references in existing orders if name or contact changed
+        orders.forEach(o => {
+          if (!o || !o.customer) return;
+          const matchesPrev = (typeof o.customer === 'object' && o.customer.id && o.customer.id === editId) ||
+                              (getCustomerName(o.customer).trim().toLowerCase() === prevName.trim().toLowerCase());
+          if (matchesPrev) {
+            if (typeof o.customer === 'object') {
+              o.customer.id = editId;
+              o.customer.name = name;
+              o.customer.category = category;
+              o.customer.district = district;
+              o.customer.town = town;
+              o.customer.landmark = landmark;
+              o.customer.panchayath = panchayath;
+              o.customer.area = area;
+              o.customer.place = place;
+              o.customer.ownerName = ownerName;
+              o.customer.ownerPhone = cleanOwnerPhone;
+              o.customer.staffName = staffName;
+              o.customer.staffRole = staffRole;
+              o.customer.staffPhone = cleanStaffPhone;
+              if (primaryPhone) o.customer.phone = primaryPhone;
+              if (combinedLoc) o.customer.location = combinedLoc;
+            } else if (typeof o.customer === 'string') {
+              o.customer = name;
+            }
+          }
+        });
+
+        saveDataToStorage();
+        if (customers[idx]) syncCloudCustomer(customers[idx]);
+        populateCustomerDropdown();
+        populateSavedAreasDatalists();
+        cancelEditCustomer();
+        renderCustomersList();
+        updateDashboard();
+        showNotification(`Customer '${name}' updated successfully!`);
+      } else {
+        // Fallback: customer was somehow not found, save as new entry
+        const fallbackCust = {
+          id: editId || ('c_' + Date.now()),
+          name: name,
+          category: category,
+          district: district,
+          town: town,
+          landmark: landmark,
+          panchayath: panchayath,
+          area: area,
+          place: place,
+          ownerName: ownerName,
+          ownerPhone: cleanOwnerPhone,
+          staffName: staffName,
+          staffRole: staffRole,
+          staffPhone: cleanStaffPhone,
+          phone: primaryPhone,
+          location: combinedLoc || 'Ernakulam',
+          notes: notes || ''
+        };
+        customers.push(fallbackCust);
+        saveDataToStorage();
+        syncCloudCustomer(fallbackCust);
+        populateCustomerDropdown();
+        populateSavedAreasDatalists();
+        cancelEditCustomer();
+        renderCustomersList();
+        updateDashboard();
+        showNotification(`Customer '${name}' saved!`);
+      }
+    } else {
+      // Add new customer
+      const newCust = {
+        id: 'c_' + Date.now(),
         name: name,
         category: category,
         district: district,
@@ -6108,95 +6223,45 @@ function handleCustomerFormSubmit(event) {
         staffName: staffName,
         staffRole: staffRole,
         staffPhone: cleanStaffPhone,
-        phone: primaryPhone || customers[idx].phone || '',
+        phone: primaryPhone,
         location: combinedLoc || 'Ernakulam',
         notes: notes || ''
       };
-
-      // Also update customer references in existing orders if name or contact changed
-      orders.forEach(o => {
-        if (getCustomerName(o.customer).toLowerCase() === prevName.toLowerCase()) {
-          if (typeof o.customer === 'object') {
-            o.customer.name = name;
-            o.customer.category = category;
-            o.customer.district = district;
-            o.customer.town = town;
-            o.customer.landmark = landmark;
-            o.customer.panchayath = panchayath;
-            o.customer.area = area;
-            o.customer.place = place;
-            o.customer.ownerName = ownerName;
-            o.customer.ownerPhone = cleanOwnerPhone;
-            o.customer.staffName = staffName;
-            o.customer.staffRole = staffRole;
-            o.customer.staffPhone = cleanStaffPhone;
-            if (primaryPhone) o.customer.phone = primaryPhone;
-            if (combinedLoc) o.customer.location = combinedLoc;
-          }
-        }
-      });
+      customers.push(newCust);
 
       saveDataToStorage();
-      if (customers[targetIndex]) syncCloudCustomer(customers[targetIndex]);
+      syncCloudCustomer(newCust);
       populateCustomerDropdown();
       populateSavedAreasDatalists();
-      cancelEditCustomer();
       renderCustomersList();
-      updateDashboard();
-      showNotification(`Customer '${name}' updated successfully!`);
+
+      // Reset inputs
+      document.getElementById('custNameInput').value = '';
+      document.getElementById('custCategoryInput').value = 'Caterer';
+      const distSelect = document.getElementById('custDistrictSelect');
+      if (distSelect) {
+        distSelect.value = 'Ernakulam';
+        onCustDistrictChange('Ernakulam');
+      }
+      if (document.getElementById('custTownInput')) document.getElementById('custTownInput').value = '';
+      if (document.getElementById('custLandmarkInput')) document.getElementById('custLandmarkInput').value = '';
+      if (document.getElementById('custPanchayathInput')) document.getElementById('custPanchayathInput').value = '';
+      if (document.getElementById('custAreaInput')) document.getElementById('custAreaInput').value = '';
+      if (document.getElementById('custPlaceInput')) document.getElementById('custPlaceInput').value = '';
+      if (document.getElementById('custLocationInput')) document.getElementById('custLocationInput').value = '';
+      if (document.getElementById('custOwnerNameInput')) document.getElementById('custOwnerNameInput').value = '';
+      if (document.getElementById('custOwnerPhoneInput')) document.getElementById('custOwnerPhoneInput').value = '';
+      if (document.getElementById('custStaffNameInput')) document.getElementById('custStaffNameInput').value = '';
+      if (document.getElementById('custStaffRoleInput')) document.getElementById('custStaffRoleInput').value = 'Chef / Cook';
+      if (document.getElementById('custStaffPhoneInput')) document.getElementById('custStaffPhoneInput').value = '';
+      if (document.getElementById('custPhoneInput')) document.getElementById('custPhoneInput').value = '';
+      if (document.getElementById('custNotesInput')) document.getElementById('custNotesInput').value = '';
+
+      showNotification(`Customer '${name}' added!`);
     }
-  } else {
-    // Add new customer
-    const newCust = {
-      id: 'c_' + Date.now(),
-      name: name,
-      category: category,
-      district: district,
-      town: town,
-      landmark: landmark,
-      panchayath: panchayath,
-      area: area,
-      place: place,
-      ownerName: ownerName,
-      ownerPhone: cleanOwnerPhone,
-      staffName: staffName,
-      staffRole: staffRole,
-      staffPhone: cleanStaffPhone,
-      phone: primaryPhone,
-      location: combinedLoc || 'Ernakulam',
-      notes: notes || ''
-    };
-    customers.push(newCust);
-
-    saveDataToStorage();
-    syncCloudCustomer(newCust);
-    populateCustomerDropdown();
-    populateSavedAreasDatalists();
-    renderCustomersList();
-
-    // Reset inputs
-    document.getElementById('custNameInput').value = '';
-    document.getElementById('custCategoryInput').value = 'Caterer';
-    const distSelect = document.getElementById('custDistrictSelect');
-    if (distSelect) {
-      distSelect.value = 'Ernakulam';
-      onCustDistrictChange('Ernakulam');
-    }
-    if (document.getElementById('custTownInput')) document.getElementById('custTownInput').value = '';
-    if (document.getElementById('custLandmarkInput')) document.getElementById('custLandmarkInput').value = '';
-    if (document.getElementById('custPanchayathInput')) document.getElementById('custPanchayathInput').value = '';
-    if (document.getElementById('custAreaInput')) document.getElementById('custAreaInput').value = '';
-    if (document.getElementById('custPlaceInput')) document.getElementById('custPlaceInput').value = '';
-    if (document.getElementById('custLocationInput')) document.getElementById('custLocationInput').value = '';
-    if (document.getElementById('custOwnerNameInput')) document.getElementById('custOwnerNameInput').value = '';
-    if (document.getElementById('custOwnerPhoneInput')) document.getElementById('custOwnerPhoneInput').value = '';
-    if (document.getElementById('custStaffNameInput')) document.getElementById('custStaffNameInput').value = '';
-    if (document.getElementById('custStaffRoleInput')) document.getElementById('custStaffRoleInput').value = 'Chef / Cook';
-    if (document.getElementById('custStaffPhoneInput')) document.getElementById('custStaffPhoneInput').value = '';
-    if (document.getElementById('custPhoneInput')) document.getElementById('custPhoneInput').value = '';
-    if (document.getElementById('custNotesInput')) document.getElementById('custNotesInput').value = '';
-
-    showNotification(`Customer '${name}' added!`);
+  } catch (err) {
+    console.error('Error submitting customer form:', err);
+    showNotification('Error saving customer: ' + (err.message || 'Unknown error'));
   }
 }
 
@@ -6204,70 +6269,84 @@ function handleAddNewCustomer(event) {
   handleCustomerFormSubmit(event);
 }
 
+function editCustomerFromDetail() {
+  if (!activeDetailCustomerId) return;
+  const custId = activeDetailCustomerId;
+  closeCustomerDetailModal();
+  openCustomersModal();
+  setTimeout(() => {
+    editCustomer(custId);
+  }, 100);
+}
+
 function editCustomer(customerId) {
-  const cust = customers.find(c => c.id === customerId);
-  if (!cust) return;
+  try {
+    const cust = customers.find(c => c.id === customerId);
+    if (!cust) return;
 
-  const formCard = document.getElementById('customerFormCard');
-  const editIdInput = document.getElementById('custEditId');
-  const nameInput = document.getElementById('custNameInput');
-  const catInput = document.getElementById('custCategoryInput');
-  const distSelect = document.getElementById('custDistrictSelect');
-  const townInput = document.getElementById('custTownInput');
-  const landmarkInput = document.getElementById('custLandmarkInput');
-  const panchayathInput = document.getElementById('custPanchayathInput');
-  const areaInput = document.getElementById('custAreaInput');
-  const placeInput = document.getElementById('custPlaceInput');
-  const locInput = document.getElementById('custLocationInput');
-  const ownerNameInput = document.getElementById('custOwnerNameInput');
-  const ownerPhoneInput = document.getElementById('custOwnerPhoneInput');
-  const staffNameInput = document.getElementById('custStaffNameInput');
-  const staffRoleInput = document.getElementById('custStaffRoleInput');
-  const staffPhoneInput = document.getElementById('custStaffPhoneInput');
-  const phoneInput = document.getElementById('custPhoneInput');
-  const notesInput = document.getElementById('custNotesInput');
-  const titleText = document.getElementById('custFormTitleText');
-  const submitText = document.getElementById('custSubmitText');
-  const cancelBtn = document.getElementById('custCancelEditBtn');
+    const formCard = document.getElementById('customerFormCard');
+    const editIdInput = document.getElementById('custEditId');
+    const nameInput = document.getElementById('custNameInput');
+    const catInput = document.getElementById('custCategoryInput');
+    const distSelect = document.getElementById('custDistrictSelect');
+    const townInput = document.getElementById('custTownInput');
+    const landmarkInput = document.getElementById('custLandmarkInput');
+    const panchayathInput = document.getElementById('custPanchayathInput');
+    const areaInput = document.getElementById('custAreaInput');
+    const placeInput = document.getElementById('custPlaceInput');
+    const locInput = document.getElementById('custLocationInput');
+    const ownerNameInput = document.getElementById('custOwnerNameInput');
+    const ownerPhoneInput = document.getElementById('custOwnerPhoneInput');
+    const staffNameInput = document.getElementById('custStaffNameInput');
+    const staffRoleInput = document.getElementById('custStaffRoleInput');
+    const staffPhoneInput = document.getElementById('custStaffPhoneInput');
+    const phoneInput = document.getElementById('custPhoneInput');
+    const notesInput = document.getElementById('custNotesInput');
+    const titleText = document.getElementById('custFormTitleText');
+    const submitText = document.getElementById('custSubmitText');
+    const cancelBtn = document.getElementById('custCancelEditBtn');
 
-  const custDist = cust.district || 'Ernakulam';
-  if (distSelect) {
-    distSelect.value = custDist;
-    onCustDistrictChange(custDist);
+    const custDist = cust.district || 'Ernakulam';
+    if (distSelect) {
+      distSelect.value = custDist;
+      onCustDistrictChange(custDist);
+    }
+    if (townInput) townInput.value = cust.town || cust.area || '';
+    if (landmarkInput) landmarkInput.value = cust.landmark || cust.place || '';
+    if (panchayathInput) panchayathInput.value = cust.panchayath || '';
+
+    if (editIdInput) editIdInput.value = cust.id;
+    if (nameInput) nameInput.value = cust.name || '';
+    if (catInput) catInput.value = cust.category || 'Caterer';
+    if (areaInput) areaInput.value = cust.town || cust.area || cust.location || '';
+    if (placeInput) placeInput.value = cust.landmark || cust.place || '';
+    if (locInput) locInput.value = cust.location || '';
+    if (ownerNameInput) ownerNameInput.value = cust.ownerName || '';
+    if (ownerPhoneInput) ownerPhoneInput.value = cust.ownerPhone || (cust.phone || '');
+    if (staffNameInput) staffNameInput.value = cust.staffName || '';
+    if (staffRoleInput) staffRoleInput.value = cust.staffRole || 'Chef / Cook';
+    if (staffPhoneInput) staffPhoneInput.value = cust.staffPhone || '';
+    if (phoneInput) phoneInput.value = cust.phone || '';
+    if (notesInput) notesInput.value = cust.notes || '';
+
+    if (titleText) titleText.textContent = `Edit Customer: ${cust.name}`;
+    if (submitText) submitText.textContent = 'Update Customer';
+    if (cancelBtn) cancelBtn.classList.remove('hidden');
+
+    if (formCard) {
+      formCard.classList.remove('bg-blue-50/60', 'border-blue-200/70');
+      formCard.classList.add('bg-amber-50/80', 'border-amber-300', 'ring-2', 'ring-amber-300/40');
+    }
+
+    // Scroll to form inside modal
+    const modalScrollContainer = document.querySelector('#customersModal > div');
+    if (modalScrollContainer) {
+      modalScrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    nameInput?.focus();
+  } catch (err) {
+    console.error('Error opening customer edit form:', err);
   }
-  if (townInput) townInput.value = cust.town || cust.area || '';
-  if (landmarkInput) landmarkInput.value = cust.landmark || cust.place || '';
-  if (panchayathInput) panchayathInput.value = cust.panchayath || '';
-
-  if (editIdInput) editIdInput.value = cust.id;
-  if (nameInput) nameInput.value = cust.name || '';
-  if (catInput) catInput.value = cust.category || 'Caterer';
-  if (areaInput) areaInput.value = cust.town || cust.area || cust.location || '';
-  if (placeInput) placeInput.value = cust.landmark || cust.place || '';
-  if (locInput) locInput.value = cust.location || '';
-  if (ownerNameInput) ownerNameInput.value = cust.ownerName || '';
-  if (ownerPhoneInput) ownerPhoneInput.value = cust.ownerPhone || (cust.phone || '');
-  if (staffNameInput) staffNameInput.value = cust.staffName || '';
-  if (staffRoleInput) staffRoleInput.value = cust.staffRole || 'Chef / Cook';
-  if (staffPhoneInput) staffPhoneInput.value = cust.staffPhone || '';
-  if (phoneInput) phoneInput.value = cust.phone || '';
-  if (notesInput) notesInput.value = cust.notes || '';
-
-  if (titleText) titleText.textContent = `Edit Customer: ${cust.name}`;
-  if (submitText) submitText.textContent = 'Update Customer';
-  if (cancelBtn) cancelBtn.classList.remove('hidden');
-
-  if (formCard) {
-    formCard.classList.remove('bg-blue-50/60', 'border-blue-200/70');
-    formCard.classList.add('bg-amber-50/80', 'border-amber-300', 'ring-2', 'ring-amber-300/40');
-  }
-
-  // Scroll to form inside modal
-  const modalScrollContainer = document.querySelector('#customersModal > div');
-  if (modalScrollContainer) {
-    modalScrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
-  }
-  nameInput?.focus();
 }
 
 function cancelEditCustomer() {
@@ -9428,3 +9507,4 @@ window.seedSampleMultiMonthDataPrompt = seedSampleMultiMonthDataPrompt;
 window.deduplicateCustomersList = deduplicateCustomersList;
 window.getCanonicalCustomerInfo = getCanonicalCustomerInfo;
 window.runManualCustomerDeduplication = runManualCustomerDeduplication;
+window.editCustomerFromDetail = editCustomerFromDetail;
