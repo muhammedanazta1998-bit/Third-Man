@@ -13,16 +13,41 @@ function isSpecialBrand(productName) {
          p.includes('jasmine');
 }
 
+const UNWANTED_DUMMY_IDS = ['sp_mg', 'sp_mgold', 'sp_jas', 'p_mg', 'p_mgold', 'p_jas'];
+const UNWANTED_DUMMY_NAMES = [
+  'mohabbath green kaima rice',
+  'mohabbath gold biriyani rice',
+  'jasmine premium basmati rice',
+  'mohabbath green',
+  'mohabbath gold',
+  'jasmine premium'
+];
+
+function isUnwantedDummyProduct(p) {
+  if (!p) return false;
+  if (typeof p === 'string') {
+    const s = p.trim().toLowerCase();
+    return UNWANTED_DUMMY_NAMES.some(dummy => s === dummy || s.includes(dummy));
+  }
+  if (p.id && UNWANTED_DUMMY_IDS.includes(p.id)) return true;
+  const name = String(p.name || p.productName || '').trim().toLowerCase();
+  if (!name) return false;
+  return UNWANTED_DUMMY_NAMES.some(dummy => name === dummy || name.includes(dummy));
+}
+
+function detectCategoryFromName(name) {
+  const lower = String(name || '').toLowerCase();
+  if (lower.includes('kaima') || lower.includes('jeerakasala') || lower.includes('jeera')) return 'Kaima';
+  if (lower.includes('kolam')) return 'Kolam';
+  if (lower.includes('basmati') || lower.includes('1121') || lower.includes('sella') || lower.includes('long grain')) return 'Basmati';
+  return 'Other';
+}
+
 const DEFAULT_PRODUCTS = [
-  { id: 'p_mg', name: 'Mohabbath Green Kaima Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 98 },
-  { id: 'p_mgold', name: 'Mohabbath Gold Biriyani Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 104 },
-  { id: 'p_jas', name: 'Jasmine Premium Basmati Rice', category: 'Basmati', bagSize: 30, defaultRateKg: 112 },
   { id: 'p1', name: 'Wayanadan Kaima Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 96 },
   { id: 'p2', name: 'Jeerakasala Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 92 },
   { id: 'p3', name: 'Royal 1121 Sella Basmati', category: 'Basmati', bagSize: 30, defaultRateKg: 105 },
-  { id: 'p4', name: 'Premium Long Grain Basmati', category: 'Basmati', bagSize: 30, defaultRateKg: 115 },
-  { id: 'p5', name: 'Classic Biriyani Rice Special', category: 'Kolam', bagSize: 26, defaultRateKg: 84 },
-  { id: 'p6', name: 'Wada Kolam Rice Supreme', category: 'Kolam', bagSize: 25, defaultRateKg: 78 }
+  { id: 'p4', name: 'Premium Long Grain Basmati', category: 'Basmati', bagSize: 30, defaultRateKg: 115 }
 ];
 
 const DEFAULT_BAG_SIZES = [5, 10, 25, 26, 30, 50];
@@ -113,6 +138,7 @@ let currentTrashSearch = '';
 function initApp() {
   try {
     loadDataFromStorage();
+    purgeUnwantedDummyProducts(false);
     extractCustomersFromOrdersIfMissing(false);
 
     // Set default order date to today
@@ -173,14 +199,28 @@ if (document.readyState === 'loading') {
 
 function loadDataFromStorage() {
   try {
-    // Purge legacy v1 demo cache if present
-    try {
-      localStorage.removeItem('biriyani_rice_orders_v1');
-      localStorage.removeItem('biriyani_rice_customers_v1');
-    } catch (e) {}
-
+    // 1. Load orders (try fresh_v2, then fallback to historical v1/unversioned orders without purging them)
+    let parsedOrders = [];
     const storedOrders = localStorage.getItem(STORAGE_ORDERS);
-    const parsedOrders = storedOrders ? JSON.parse(storedOrders) : [];
+    if (storedOrders) {
+      try { parsedOrders = JSON.parse(storedOrders); } catch (e) {}
+    }
+    if (!Array.isArray(parsedOrders) || parsedOrders.length === 0) {
+      const orderKeys = ['biriyani_rice_orders_v1', 'biriyani_rice_orders', 'orders'];
+      for (const k of orderKeys) {
+        const legacy = localStorage.getItem(k);
+        if (legacy) {
+          try {
+            const pl = JSON.parse(legacy);
+            if (Array.isArray(pl) && pl.length > 0) {
+              parsedOrders = pl;
+              try { localStorage.setItem(STORAGE_ORDERS, JSON.stringify(pl)); } catch (e) {}
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+    }
     orders = Array.isArray(parsedOrders) ? parsedOrders.filter(Boolean) : [];
 
     // Normalize each order to avoid any undefined access bugs
@@ -198,13 +238,24 @@ function loadDataFromStorage() {
       if (!o.items || !Array.isArray(o.items) || o.items.length === 0) {
         o.items = [{
           productId: o.product?.id || 'p1',
-          productName: o.product?.name || 'Biriyani Rice',
+          productName: o.product?.name || o.productName || 'Biriyani Rice',
           bagSize: parseFloat(o.bagSize) || 25,
           bagQty: parseFloat(o.bagQty) || 1,
           totalKg: parseFloat(o.totalKg) || (parseFloat(o.bagSize) || 25),
           perKgRate: parseFloat(o.perKgRate) || 95,
           totalAmount: parseFloat(o.totalAmount) || 0
         }];
+      } else {
+        // Repair items if dummy product overwrote genuine product name
+        o.items.forEach(it => {
+          if (!it.productName || isUnwantedDummyProduct({ name: it.productName })) {
+            if (o.product?.name && !isUnwantedDummyProduct({ name: o.product.name })) {
+              it.productName = o.product.name;
+            } else if (o.productName && !isUnwantedDummyProduct({ name: o.productName })) {
+              it.productName = o.productName;
+            }
+          }
+        });
       }
 
       // Ensure numeric fields
@@ -224,7 +275,8 @@ function loadDataFromStorage() {
       try {
         const parsed = JSON.parse(rawV1);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          loadedProducts = parsed;
+          const clean = parsed.filter(p => !isUnwantedDummyProduct(p));
+          if (clean.length > 0) loadedProducts = clean;
         }
       } catch (e) {}
     }
@@ -238,8 +290,11 @@ function loadDataFromStorage() {
           try {
             const parsed = JSON.parse(raw);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              loadedProducts = parsed;
-              break;
+              const clean = parsed.filter(p => !isUnwantedDummyProduct(p));
+              if (clean.length > 0) {
+                loadedProducts = clean;
+                break;
+              }
             }
           } catch (e) {}
         }
@@ -254,26 +309,27 @@ function loadDataFromStorage() {
           try {
             const parsed = JSON.parse(localStorage.getItem(key));
             if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].name) {
-              loadedProducts = parsed;
-              break;
+              const clean = parsed.filter(p => !isUnwantedDummyProduct(p));
+              if (clean.length > 0) {
+                loadedProducts = clean;
+                break;
+              }
             }
           } catch (e) {}
         }
       }
     }
 
-    products = (loadedProducts && loadedProducts.length > 0) ? loadedProducts : DEFAULT_PRODUCTS;
+    products = (loadedProducts && loadedProducts.length > 0)
+      ? loadedProducts.filter(p => !isUnwantedDummyProduct(p))
+      : DEFAULT_PRODUCTS.filter(p => !isUnwantedDummyProduct(p));
 
     // Normalize each product to ensure category, bagSize, and defaultRateKg exist
     products.forEach((p, idx) => {
       if (!p.id) p.id = 'p_' + (idx + 1);
       if (!p.name) p.name = 'Rice Variety ' + (idx + 1);
       if (!p.category) {
-        const lower = (p.name || '').toLowerCase();
-        if (lower.includes('kaima') || lower.includes('jeerakasala')) p.category = 'Kaima';
-        else if (lower.includes('basmati') || lower.includes('1121') || lower.includes('sella')) p.category = 'Basmati';
-        else if (lower.includes('kolam')) p.category = 'Kolam';
-        else p.category = 'Kaima';
+        p.category = detectCategoryFromName(p.name);
       }
       if (!p.bagSize) {
         p.bagSize = 26;
@@ -287,16 +343,17 @@ function loadDataFromStorage() {
       }
     });
 
-    // Ensure the 3 special incentive brands exist in products if not already created
-    if (!products.some(p => (p.name || '').toLowerCase().includes('mohabbath green'))) {
-      products.unshift({ id: 'sp_mg', name: 'Mohabbath Green Kaima Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 98 });
-    }
-    if (!products.some(p => (p.name || '').toLowerCase().includes('mohabbath gold'))) {
-      products.unshift({ id: 'sp_mgold', name: 'Mohabbath Gold Biriyani Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 104 });
-    }
-    if (!products.some(p => (p.name || '').toLowerCase().includes('jasmine'))) {
-      products.unshift({ id: 'sp_jas', name: 'Jasmine Premium Basmati Rice', category: 'Basmati', bagSize: 30, defaultRateKg: 112 });
-    }
+    // HARVEST USER'S CUSTOM PRODUCTS FROM ORDERS HISTORY
+    restoreProductsFromOrdersHistory();
+
+    // Final filter against any unwanted dummy products
+    products = products.filter(p => !isUnwantedDummyProduct(p));
+
+    // Save cleaned product list to prevent dummy restoration
+    try {
+      localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
+      localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
+    } catch (e) {}
 
     // ==================== RESTORE USER'S BAG SIZES ====================
     let loadedBagSizes = null;
@@ -323,9 +380,31 @@ function loadDataFromStorage() {
       if (!bagSizes.includes(s)) bagSizes.push(s);
     });
 
+    // ==================== RESTORE CUSTOMERS ====================
+    let loadedCust = null;
     const storedCustomers = localStorage.getItem(STORAGE_CUSTOMERS);
-    customers = storedCustomers ? JSON.parse(storedCustomers) : DEFAULT_CUSTOMERS;
-    if (!Array.isArray(customers) || customers.length === 0) customers = DEFAULT_CUSTOMERS;
+    if (storedCustomers) {
+      try {
+        const pc = JSON.parse(storedCustomers);
+        if (Array.isArray(pc) && pc.length > 0) loadedCust = pc;
+      } catch (e) {}
+    }
+    if (!loadedCust) {
+      const altCustKeys = ['biriyani_rice_customers_v1', 'biriyani_rice_customers', 'customers'];
+      for (const k of altCustKeys) {
+        const raw = localStorage.getItem(k);
+        if (raw) {
+          try {
+            const pc = JSON.parse(raw);
+            if (Array.isArray(pc) && pc.length > 0) {
+              loadedCust = pc;
+              break;
+            }
+          } catch (e) {}
+        }
+      }
+    }
+    customers = (loadedCust && loadedCust.length > 0) ? loadedCust : DEFAULT_CUSTOMERS;
 
     // Ensure all customers have normalized district, town, landmark, and members
     customers.forEach(c => {
@@ -373,7 +452,7 @@ function loadDataFromStorage() {
   } catch (e) {
     console.error('Error loading localStorage data:', e);
     orders = [];
-    products = DEFAULT_PRODUCTS;
+    products = DEFAULT_PRODUCTS.filter(p => !isUnwantedDummyProduct(p));
     bagSizes = DEFAULT_BAG_SIZES;
     customers = DEFAULT_CUSTOMERS;
     trashList = [];
@@ -396,6 +475,105 @@ function saveDataToStorage() {
   }
 
   if (isFirestoreInitialized && !isReceivingCloudSettings) {
+    syncCloudConfig();
+  }
+}
+
+// Automatically harvests and restores any genuine user products from order history
+function restoreProductsFromOrdersHistory() {
+  if (!Array.isArray(products)) products = [];
+  const candidateOrders = [...(Array.isArray(orders) ? orders : [])];
+
+  // Scan all other localStorage keys for orders to extract user's products
+  const altOrderKeys = ['biriyani_rice_orders_fresh_v2', 'biriyani_rice_orders_v1', 'biriyani_rice_orders', 'orders'];
+  altOrderKeys.forEach(k => {
+    try {
+      const raw = localStorage.getItem(k);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          candidateOrders.push(...parsed);
+        }
+      }
+    } catch (e) {}
+  });
+
+  let added = false;
+  candidateOrders.forEach(ord => {
+    if (!ord) return;
+    const items = Array.isArray(ord.items) && ord.items.length > 0
+      ? ord.items
+      : [{
+          productId: ord.productId || ord.product?.id,
+          productName: ord.productName || ord.product?.name,
+          bagSize: ord.bagSize,
+          perKgRate: ord.perKgRate
+        }];
+
+    items.forEach(it => {
+      if (!it) return;
+      const pName = (it.productName || it.name || it.product?.name || '').trim();
+      if (!pName) return;
+
+      // Filter out unwanted dummy products
+      if (isUnwantedDummyProduct({ name: pName, id: it.productId })) return;
+
+      const lower = pName.toLowerCase();
+      const exists = products.some(p => (p.name || '').trim().toLowerCase() === lower);
+      if (!exists) {
+        const newProd = {
+          id: it.productId || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+          name: pName,
+          category: it.category || detectCategoryFromName(pName),
+          bagSize: parseFloat(it.bagSize) || 26,
+          defaultRateKg: parseFloat(it.perKgRate) || 90
+        };
+        products.push(newProd);
+        added = true;
+      }
+    });
+  });
+
+  if (added) {
+    try {
+      localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
+      localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
+    } catch (e) {}
+  }
+
+  return added;
+}
+
+// Purges unwanted dummy products and protects user's custom products
+function purgeUnwantedDummyProducts(syncToCloud = true) {
+  if (!Array.isArray(products)) products = [];
+
+  // 1. Remove dummy products
+  products = products.filter(p => !isUnwantedDummyProduct(p));
+
+  // 2. Harvest any user products from orders
+  restoreProductsFromOrdersHistory();
+
+  // 3. Final filter
+  products = products.filter(p => !isUnwantedDummyProduct(p));
+
+  // 4. If products is completely empty, restore standard clean defaults
+  if (products.length === 0) {
+    products = DEFAULT_PRODUCTS.filter(p => !isUnwantedDummyProduct(p));
+  }
+
+  // 5. Save to localStorage
+  try {
+    localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
+    localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
+  } catch (e) {}
+
+  // 6. Update UI
+  populateProductDropdown();
+  if (typeof renderProductsManageList === 'function') renderProductsManageList();
+
+  // 7. Sync cleaned config to cloud
+  if (syncToCloud && isFirestoreInitialized && db) {
     syncCloudConfig();
   }
 }
@@ -516,6 +694,10 @@ function setupFirestoreRealtimeListeners() {
       // Automatically harvest any customer from orders into customer directory
       extractCustomersFromOrdersIfMissing(true);
 
+      // Automatically harvest products from cloud orders if missing
+      restoreProductsFromOrdersHistory();
+      purgeUnwantedDummyProducts(false);
+
       updateDashboard();
       isReceivingCloudOrders = false;
       updateCloudSyncStatus('synced', 'Live Synced 🟢');
@@ -579,8 +761,24 @@ function setupFirestoreRealtimeListeners() {
       isReceivingCloudSettings = true;
       const cfg = doc.data();
       if (Array.isArray(cfg.products) && cfg.products.length > 0) {
-        products = cfg.products;
+        // Filter out any unwanted dummy products from cloud config
+        const cleanCloudProducts = cfg.products.filter(p => !isUnwantedDummyProduct(p));
+
+        // Merge with existing user products so local additions are never wiped
+        cleanCloudProducts.forEach(cp => {
+          if (!products.some(p => p.id === cp.id || (p.name && cp.name && p.name.trim().toLowerCase() === cp.name.trim().toLowerCase()))) {
+            products.push(cp);
+          }
+        });
+
+        // Harvest any products from orders history
+        restoreProductsFromOrdersHistory();
+
+        // Purge dummy products
+        products = products.filter(p => !isUnwantedDummyProduct(p));
+
         localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
+        localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
         populateProductDropdown();
         if (typeof renderProductsManageList === 'function') renderProductsManageList();
       }
@@ -1645,6 +1843,7 @@ function openEditOrderModal(orderId) {
       order.items.forEach(it => {
         addOrderItemRow({
           productId: it.productId,
+          productName: it.productName,
           bagSize: parseFloat(it.bagSize) || defaultRememberedBagSize,
           bagQty: parseFloat(it.bagQty) || 1,
           perKgRate: parseFloat(it.perKgRate) || 95
@@ -1653,6 +1852,7 @@ function openEditOrderModal(orderId) {
     } else {
       addOrderItemRow({
         productId: order.product?.id || 'p1',
+        productName: order.product?.name || order.productName,
         bagSize: parseFloat(order.bagSize) || defaultRememberedBagSize,
         bagQty: parseFloat(order.bagQty) || 1,
         perKgRate: parseFloat(order.perKgRate) || 95
@@ -1711,9 +1911,36 @@ function deleteCurrentEditingOrder() {
 }
 
 function addOrderItemRow(itemData = null) {
-  const defaultProd = products[0] || { id: 'p1', name: 'Wayanadan Kaima Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 96 };
-  const prodId = itemData?.productId || defaultProd.id;
-  const currentProd = products.find(p => p.id === prodId) || defaultProd;
+  let currentProd = null;
+  if (itemData) {
+    if (itemData.productId) {
+      currentProd = products.find(p => p.id === itemData.productId);
+    }
+    if (!currentProd && itemData.productName) {
+      const pNameLower = itemData.productName.trim().toLowerCase();
+      currentProd = products.find(p => (p.name || '').trim().toLowerCase() === pNameLower);
+    }
+    // If still not found and a custom productName was provided, register it in products so it is NEVER lost or replaced!
+    if (!currentProd && itemData.productName && !isUnwantedDummyProduct({ name: itemData.productName })) {
+      currentProd = {
+        id: itemData.productId || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+        name: itemData.productName.trim(),
+        category: detectCategoryFromName(itemData.productName),
+        bagSize: parseFloat(itemData.bagSize) || 26,
+        defaultRateKg: parseFloat(itemData.perKgRate) || 90
+      };
+      products.push(currentProd);
+      saveDataToStorage();
+      populateProductDropdown();
+      if (typeof renderProductsManageList === 'function') renderProductsManageList();
+    }
+  }
+
+  if (!currentProd) {
+    currentProd = products[0] || { id: 'p1', name: 'Biriyani Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 95 };
+  }
+
+  const prodId = currentProd.id;
   const custName = document.getElementById('customerName')?.value || '';
 
   const lastPriceInfo = getCustomerLastRate(custName, prodId);
@@ -1727,6 +1954,7 @@ function addOrderItemRow(itemData = null) {
   const newItem = {
     uid: 'item_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
     productId: prodId,
+    productName: currentProd.name,
     bagSize: defaultBag,
     bagQty: itemData?.bagQty || 10,
     perKgRate: initialRate,
@@ -1777,7 +2005,8 @@ function renderOrderItems() {
       const cat = p.category ? `[${escapeHtml(p.category)}] ` : '';
       const bag = p.bagSize ? ` • ${p.bagSize}kg` : '';
       const star = isSpecialBrand(p.name) ? ' ⭐ (Bonus Brand)' : '';
-      return `<option value="${p.id}" ${p.id === item.productId ? 'selected' : ''}>${cat}${escapeHtml(p.name)}${star} (₹${p.defaultRateKg}/kg${bag})</option>`;
+      const isSelected = (p.id === item.productId) || (item.productName && p.name.trim().toLowerCase() === item.productName.trim().toLowerCase());
+      return `<option value="${p.id}" ${isSelected ? 'selected' : ''}>${cat}${escapeHtml(p.name)}${star} (₹${p.defaultRateKg}/kg${bag})</option>`;
     }).join('');
 
     const bagSizeOptions = bagSizes.map(size =>
@@ -1874,8 +2103,11 @@ function onItemProductChange(index, newProductId) {
   orderItems[index].productId = newProductId;
 
   const currentProd = products.find(p => p.id === newProductId);
-  if (currentProd && currentProd.bagSize) {
-    orderItems[index].bagSize = currentProd.bagSize;
+  if (currentProd) {
+    orderItems[index].productName = currentProd.name;
+    if (currentProd.bagSize) {
+      orderItems[index].bagSize = currentProd.bagSize;
+    }
   } else if (!orderItems[index].bagSize) {
     orderItems[index].bagSize = defaultRememberedBagSize || 26;
   }
@@ -2525,10 +2757,12 @@ function handleSaveOrder(event) {
     totalKg += weight;
     totalAmount += amount;
 
-    const prod = products.find(p => p.id === item.productId) || { name: 'Biriyani Rice' };
+    const prod = products.find(p => p.id === item.productId) ||
+                 products.find(p => item.productName && (p.name || '').trim().toLowerCase() === item.productName.trim().toLowerCase()) ||
+                 { name: item.productName || 'Biriyani Rice' };
 
     return {
-      productId: item.productId,
+      productId: item.productId || prod.id || 'p1',
       productName: prod.name,
       bagSize: size,
       bagQty: qty,
@@ -7761,6 +7995,8 @@ window.syncCloudCustomer = syncCloudCustomer;
 window.deleteCloudCustomer = deleteCloudCustomer;
 window.loadSampleDemoData = loadSampleDemoData;
 window.setFilterPeriod = setFilterPeriod;
+window.purgeUnwantedDummyProducts = purgeUnwantedDummyProducts;
+window.restoreProductsFromOrdersHistory = restoreProductsFromOrdersHistory;
 // ==================== SALES LEADERBOARDS ====================
 
 let leaderboardPeriod = 'all'; // 'all', 'month', 'week', 'today'
