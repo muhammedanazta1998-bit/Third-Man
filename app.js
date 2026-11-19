@@ -467,6 +467,11 @@ function initFirebaseSync() {
     updateCloudSyncStatus('syncing', 'Connecting to Cloud...');
 
     setupFirestoreRealtimeListeners();
+
+    // If local custom logo exists, ensure it is pushed to cloud settings
+    if (localStorage.getItem(STORAGE_APP_LOGO)) {
+      setTimeout(() => syncCloudConfig(), 1200);
+    }
   } catch (err) {
     console.error('Firebase init error:', err);
     updateCloudSyncStatus('error', 'Cloud Connect Error');
@@ -592,6 +597,19 @@ function setupFirestoreRealtimeListeners() {
         trashList = cfg.trashList;
         localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
         if (typeof updateTrashBadges === 'function') updateTrashBadges();
+      }
+      if (cfg.appLogo !== undefined) {
+        if (cfg.appLogo) {
+          try {
+            localStorage.setItem(STORAGE_APP_LOGO, cfg.appLogo);
+          } catch (e) {}
+          applyAppLogo(cfg.appLogo, true);
+        } else {
+          try {
+            localStorage.removeItem(STORAGE_APP_LOGO);
+          } catch (e) {}
+          applyAppLogo(DEFAULT_LOGO_URL, false);
+        }
       }
       isReceivingCloudSettings = false;
     } else {
@@ -749,6 +767,11 @@ function syncCloudConfig() {
   if (!db || isReceivingCloudSettings) return;
   clearTimeout(syncConfigDebounceTimer);
   syncConfigDebounceTimer = setTimeout(() => {
+    let currentLogo = null;
+    try {
+      currentLogo = localStorage.getItem(STORAGE_APP_LOGO) || null;
+    } catch (e) {}
+
     db.collection('settings').doc('app_config').set(sanitizeForFirestore({
       products: products || [],
       bagSizes: bagSizes || [],
@@ -756,7 +779,8 @@ function syncCloudConfig() {
       savedDistrictTowns: savedDistrictTowns || [],
       trashList: trashList || [],
       defaultRememberedBagSize: defaultRememberedBagSize || 26,
-      incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01'
+      incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01',
+      appLogo: currentLogo
     }), { merge: true }).catch(err => console.warn('Config sync error:', err));
   }, 500);
 }
@@ -8343,6 +8367,7 @@ function handleAppLogoUpload(event) {
       try {
         localStorage.setItem(STORAGE_APP_LOGO, dataUrl);
         applyAppLogo(dataUrl, true);
+        syncCloudConfig();
         showNotification('App logo updated successfully!');
       } catch (err) {
         console.error('Failed to save logo in localStorage:', err);
@@ -8381,6 +8406,7 @@ function handleAppLogoUpload(event) {
       try {
         localStorage.setItem(STORAGE_APP_LOGO, dataUrl);
         applyAppLogo(dataUrl, true);
+        syncCloudConfig();
         showNotification('App logo updated successfully!');
       } catch (err) {
         console.error('Failed to save logo in localStorage:', err);
@@ -8395,6 +8421,7 @@ function handleAppLogoUpload(event) {
 function removeAppLogo() {
   localStorage.removeItem(STORAGE_APP_LOGO);
   applyAppLogo(DEFAULT_LOGO_URL, false);
+  syncCloudConfig();
   showNotification('App logo reset to default');
 }
 
