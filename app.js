@@ -13,23 +13,97 @@ function isSpecialBrand(productName) {
          p.includes('jasmine');
 }
 
-// User's 6 official confirmed rice varieties
+// User's 6 official confirmed active rice varieties
 const USER_CONFIRMED_PRODUCTS = [
-  { id: 'prod_mg', name: 'Mohabbath Green', category: 'Kaima', bagSize: 26, defaultRateKg: 98 },
-  { id: 'prod_mgold', name: 'Mohabbath Gold', category: 'Kaima', bagSize: 26, defaultRateKg: 104 },
-  { id: 'prod_jas', name: 'Jasmine', category: 'Basmati', bagSize: 30, defaultRateKg: 112 },
-  { id: 'prod_dcw', name: 'DC White', category: 'Basmati', bagSize: 30, defaultRateKg: 90 },
-  { id: 'prod_dcg', name: 'DC Gold', category: 'Basmati', bagSize: 30, defaultRateKg: 92 },
-  { id: 'prod_jmt', name: 'JMT Rose 2nd', category: 'Other', bagSize: 26, defaultRateKg: 88 }
+  { id: 'prod_mg', name: 'Mohabbath Green', category: 'Kaima', bagSize: 26, defaultRateKg: 98, active: true },
+  { id: 'prod_mgold', name: 'Mohabbath Gold', category: 'Kaima', bagSize: 26, defaultRateKg: 104, active: true },
+  { id: 'prod_jas', name: 'Jasmine', category: 'Basmati', bagSize: 30, defaultRateKg: 112, active: true },
+  { id: 'prod_dcw', name: 'White Chabi', category: 'Basmati', bagSize: 30, defaultRateKg: 90, active: true },
+  { id: 'prod_dcg', name: 'Golden Chabi', category: 'Basmati', bagSize: 30, defaultRateKg: 92, active: true },
+  { id: 'prod_jmt', name: 'JMT Rose 2nd', category: 'Other', bagSize: 26, defaultRateKg: 88, active: true }
 ];
+
+// Additional official confirmed varieties (historical / inactive)
+const ADDITIONAL_CONFIRMED_PRODUCTS = [
+  { id: 'prod_joker', name: 'Joker', category: 'Other', bagSize: 26, defaultRateKg: 66, active: false },
+  { id: 'prod_daawat', name: 'Daawat XXXL Gold Sella', category: 'Basmati', bagSize: 30, defaultRateKg: 112, active: false },
+  { id: 'prod_royalgold', name: 'Royal Gold', category: 'Basmati', bagSize: 30, defaultRateKg: 113, active: false },
+  { id: 'prod_royalwhite', name: 'Royal White', category: 'Basmati', bagSize: 30, defaultRateKg: 113, active: false }
+];
+
+const ALL_OFFICIAL_PRODUCTS = [...USER_CONFIRMED_PRODUCTS, ...ADDITIONAL_CONFIRMED_PRODUCTS];
+
+/**
+ * Robust Canonical Product Resolution
+ * Maps any variant, legacy name, ID, or case permutation to the official variety.
+ */
+function getCanonicalProduct(p) {
+  if (!p) return null;
+  const rawId = typeof p === 'object' ? (p.id || p.productId) : null;
+  const rawName = String(typeof p === 'object' ? (p.name || p.productName || '') : p).trim();
+  const lower = rawName.toLowerCase();
+
+  // Strip aggregate order text like "(+1 more)" if present
+  const cleanLower = lower.replace(/\s*\(\+\d+\s*more\)/i, '').trim();
+
+  // 1. Match by exact canonical ID
+  if (rawId) {
+    const byId = ALL_OFFICIAL_PRODUCTS.find(op => op.id === rawId);
+    if (byId) return byId;
+  }
+
+  // 2. Mohabbath Green
+  if (cleanLower === 'mohabbath green' || cleanLower === 'mohabbath' || cleanLower === 'mohabbath green kaima' || rawId === 'prod_mg') {
+    return ALL_OFFICIAL_PRODUCTS[0];
+  }
+  // 3. Mohabbath Gold
+  if (cleanLower === 'mohabbath gold' || cleanLower === 'mohabbath gold kaima' || rawId === 'prod_mgold') {
+    return ALL_OFFICIAL_PRODUCTS[1];
+  }
+  // 4. Jasmine
+  if (cleanLower === 'jasmine' || cleanLower === 'jasmine basmati' || rawId === 'prod_jas') {
+    return ALL_OFFICIAL_PRODUCTS[2];
+  }
+  // 5. White Chabi (DC White, Double Chabi White Sella)
+  if (cleanLower === 'white chabi' || cleanLower === 'dc white' || cleanLower === 'dcwhite' ||
+      cleanLower === 'double chabi white sella' || cleanLower === 'double chabi white' ||
+      cleanLower === 'double chabi white sella basmati' || cleanLower === 'dc white sella' || rawId === 'prod_dcw') {
+    return ALL_OFFICIAL_PRODUCTS[3];
+  }
+  // 6. Golden Chabi (DC Gold, Double Chabi Gold Sella)
+  if (cleanLower === 'golden chabi' || cleanLower === 'dc gold' || cleanLower === 'dcgold' ||
+      cleanLower === 'double chabi gold sella' || cleanLower === 'double chabi gold' ||
+      cleanLower === 'double chabi gold sella basmati' || cleanLower === 'dc gold sella' || rawId === 'prod_dcg') {
+    return ALL_OFFICIAL_PRODUCTS[4];
+  }
+  // 7. JMT Rose 2nd (SM 3Rose 2nd)
+  if (cleanLower === 'jmt rose 2nd' || cleanLower === 'sm 3rose 2nd' || cleanLower === 'sm 3rose' ||
+      cleanLower === 'sm 3 rose 2nd' || cleanLower === 'jmt rose' || cleanLower === 'jmt rose second' || rawId === 'prod_jmt') {
+    return ALL_OFFICIAL_PRODUCTS[5];
+  }
+  // 8. Joker
+  if (cleanLower === 'joker' || rawId === 'prod_joker') {
+    return ALL_OFFICIAL_PRODUCTS[6];
+  }
+  // 9. Daawat XXXL Gold Sella
+  if (cleanLower === 'daawat xxxl gold sella' || cleanLower === 'daawat' || cleanLower === 'dawat' || cleanLower === 'daawat gold sella' || rawId === 'prod_daawat') {
+    return ALL_OFFICIAL_PRODUCTS[7];
+  }
+  // 10. Royal Gold
+  if (cleanLower === 'royal gold' || rawId === 'prod_royalgold') {
+    return ALL_OFFICIAL_PRODUCTS[8];
+  }
+  // 11. Royal White
+  if (cleanLower === 'royal white' || rawId === 'prod_royalwhite') {
+    return ALL_OFFICIAL_PRODUCTS[9];
+  }
+
+  return null;
+}
 
 function isUserConfirmedProduct(p) {
   if (!p) return false;
-  const name = String(typeof p === 'string' ? p : (p.name || p.productName || '')).trim().toLowerCase();
-  const id = typeof p === 'object' && p ? (p.id || p.productId) : null;
-  if (USER_CONFIRMED_PRODUCTS.some(u => u.name.toLowerCase() === name || (id && u.id === id))) return true;
-  if (Array.isArray(products) && products.some(pr => (pr.name || '').trim().toLowerCase() === name || (id && pr.id === id))) return true;
-  return false;
+  return Boolean(getCanonicalProduct(p));
 }
 
 const DEMO_SAMPLE_PRODUCT_IDS = ['p1', 'p2', 'p3', 'p4'];
@@ -100,7 +174,7 @@ function isUnwantedDummyProduct(p) {
 function detectCategoryFromName(name) {
   const lower = String(name || '').toLowerCase();
   if (lower.includes('mohabbath') || lower.includes('kaima') || lower.includes('jeera')) return 'Kaima';
-  if (lower.includes('dc white') || lower.includes('dc gold') || lower.includes('dc ') || lower.includes('jasmine') || lower.includes('basmati') || lower.includes('1121') || lower.includes('sella')) return 'Basmati';
+  if (lower.includes('white chabi') || lower.includes('golden chabi') || lower.includes('dc white') || lower.includes('dc gold') || lower.includes('dc ') || lower.includes('jasmine') || lower.includes('basmati') || lower.includes('1121') || lower.includes('sella') || lower.includes('royal gold') || lower.includes('royal white') || lower.includes('daawat')) return 'Basmati';
   if (lower.includes('kolam')) return 'Kolam';
   if (lower.includes('jmt') || lower.includes('rose') || lower.includes('matta')) return 'Other';
   return 'Other';
@@ -236,8 +310,8 @@ function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
             it.category = newCategory;
             orderChanged = true;
           }
-          // If bag size changed (e.g. DC 26kg -> 30kg)
-          if (newBagSize && it.bagSize !== newBagSize) {
+          // Preserve historical bag size if already recorded; only populate if missing
+          if (!it.bagSize && newBagSize) {
             it.bagSize = newBagSize;
             const qty = parseFloat(it.bagQty) || 1;
             const itemRate = parseFloat(it.perKgRate) || newRate;
@@ -260,7 +334,8 @@ function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
       if (order.product && targetId) {
         order.product.id = targetId;
       }
-      if (newBagSize && order.bagSize !== newBagSize) {
+      // Preserve order bagSize if already present
+      if (!order.bagSize && newBagSize) {
         order.bagSize = newBagSize;
         const qty = parseFloat(order.bagQty) || 1;
         const ordRate = parseFloat(order.perKgRate) || newRate;
@@ -319,43 +394,191 @@ function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
 }
 
 /**
- * Ensures DC White and DC Gold are normalized to Basmati category and 30 kg bag size
- * across both the active products catalog and all historical orders.
+ * Cascades canonical product names, IDs, and categories across all orders
+ * while strictly preserving the recorded historical bagSize (e.g. 26kg, 30kg, 50kg).
  */
-function normalizeExistingDCOrdersAndProducts() {
-  let catalogUpdated = false;
+function cascadeCanonicalProductsToOrders(idRedirections = null) {
+  if (!Array.isArray(orders) || orders.length === 0) return 0;
+  let changedOrders = 0;
 
-  // 1. Normalize in products array
-  if (Array.isArray(products)) {
-    products.forEach(p => {
-      if (!p || !p.name) return;
-      const lower = p.name.trim().toLowerCase();
-      if (lower.includes('dc white') || lower.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
-        if (p.category !== 'Basmati' || p.bagSize !== 30) {
-          p.category = 'Basmati';
-          p.bagSize = 30;
-          catalogUpdated = true;
+  orders.forEach(order => {
+    if (!order) return;
+    let orderChanged = false;
+
+    // 1. Cascade items
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      order.items.forEach(it => {
+        if (!it) return;
+        const canon = getCanonicalProduct(it);
+        if (canon) {
+          if (it.productId !== canon.id) {
+            it.productId = canon.id;
+            orderChanged = true;
+          }
+          if (it.productName !== canon.name) {
+            it.productName = canon.name;
+            orderChanged = true;
+          }
+          if (it.category !== canon.category) {
+            it.category = canon.category;
+            orderChanged = true;
+          }
+        } else if (idRedirections && idRedirections.has(it.productId)) {
+          const newId = idRedirections.get(it.productId);
+          const matchCanon = ALL_OFFICIAL_PRODUCTS.find(op => op.id === newId);
+          it.productId = newId;
+          if (matchCanon) {
+            it.productName = matchCanon.name;
+            it.category = matchCanon.category;
+          }
+          orderChanged = true;
+        }
+      });
+
+      // Update primary product display on the order object
+      const first = order.items[0];
+      const otherCount = order.items.length - 1;
+      const expectedDisplayName = otherCount > 0 ? `${first.productName} (+${otherCount} more)` : first.productName;
+      if (!order.product || order.product.id !== first.productId || order.product.name !== expectedDisplayName) {
+        order.product = { id: first.productId, name: expectedDisplayName };
+        order.bagSize = first.bagSize;
+        orderChanged = true;
+      }
+    } else if (order.product) {
+      const canon = getCanonicalProduct(order.product);
+      if (canon) {
+        if (order.product.id !== canon.id || order.product.name !== canon.name) {
+          order.product = { id: canon.id, name: canon.name };
+          orderChanged = true;
         }
       }
-    });
-  }
+    }
 
-  // 2. Cascade to orders that used DC White or DC Gold at 26kg or Kolam
-  const dcWhite = (Array.isArray(products) && products.find(p => (p.name || '').toLowerCase().includes('dc white') || p.id === 'prod_dcw')) ||
-                  { id: 'prod_dcw', name: 'DC White', category: 'Basmati', bagSize: 30, defaultRateKg: 90 };
-  const dcGold = (Array.isArray(products) && products.find(p => (p.name || '').toLowerCase().includes('dc gold') || p.id === 'prod_dcg')) ||
-                 { id: 'prod_dcg', name: 'DC Gold', category: 'Basmati', bagSize: 30, defaultRateKg: 92 };
+    if (orderChanged) {
+      changedOrders++;
+    }
+  });
 
-  cascadeProductUpdateToOrders(dcWhite.id, 'DC White', dcWhite);
-  cascadeProductUpdateToOrders(dcGold.id, 'DC Gold', dcGold);
-
-  if (catalogUpdated) {
+  if (changedOrders > 0) {
     try {
-      localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
-      localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
+      localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
     } catch (e) {}
-    if (typeof syncCloudConfig === 'function') syncCloudConfig();
   }
+  return changedOrders;
+}
+
+/**
+ * Ensures zero duplicate products exist in catalog, localStorage, and Cloud Firestore.
+ * Maps legacy/alias names (DC White, DOUBLE CHABI, MOHABBATH, SM 3ROSE) to canonical varieties
+ * while strictly preserving user-uploaded photos and custom rates.
+ */
+function deduplicateProductsList(inputProducts = null, syncToCloud = true) {
+  const source = Array.isArray(inputProducts) ? inputProducts : (Array.isArray(products) ? products : []);
+  if (source.length === 0) {
+    products = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
+    return products;
+  }
+
+  const dedupedMap = new Map(); // targetId/normKey -> product object
+  const idRedirections = new Map(); // oldId -> canonicalId
+
+  source.forEach(raw => {
+    if (!raw) return;
+    const p = { ...raw };
+
+    // Never keep demo sample products
+    if (isDemoSampleProduct(p)) return;
+
+    // Never keep aggregate order display strings (e.g. "Mohabbath Green (+1 more)") as products
+    const nameStr = (p.name || '').trim();
+    if (nameStr.includes('(+' || nameStr.includes('more)')) return;
+
+    const canon = getCanonicalProduct(p);
+    if (canon) {
+      const targetId = canon.id;
+      if (p.id && p.id !== targetId) {
+        idRedirections.set(p.id, targetId);
+      }
+      if (dedupedMap.has(targetId)) {
+        // Merge with existing canonical record: preserve photos and customized rates
+        const existing = dedupedMap.get(targetId);
+        if (!existing.imageUrl && (p.imageUrl || p.photoUrl || p.image)) {
+          existing.imageUrl = p.imageUrl || p.photoUrl || p.image;
+        }
+        if (p.defaultRateKg && p.defaultRateKg !== canon.defaultRateKg && !existing.isRateCustomized) {
+          existing.defaultRateKg = p.defaultRateKg;
+          existing.isRateCustomized = true;
+        }
+      } else {
+        const newObj = {
+          id: canon.id,
+          name: canon.name,
+          category: canon.category,
+          bagSize: canon.bagSize,
+          defaultRateKg: parseFloat(p.defaultRateKg) || canon.defaultRateKg,
+          active: canon.active !== false
+        };
+        if (p.imageUrl || p.photoUrl || p.image) {
+          newObj.imageUrl = p.imageUrl || p.photoUrl || p.image;
+        }
+        dedupedMap.set(targetId, newObj);
+      }
+    } else {
+      // Custom user variety (not matching any official variety)
+      const normKey = nameStr.toLowerCase();
+      if (!normKey) return;
+      if (dedupedMap.has(normKey)) {
+        const existing = dedupedMap.get(normKey);
+        if (!existing.imageUrl && (p.imageUrl || p.photoUrl)) existing.imageUrl = p.imageUrl || p.photoUrl;
+      } else {
+        const customId = p.id || ('prod_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4));
+        dedupedMap.set(normKey, {
+          id: customId,
+          name: nameStr,
+          category: p.category || detectCategoryFromName(nameStr),
+          bagSize: parseFloat(p.bagSize) || 26,
+          defaultRateKg: parseFloat(p.defaultRateKg) || 90,
+          active: p.active !== false,
+          imageUrl: p.imageUrl || p.photoUrl || ''
+        });
+      }
+    }
+  });
+
+  // Ensure the 6 primary confirmed varieties always exist in the catalog
+  USER_CONFIRMED_PRODUCTS.forEach(up => {
+    if (!dedupedMap.has(up.id)) {
+      dedupedMap.set(up.id, { ...up });
+    }
+  });
+
+  const cleanedProducts = Array.from(dedupedMap.values());
+  products = cleanedProducts;
+
+  // Persist cleaned catalog
+  try {
+    localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
+    localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
+    localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
+  } catch (e) {}
+
+  // Update UI dropdowns and manage list
+  populateProductDropdown();
+  if (typeof renderProductsManageList === 'function') renderProductsManageList();
+
+  // Cascade any old product IDs or names in orders to their canonical version
+  cascadeCanonicalProductsToOrders(idRedirections);
+
+  // Sync to Cloud Firestore if enabled
+  if (syncToCloud && typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db && !isReceivingCloudSettings) {
+    syncCloudConfig();
+  }
+
+  return products;
+}
+
+function normalizeExistingDCOrdersAndProducts() {
+  return deduplicateProductsList(products, true);
 }
 
 // ==================== INITIALIZATION ====================
@@ -363,11 +586,14 @@ function normalizeExistingDCOrdersAndProducts() {
 function initApp() {
   try {
     loadDataFromStorage();
-    normalizeExistingDCOrdersAndProducts();
-    purgeUnwantedDummyProducts(false);
+    deduplicateProductsList(products, true);
+    cascadeCanonicalProductsToOrders();
     extractCustomersFromOrdersIfMissing(false);
+    if (typeof normalizeOrderCustomerNames === 'function') {
+      normalizeOrderCustomerNames();
+    }
     if (typeof deduplicateCustomersList === 'function') {
-      customers = deduplicateCustomersList(customers, false);
+      customers = deduplicateCustomersList(customers, true);
       saveDataToStorage();
     }
 
@@ -553,55 +779,15 @@ function loadDataFromStorage() {
     // ==================== RESTORE USER'S PRODUCTS ====================
     let finalProducts = [];
     if (loadedProducts && loadedProducts.length > 0) {
-      // User has existing products in storage! Use them directly without re-forcing hardcoded names
       finalProducts = loadedProducts.filter(p => !isDemoSampleProduct(p));
     }
 
-    // Only if storage had no valid products at all, initialize with official confirmed varieties
     if (finalProducts.length === 0) {
       finalProducts = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
     }
 
-    // Deduplicate by ID and lowercase name (cleans any duplicate products created previously)
-    const seenIds = new Set();
-    const seenNames = new Set();
-    const dedupedProducts = [];
-
-    finalProducts.forEach((p, idx) => {
-      if (!p.id) p.id = 'prod_' + (idx + 1);
-      const nameKey = (p.name || '').trim().toLowerCase();
-      if (!nameKey || seenIds.has(p.id) || seenNames.has(nameKey)) return;
-
-      seenIds.add(p.id);
-      seenNames.add(nameKey);
-
-      // Normalize DC products to Basmati and 30 kg as requested by user
-      if (nameKey.includes('dc white') || nameKey.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
-        p.category = 'Basmati';
-        if (!p.bagSize || p.bagSize === 26) {
-          p.bagSize = 30;
-        }
-      }
-
-      if (!p.category) {
-        p.category = detectCategoryFromName(p.name);
-      }
-      p.bagSize = parseFloat(p.bagSize) || 26;
-      p.defaultRateKg = parseFloat(p.defaultRateKg) || parseFloat(p.rateKg) || 90;
-
-      dedupedProducts.push(p);
-    });
-
-    products = dedupedProducts;
-
-    // Save cleaned product list to prevent dummy restoration
-    try {
-      localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
-      localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
-    } catch (e) {}
-
-    // Auto-normalize DC products in previous orders if needed
-    normalizeExistingDCOrdersAndProducts();
+    // Clean, canonical deduplication
+    products = deduplicateProductsList(finalProducts, false);
 
     // ==================== RESTORE USER'S BAG SIZES ====================
     let loadedBagSizes = null;
@@ -734,113 +920,12 @@ function saveDataToStorage() {
 
 // Automatically harvests and restores any genuine user products from order history
 function restoreProductsFromOrdersHistory() {
-  if (!Array.isArray(products)) products = [];
-  const candidateOrders = [...(Array.isArray(orders) ? orders : [])];
-
-  // Scan all other localStorage keys for orders to extract user's products
-  const altOrderKeys = ['biriyani_rice_orders_fresh_v2', 'biriyani_rice_orders_v1', 'biriyani_rice_orders', 'orders'];
-  altOrderKeys.forEach(k => {
-    try {
-      const raw = localStorage.getItem(k);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          candidateOrders.push(...parsed);
-        }
-      }
-    } catch (e) {}
-  });
-
-  let added = false;
-  candidateOrders.forEach(ord => {
-    if (!ord) return;
-    const items = Array.isArray(ord.items) && ord.items.length > 0
-      ? ord.items
-      : [{
-          productId: ord.productId || ord.product?.id,
-          productName: ord.productName || ord.product?.name,
-          bagSize: ord.bagSize,
-          perKgRate: ord.perKgRate
-        }];
-
-    items.forEach(it => {
-      if (!it) return;
-      const pName = (it.productName || it.name || it.product?.name || '').trim();
-      if (!pName) return;
-
-      // Filter out unwanted dummy products
-      if (isUnwantedDummyProduct({ name: pName, id: it.productId })) return;
-
-      const lower = pName.toLowerCase();
-      const exists = products.some(p => (p.name || '').trim().toLowerCase() === lower);
-      if (!exists) {
-        const newProd = {
-          id: it.productId || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
-          name: pName,
-          category: it.category || detectCategoryFromName(pName),
-          bagSize: parseFloat(it.bagSize) || 26,
-          defaultRateKg: parseFloat(it.perKgRate) || 90
-        };
-        products.push(newProd);
-        added = true;
-      }
-    });
-  });
-
-  if (added) {
-    try {
-      localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
-      localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
-    } catch (e) {}
-  }
-
-  return added;
+  return deduplicateProductsList(products, false);
 }
 
 // Purges unwanted dummy products and protects user's custom products
 function purgeUnwantedDummyProducts(syncToCloud = true) {
-  if (!Array.isArray(products)) products = [];
-
-  // 1. Remove dummy products
-  products = products.filter(p => !isDemoSampleProduct(p));
-
-  // 2. Only seed if catalog is completely empty
-  if (products.length === 0) {
-    products = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
-  }
-
-  // 3. Normalize DC products to Basmati & 30kg and deduplicate
-  const seenIds = new Set();
-  const seenNames = new Set();
-  const deduped = [];
-  products.forEach(p => {
-    if (!p || !p.name) return;
-    const lower = p.name.trim().toLowerCase();
-    if (seenIds.has(p.id) || seenNames.has(lower)) return;
-    seenIds.add(p.id);
-    seenNames.add(lower);
-    if (lower.includes('dc white') || lower.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
-      p.category = 'Basmati';
-      if (p.bagSize === 26) p.bagSize = 30;
-    }
-    deduped.push(p);
-  });
-  products = deduped;
-
-  // 4. Save to localStorage
-  try {
-    localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
-    localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
-  } catch (e) {}
-
-  // 5. Update UI
-  populateProductDropdown();
-  if (typeof renderProductsManageList === 'function') renderProductsManageList();
-
-  // 6. Sync cleaned config to cloud
-  if (syncToCloud && isFirestoreInitialized && db) {
-    syncCloudConfig();
-  }
+  return deduplicateProductsList(products, syncToCloud);
 }
 
 // 1-Click Action to Clean Demo Products
@@ -852,19 +937,15 @@ function cleanAllDemoProductsPrompt() {
         <li>Mohabbath Green [Kaima • 26kg]</li>
         <li>Mohabbath Gold [Kaima • 26kg]</li>
         <li>Jasmine [Basmati • 30kg]</li>
-        <li>DC White [Basmati • 30kg]</li>
-        <li>DC Gold [Basmati • 30kg]</li>
+        <li>White Chabi [Basmati • 30kg]</li>
+        <li>Golden Chabi [Basmati • 30kg]</li>
         <li>JMT Rose 2nd [Other • 26kg]</li>
       </ul>`,
     hint: '🛡️ Any custom rates or images you set for these products will be preserved.',
     confirmText: 'Keep Only My Products',
     confirmClass: 'bg-blue-600 hover:bg-blue-700 text-white',
     onConfirm: () => {
-      products = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
-      saveDataToStorage();
-      if (typeof syncCloudConfig === 'function') syncCloudConfig();
-      populateProductDropdown();
-      renderProductsManageList();
+      products = deduplicateProductsList(USER_CONFIRMED_PRODUCTS, true);
       showNotification('✓ Products catalog locked to your 6 official varieties!');
     }
   });
@@ -1064,42 +1145,9 @@ function setupFirestoreRealtimeListeners() {
       isReceivingCloudSettings = true;
       const cfg = doc.data();
       if (Array.isArray(cfg.products) && cfg.products.length > 0) {
-        // Filter out any unwanted dummy products from cloud config
         const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
-
-        // Merge with existing user products so local additions are never wiped
-        cleanCloudProducts.forEach(cp => {
-          if (!products.some(p => p.id === cp.id || (p.name && cp.name && p.name.trim().toLowerCase() === cp.name.trim().toLowerCase()))) {
-            products.push(cp);
-          }
-        });
-
-        // Only seed confirmed products if products list is completely empty
-        if (products.length === 0) {
-          products = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
-        }
-
-        // Deduplicate and normalize DC products to Basmati & 30kg
-        const seenIds = new Set();
-        const seenNames = new Set();
-        products = products.filter(p => {
-          if (!p || !p.name) return false;
-          if (isDemoSampleProduct(p)) return false;
-          const lower = p.name.trim().toLowerCase();
-          if (seenIds.has(p.id) || seenNames.has(lower)) return false;
-          seenIds.add(p.id);
-          seenNames.add(lower);
-          if (lower.includes('dc white') || lower.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
-            p.category = 'Basmati';
-            if (p.bagSize === 26) p.bagSize = 30;
-          }
-          return true;
-        });
-
-        localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
-        localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
-        populateProductDropdown();
-        if (typeof renderProductsManageList === 'function') renderProductsManageList();
+        products = deduplicateProductsList([...products, ...cleanCloudProducts], false);
+        cascadeCanonicalProductsToOrders();
       }
       if (Array.isArray(cfg.bagSizes) && cfg.bagSizes.length > 0) {
         bagSizes = cfg.bagSizes;
@@ -1884,6 +1932,35 @@ function findDuplicateCustomer(name, ownerPhone = '', staffPhone = '', legacyPho
 
 // ==================== CUSTOMER DEDUPLICATION & NORMALIZATION ====================
 
+const CANONICAL_CUSTOMER_ALIASES = {
+  'maj angamaly': { canonicalName: 'MAJ', town: 'Angamaly' },
+  'pkbr elamakkara': { canonicalName: 'PKBR', town: 'Elamakkara' },
+  'al-safi food court, pukkattupady': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' }
+};
+
+function normalizeOrderCustomerNames() {
+  if (!Array.isArray(orders)) return;
+  let changed = false;
+  orders.forEach(o => {
+    if (!o || !o.customer) return;
+    const curName = (typeof o.customer === 'object' ? o.customer.name : o.customer) || '';
+    const rawLower = curName.trim().toLowerCase();
+    const alias = CANONICAL_CUSTOMER_ALIASES[rawLower];
+    if (alias) {
+      if (typeof o.customer === 'object') {
+        o.customer.name = alias.canonicalName;
+        if (!o.customer.town || o.customer.town === 'Ernakulam' || o.customer.town === 'Local') {
+          o.customer.town = alias.town;
+        }
+      } else {
+        o.customer = alias.canonicalName;
+      }
+      changed = true;
+    }
+  });
+  return changed;
+}
+
 function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false) {
   const sourceList = Array.isArray(inputList) ? inputList : (Array.isArray(customers) ? customers : []);
   if (sourceList.length === 0) return [];
@@ -1897,6 +1974,15 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
     const rawName = (item.name || '').trim().replace(/\s+/g, ' ');
     if (!rawName && !item.id) return;
     item.name = rawName || 'Customer';
+
+    const rawLowerName = item.name.toLowerCase();
+    const aliasInfo = CANONICAL_CUSTOMER_ALIASES[rawLowerName];
+    if (aliasInfo) {
+      item.name = aliasInfo.canonicalName;
+      if (!item.town || item.town === 'Ernakulam' || item.town === 'Local') {
+        item.town = aliasInfo.town;
+      }
+    }
 
     const cleanP = cleanPhoneNumber(item.phone);
     const cleanOwn = cleanPhoneNumber(item.ownerPhone);
@@ -1998,12 +2084,14 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
         if (Array.isArray(orders)) {
           orders.forEach(o => {
             if (o && o.customer) {
+              const oCustName = typeof o.customer === 'object' ? (o.customer.name || '').trim().toLowerCase() : String(o.customer).trim().toLowerCase();
+              const matchesThis = oCustName === lowerName || oCustName === rawLowerName;
               if (typeof o.customer === 'object') {
-                if (o.customer.id === item.id || (o.customer.name && o.customer.name.trim().toLowerCase() === lowerName)) {
+                if (o.customer.id === item.id || matchesThis) {
                   o.customer.id = target.id;
                   o.customer.name = target.name;
                 }
-              } else if (typeof o.customer === 'string' && o.customer.trim().toLowerCase() === lowerName) {
+              } else if (typeof o.customer === 'string' && matchesThis) {
                 o.customer = target.name;
               }
             }
@@ -2461,31 +2549,44 @@ function deleteCurrentEditingOrder() {
 function addOrderItemRow(itemData = null) {
   let currentProd = null;
   if (itemData) {
-    if (itemData.productId) {
-      currentProd = products.find(p => p.id === itemData.productId);
-    }
-    if (!currentProd && itemData.productName) {
-      const pNameLower = itemData.productName.trim().toLowerCase();
-      currentProd = products.find(p => (p.name || '').trim().toLowerCase() === pNameLower);
-    }
-    // If still not found and a custom productName was provided, register it in products so it is NEVER lost or replaced!
-    if (!currentProd && itemData.productName && !isUnwantedDummyProduct({ name: itemData.productName })) {
-      currentProd = {
-        id: itemData.productId || ('p_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
-        name: itemData.productName.trim(),
-        category: detectCategoryFromName(itemData.productName),
-        bagSize: parseFloat(itemData.bagSize) || 26,
-        defaultRateKg: parseFloat(itemData.perKgRate) || 90
-      };
-      products.push(currentProd);
-      saveDataToStorage();
-      populateProductDropdown();
-      if (typeof renderProductsManageList === 'function') renderProductsManageList();
+    // 1. Resolve canonical product first
+    const canon = getCanonicalProduct(itemData);
+    if (canon) {
+      currentProd = products.find(p => p.id === canon.id || (p.name || '').trim().toLowerCase() === canon.name.toLowerCase());
+      if (!currentProd) {
+        currentProd = { ...canon };
+        products.push(currentProd);
+        deduplicateProductsList(products, false);
+      }
+    } else {
+      if (itemData.productId) {
+        currentProd = products.find(p => p.id === itemData.productId);
+      }
+      if (!currentProd && itemData.productName) {
+        const pNameLower = itemData.productName.trim().toLowerCase();
+        currentProd = products.find(p => (p.name || '').trim().toLowerCase() === pNameLower);
+      }
+      // Never create a product from aggregate strings like "(+1 more)" or dummy sample names
+      const pName = (itemData.productName || '').trim();
+      const isAggregate = pName.includes('(+' || pName.includes('more)');
+      if (!currentProd && pName && !isAggregate && !isUnwantedDummyProduct({ name: pName })) {
+        currentProd = {
+          id: itemData.productId || ('prod_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
+          name: pName,
+          category: detectCategoryFromName(pName),
+          bagSize: parseFloat(itemData.bagSize) || 26,
+          defaultRateKg: parseFloat(itemData.perKgRate) || 90
+        };
+        products.push(currentProd);
+        saveDataToStorage();
+        populateProductDropdown();
+        if (typeof renderProductsManageList === 'function') renderProductsManageList();
+      }
     }
   }
 
   if (!currentProd) {
-    currentProd = products[0] || { id: 'p1', name: 'Biriyani Rice', category: 'Kaima', bagSize: 26, defaultRateKg: 95 };
+    currentProd = products[0] || USER_CONFIRMED_PRODUCTS[0];
   }
 
   const prodId = currentProd.id;
@@ -6014,7 +6115,7 @@ function saveProductForm() {
   const imageUrl = imgInput ? imgInput.value.trim() : '';
 
   if (!name) {
-    alert('Please enter a product name (e.g. Mohabbath Green, DC White).');
+    alert('Please enter a product name (e.g. Mohabbath Green, White Chabi).');
     if (nameInput) nameInput.focus();
     return;
   }
@@ -7520,19 +7621,50 @@ function handleImportDataJSON(event) {
       let restoredCustomers = 0;
 
       if (Array.isArray(data.orders)) {
-        orders = data.orders;
+        // Smart Merge: Preserve any existing orders (like manual November orders) while adding incoming
+        const incomingIds = new Set(data.orders.map(o => o.id));
+        const preservedExisting = orders.filter(o => o && o.id && !incomingIds.has(o.id));
+        const merged = [...data.orders, ...preservedExisting];
+        merged.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+        orders = merged;
+        if (typeof normalizeOrderCustomerNames === 'function') {
+          normalizeOrderCustomerNames();
+        }
         restoredOrders = orders.length;
       }
       if (Array.isArray(data.customers)) {
+        // Preserve existing customer records (phones, members) and append new historical customers
+        const existingByName = new Map();
+        customers.forEach(c => {
+          if (c && c.name) existingByName.set(c.name.trim().toLowerCase(), c);
+        });
+
+        data.customers.forEach(incCust => {
+          if (!incCust || !incCust.name) return;
+          const rawLower = incCust.name.trim().toLowerCase();
+          const alias = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[rawLower];
+          if (alias) {
+            incCust.name = alias.canonicalName;
+            if (!incCust.town || incCust.town === 'Ernakulam' || incCust.town === 'Local') incCust.town = alias.town;
+          }
+          const key = incCust.name.trim().toLowerCase();
+          if (!existingByName.has(key)) {
+            customers.push(incCust);
+            existingByName.set(key, incCust);
+          } else {
+            const target = existingByName.get(key);
+            if (!target.category && incCust.category) target.category = incCust.category;
+            if (!target.town && incCust.town) target.town = incCust.town;
+          }
+        });
+
         if (typeof deduplicateCustomersList === 'function') {
-          customers = deduplicateCustomersList(data.customers, true);
-        } else {
-          customers = data.customers;
+          customers = deduplicateCustomersList(customers, true);
         }
         restoredCustomers = customers.length;
       }
       if (Array.isArray(data.products) && data.products.length > 0) {
-        products = data.products;
+        products = deduplicateProductsList([...products, ...data.products], true);
       }
       if (Array.isArray(data.bagSizes) && data.bagSizes.length > 0) {
         bagSizes = data.bagSizes;
@@ -9852,3 +9984,7 @@ window.saveProductForm = saveProductForm;
 window.editProduct = editProduct;
 window.deleteProduct = deleteProduct;
 window.cancelProductEdit = cancelProductEdit;
+window.deduplicateProductsList = deduplicateProductsList;
+window.getCanonicalProduct = getCanonicalProduct;
+window.cascadeCanonicalProductsToOrders = cascadeCanonicalProductsToOrders;
+window.ALL_OFFICIAL_PRODUCTS = ALL_OFFICIAL_PRODUCTS;
