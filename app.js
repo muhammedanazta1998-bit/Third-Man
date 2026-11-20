@@ -219,7 +219,79 @@ function getProductImageUrl(p) {
   return getDefaultProductImage(p ? p.category : 'Kaima', p ? p.name : '');
 }
 
-const DEFAULT_CUSTOMERS = [];
+// Pre-November Verified Canonical Customers (Derived from Historical May-October Sales)
+const PRE_NOVEMBER_CANONICAL_CUSTOMERS = [
+  { id: 'c_hist_001', name: 'Thanima Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_002', name: 'Al-Safi Food Court', town: 'Pukkattupady', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_003', name: 'Edakkat Basmati', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_004', name: 'KERALA FOOD COURT', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_005', name: 'MK Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_006', name: 'AGC TRADERS KEEZHILLAM', town: 'Keezhillam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_007', name: 'A One Kalady', town: 'Kalady', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_008', name: 'Redberries Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Retailer', phone: '' },
+  { id: 'c_hist_009', name: 'ZAM ZAM VALLAM', town: 'Vallam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_010', name: 'MAS PARAVOOR', town: 'Paravoor', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_011', name: 'Naaz Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_012', name: 'KCA Angamaly', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_013', name: 'Parallex Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_014', name: 'Malayalies Oottupura', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_015', name: 'Davis and Company', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_016', name: 'Edakkat Enterprises Bypass', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_017', name: 'Ubees kalady', town: 'Kalady', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_018', name: 'Khaja Makani', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_019', name: 'PMA Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_020', name: 'Edavilayil Paravoor', town: 'Paravoor', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_021', name: 'Mezhukkattil', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_022', name: 'Ameen traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_023', name: 'Marwa Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_024', name: 'Shoppers shope', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_025', name: 'Sanchika', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Retailer', phone: '' },
+  { id: 'c_hist_026', name: 'Southern Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_027', name: 'AR Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_028', name: 'Hotel Malabar Palace', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_029', name: 'The Grand Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_030', name: 'SRINIVASAKAPERUMAL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_031', name: 'SULTHAN BASMATI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_032', name: 'Union Basmati', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_033', name: 'ALUVA TRADING COMPANY', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_034', name: 'MISBA SUPERMARKET', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_035', name: 'MR TRADERS ADIMALI', town: 'Adimali', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_036', name: 'KCM TRADERS MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_037', name: 'MAMMOOTTY STORES MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_038', name: 'KMA PEZHAKKAPPILLY', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_039', name: 'PARUTHIKKAATTIL', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_040', name: 'VNV VALLANATTU ADIMALI', town: 'Adimali', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_041', name: 'Vettikkaattil Thodupuzha', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_042', name: 'NADUKUDIYIL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_043', name: 'Bismi Traders Kothamangalam', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_044', name: 'MAJ', town: 'Angamaly', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_045', name: 'Naattukada', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_046', name: 'Tiktok Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_047', name: 'Classio Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_048', name: 'ALI SONS', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_049', name: 'PR ENTERPRISES', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_050', name: 'BHAVANI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_051', name: 'KRP', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_052', name: 'FOOD BEE', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_053', name: 'GRAND KARUKAPPILLY', town: 'Ernakulam', district: 'Ernakulam', category: 'Retailer', phone: '' },
+  { id: 'c_hist_054', name: 'KERALA RICE BAZAR', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_055', name: 'AB Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_056', name: 'MK ALI AND SONS KALAMASSERY', town: 'Kalamassery', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_057', name: 'Edassery Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Retailer', phone: '' },
+  { id: 'c_hist_058', name: 'Joyis Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_059', name: 'PKBR', town: 'Elamakkara', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_060', name: 'TKM ASSOCIATES', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_061', name: 'ALIYAR PILLAI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_062', name: 'Riyas Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_063', name: 'Thattamattom', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_064', name: 'Safiya Trading Company', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_065', name: 'TAJ Perumbavoor', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_066', name: 'EDAKKATTU BAZAAR', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_067', name: 'CTC VALLAM', town: 'Vallam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_068', name: 'Vellooparambil', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_069', name: 'MAK Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' }
+];
+const DEFAULT_CUSTOMERS = PRE_NOVEMBER_CANONICAL_CUSTOMERS;
 
 // Storage Keys
 const STORAGE_ORDERS = 'biriyani_rice_orders_fresh_v2';
@@ -592,7 +664,9 @@ function initApp() {
     if (typeof normalizeOrderCustomerNames === 'function') {
       normalizeOrderCustomerNames();
     }
-    if (typeof deduplicateCustomersList === 'function') {
+    if (typeof resetCustomersToPreNovemberSales === 'function') {
+      customers = resetCustomersToPreNovemberSales(true);
+    } else if (typeof deduplicateCustomersList === 'function') {
       customers = deduplicateCustomersList(customers, true);
       saveDataToStorage();
     }
@@ -1114,17 +1188,13 @@ function setupFirestoreRealtimeListeners() {
         }
       });
 
-      // Deduplicate remote customers and remove duplicate documents from cloud
-      if (typeof deduplicateCustomersList === 'function') {
+      // Reset customers strictly to verified pre-November sales and purge manual duplicates from cloud
+      if (typeof resetCustomersToPreNovemberSales === 'function') {
+        customers = resetCustomersToPreNovemberSales(true);
+      } else if (typeof deduplicateCustomersList === 'function') {
         customers = deduplicateCustomersList(remoteCustomers, true);
       } else {
         customers = remoteCustomers;
-      }
-
-      // Ensure any customer from orders is also retained
-      extractCustomersFromOrdersIfMissing(false);
-      if (typeof deduplicateCustomersList === 'function') {
-        customers = deduplicateCustomersList(customers, true);
       }
 
       try {
@@ -1933,32 +2003,143 @@ function findDuplicateCustomer(name, ownerPhone = '', staffPhone = '', legacyPho
 // ==================== CUSTOMER DEDUPLICATION & NORMALIZATION ====================
 
 const CANONICAL_CUSTOMER_ALIASES = {
+  'riyas': { canonicalName: 'Riyas Traders', town: 'Ernakulam' },
+  'riyas traders': { canonicalName: 'Riyas Traders', town: 'Ernakulam' },
   'maj angamaly': { canonicalName: 'MAJ', town: 'Angamaly' },
+  'maj': { canonicalName: 'MAJ', town: 'Angamaly' },
   'pkbr elamakkara': { canonicalName: 'PKBR', town: 'Elamakkara' },
-  'al-safi food court, pukkattupady': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' }
+  'pkbr': { canonicalName: 'PKBR', town: 'Elamakkara' },
+  'al-safi food court, pukkattupady': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' },
+  'al-safi food court': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' }
 };
 
 function normalizeOrderCustomerNames() {
-  if (!Array.isArray(orders)) return;
+  if (!Array.isArray(orders)) return false;
   let changed = false;
   orders.forEach(o => {
-    if (!o || !o.customer) return;
-    const curName = (typeof o.customer === 'object' ? o.customer.name : o.customer) || '';
-    const rawLower = curName.trim().toLowerCase();
+    if (!o) return;
+    const curName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim();
+    if (!curName) return;
+    const rawLower = curName.toLowerCase();
     const alias = CANONICAL_CUSTOMER_ALIASES[rawLower];
     if (alias) {
       if (typeof o.customer === 'object') {
-        o.customer.name = alias.canonicalName;
+        if (o.customer.name !== alias.canonicalName) {
+          o.customer.name = alias.canonicalName;
+          changed = true;
+        }
         if (!o.customer.town || o.customer.town === 'Ernakulam' || o.customer.town === 'Local') {
           o.customer.town = alias.town;
+          changed = true;
         }
       } else {
-        o.customer = alias.canonicalName;
+        if (o.customer !== alias.canonicalName) {
+          o.customer = alias.canonicalName;
+          changed = true;
+        }
       }
-      changed = true;
+      if (o.customerName && o.customerName !== alias.canonicalName) {
+        o.customerName = alias.canonicalName;
+        changed = true;
+      }
     }
   });
+  if (changed) {
+    try {
+      localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+    } catch (e) {}
+  }
   return changed;
+}
+
+/**
+ * Rebuilds and synchronizes customer list strictly from verified pre-November sales records.
+ * Purges manually typed duplicate/alias customers (e.g. 'Riyas' -> merged into 'Riyas Traders')
+ * and synchronizes document deletions to Cloud Firestore.
+ */
+function resetCustomersToPreNovemberSales(syncToCloud = true) {
+  if (typeof normalizeOrderCustomerNames === 'function') {
+    normalizeOrderCustomerNames();
+  }
+
+  const existingByName = new Map();
+  const existingById = new Map();
+  if (Array.isArray(customers)) {
+    customers.forEach(c => {
+      if (!c) return;
+      if (c.name) existingByName.set(c.name.trim().toLowerCase(), c);
+      if (c.id) existingById.set(c.id, c);
+    });
+  }
+
+  const rebuilt = [];
+  const deletedCloudIds = [];
+  const matchedExistingIds = new Set();
+
+  PRE_NOVEMBER_CANONICAL_CUSTOMERS.forEach(canon => {
+    const key = canon.name.trim().toLowerCase();
+    const existing = existingByName.get(key) || existingById.get(canon.id);
+    if (existing) {
+      matchedExistingIds.add(existing.id);
+      const merged = {
+        ...canon,
+        ...existing,
+        name: canon.name,
+        town: canon.town || existing.town || 'Ernakulam',
+        district: canon.district || existing.district || 'Ernakulam',
+        category: canon.category || existing.category || 'Wholesaler'
+      };
+      if (!Array.isArray(merged.members) || merged.members.length === 0) {
+        merged.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(merged) : [];
+      }
+      rebuilt.push(merged);
+    } else {
+      const fresh = { ...canon };
+      fresh.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(fresh) : [];
+      rebuilt.push(fresh);
+    }
+  });
+
+  if (Array.isArray(customers)) {
+    customers.forEach(cust => {
+      if (!cust || !cust.name) return;
+      if (matchedExistingIds.has(cust.id)) return;
+
+      const rawLower = cust.name.trim().toLowerCase();
+      const alias = CANONICAL_CUSTOMER_ALIASES[rawLower];
+
+      if (alias) {
+        const target = rebuilt.find(c => c.name.toLowerCase() === alias.canonicalName.toLowerCase());
+        if (target) {
+          if (!target.phone && cust.phone) target.phone = cust.phone;
+          if (!target.ownerPhone && cust.ownerPhone) target.ownerPhone = cust.ownerPhone;
+          if (!target.staffPhone && cust.staffPhone) target.staffPhone = cust.staffPhone;
+        }
+        if (cust.id && (!target || cust.id !== target.id)) {
+          deletedCloudIds.push(cust.id);
+        }
+      } else {
+        if (cust.id) {
+          deletedCloudIds.push(cust.id);
+        }
+      }
+    });
+  }
+
+  customers = rebuilt;
+  saveDataToStorage();
+  populateCustomerDropdown();
+  if (typeof renderCustomersList === 'function') renderCustomersList();
+
+  if (syncToCloud && deletedCloudIds.length > 0 && typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
+    deletedCloudIds.forEach(dupId => {
+      try {
+        deleteCloudCustomer(dupId);
+      } catch (e) {}
+    });
+  }
+
+  return customers;
 }
 
 function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false) {
@@ -2167,7 +2348,10 @@ function getCanonicalCustomerInfo(rawCustomer) {
 
 function runManualCustomerDeduplication() {
   const initialCount = customers.length;
-  const cleaned = deduplicateCustomersList(customers, true);
+  if (typeof normalizeOrderCustomerNames === 'function') {
+    normalizeOrderCustomerNames();
+  }
+  const cleaned = resetCustomersToPreNovemberSales(true);
   const diff = initialCount - cleaned.length;
 
   customers = cleaned;
@@ -2177,10 +2361,10 @@ function runManualCustomerDeduplication() {
   updateDashboard();
 
   if (diff > 0) {
-    showNotification(`✓ ${diff} duplicate customer(s) merged & cleaned up!`);
-    alert(`Success!\n\n${diff} duplicate customer record(s) have been merged and cleaned up.\nCustomer directory and orders are now unified.`);
+    showNotification(`✓ ${diff} manual duplicate customer(s) cleaned up & synced with pre-November sales!`);
+    alert(`Success!\n\n${diff} manual duplicate customer(s) have been cleaned up.\nCustomer directory is now 100% unified with your verified pre-November sales.`);
   } else {
-    showNotification('✓ Customer directory is completely clean. No duplicates found!');
+    showNotification('✓ Customer directory is completely verified & matched with pre-November sales!');
   }
 }
 
@@ -3364,6 +3548,17 @@ function handleSaveOrder(event) {
   const shouldSaveCust = saveCustCheck ? saveCustCheck.checked : true;
   let activeCustomerId = document.getElementById('selectedCustomerId')?.value || '';
   let existingIndex = -1;
+
+  if (customerName) {
+    const cleanLower = customerName.trim().toLowerCase();
+    const aliasInfo = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[cleanLower];
+    if (aliasInfo) {
+      customerName = aliasInfo.canonicalName;
+      if (!customerTown || customerTown === 'Ernakulam' || customerTown === 'Local') {
+        customerTown = aliasInfo.town;
+      }
+    }
+  }
 
   if (activeCustomerId) {
     existingIndex = customers.findIndex(c => c.id === activeCustomerId);
@@ -9976,6 +10171,8 @@ window.deduplicateCustomersList = deduplicateCustomersList;
 window.getCanonicalCustomerInfo = getCanonicalCustomerInfo;
 window.runManualCustomerDeduplication = runManualCustomerDeduplication;
 window.editCustomerFromDetail = editCustomerFromDetail;
+window.resetCustomersToPreNovemberSales = resetCustomersToPreNovemberSales;
+window.PRE_NOVEMBER_CANONICAL_CUSTOMERS = PRE_NOVEMBER_CANONICAL_CUSTOMERS;
 
 // Product & Orders Cascading Exports
 window.cascadeProductUpdateToOrders = cascadeProductUpdateToOrders;
