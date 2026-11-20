@@ -18,15 +18,18 @@ const USER_CONFIRMED_PRODUCTS = [
   { id: 'prod_mg', name: 'Mohabbath Green', category: 'Kaima', bagSize: 26, defaultRateKg: 98 },
   { id: 'prod_mgold', name: 'Mohabbath Gold', category: 'Kaima', bagSize: 26, defaultRateKg: 104 },
   { id: 'prod_jas', name: 'Jasmine', category: 'Basmati', bagSize: 30, defaultRateKg: 112 },
-  { id: 'prod_dcw', name: 'DC White', category: 'Kolam', bagSize: 26, defaultRateKg: 90 },
-  { id: 'prod_dcg', name: 'DC Gold', category: 'Kolam', bagSize: 26, defaultRateKg: 92 },
+  { id: 'prod_dcw', name: 'DC White', category: 'Basmati', bagSize: 30, defaultRateKg: 90 },
+  { id: 'prod_dcg', name: 'DC Gold', category: 'Basmati', bagSize: 30, defaultRateKg: 92 },
   { id: 'prod_jmt', name: 'JMT Rose 2nd', category: 'Other', bagSize: 26, defaultRateKg: 88 }
 ];
 
 function isUserConfirmedProduct(p) {
   if (!p) return false;
   const name = String(typeof p === 'string' ? p : (p.name || p.productName || '')).trim().toLowerCase();
-  return USER_CONFIRMED_PRODUCTS.some(u => u.name.toLowerCase() === name);
+  const id = typeof p === 'object' && p ? (p.id || p.productId) : null;
+  if (USER_CONFIRMED_PRODUCTS.some(u => u.name.toLowerCase() === name || (id && u.id === id))) return true;
+  if (Array.isArray(products) && products.some(pr => (pr.name || '').trim().toLowerCase() === name || (id && pr.id === id))) return true;
+  return false;
 }
 
 const DEMO_SAMPLE_PRODUCT_IDS = ['p1', 'p2', 'p3', 'p4'];
@@ -97,8 +100,8 @@ function isUnwantedDummyProduct(p) {
 function detectCategoryFromName(name) {
   const lower = String(name || '').toLowerCase();
   if (lower.includes('mohabbath') || lower.includes('kaima') || lower.includes('jeera')) return 'Kaima';
-  if (lower.includes('dc white') || lower.includes('dc gold') || lower.includes('kolam')) return 'Kolam';
-  if (lower.includes('jasmine') || lower.includes('basmati') || lower.includes('1121') || lower.includes('sella')) return 'Basmati';
+  if (lower.includes('dc white') || lower.includes('dc gold') || lower.includes('dc ') || lower.includes('jasmine') || lower.includes('basmati') || lower.includes('1121') || lower.includes('sella')) return 'Basmati';
+  if (lower.includes('kolam')) return 'Kolam';
   if (lower.includes('jmt') || lower.includes('rose') || lower.includes('matta')) return 'Other';
   return 'Other';
 }
@@ -187,11 +190,180 @@ let trashList = [];
 let currentTrashFilter = 'all';
 let currentTrashSearch = '';
 
+// ==================== PRODUCT TO ORDERS SYNCHRONIZATION ====================
+
+/**
+ * Cascades product updates (name, category, bag size, rate) to all previous and existing orders.
+ * Ensures orders accurately reflect the product change, recalculates total kg and total amount,
+ * and synchronizes changes to localStorage and Cloud Firestore.
+ */
+function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
+  if (!Array.isArray(orders) || orders.length === 0 || !updatedProduct) return 0;
+
+  const targetId = productId || updatedProduct.id;
+  const targetOldName = (oldName || '').trim().toLowerCase();
+  const newName = (updatedProduct.name || '').trim();
+  const newCategory = updatedProduct.category || detectCategoryFromName(newName);
+  const newBagSize = parseFloat(updatedProduct.bagSize) || 26;
+  const newRate = parseFloat(updatedProduct.defaultRateKg) || 0;
+
+  let changedOrdersCount = 0;
+  const affectedOrders = [];
+
+  orders.forEach(order => {
+    if (!order) return;
+    let orderChanged = false;
+
+    // 1. Cascade to multi-item or single-item array
+    if (Array.isArray(order.items) && order.items.length > 0) {
+      order.items.forEach(it => {
+        if (!it) return;
+        const itName = (it.productName || it.name || '').trim().toLowerCase();
+        const matchesId = targetId && (it.productId === targetId || it.id === targetId);
+        const matchesOldName = targetOldName && itName === targetOldName;
+        const matchesNewName = newName && itName === newName.toLowerCase();
+
+        if (matchesId || matchesOldName || matchesNewName) {
+          if (it.productName !== newName && newName) {
+            it.productName = newName;
+            orderChanged = true;
+          }
+          if (targetId && it.productId !== targetId) {
+            it.productId = targetId;
+            orderChanged = true;
+          }
+          if (newCategory && it.category !== newCategory) {
+            it.category = newCategory;
+            orderChanged = true;
+          }
+          // If bag size changed (e.g. DC 26kg -> 30kg)
+          if (newBagSize && it.bagSize !== newBagSize) {
+            it.bagSize = newBagSize;
+            const qty = parseFloat(it.bagQty) || 1;
+            const itemRate = parseFloat(it.perKgRate) || newRate;
+            it.totalKg = it.bagSize * qty;
+            it.totalAmount = Math.round(it.totalKg * itemRate);
+            orderChanged = true;
+          }
+        }
+      });
+    }
+
+    // 2. Cascade to order-level product object
+    const ordProdName = (order.product?.name || order.productName || '').trim().toLowerCase();
+    const ordProdId = order.product?.id || order.productId;
+    const ordMatchesId = targetId && ordProdId === targetId;
+    const ordMatchesOldName = targetOldName && (ordProdName === targetOldName || ordProdName.includes(targetOldName));
+    const ordMatchesNewName = newName && ordProdName.includes(newName.toLowerCase());
+
+    if (ordMatchesId || ordMatchesOldName || ordMatchesNewName) {
+      if (order.product && targetId) {
+        order.product.id = targetId;
+      }
+      if (newBagSize && order.bagSize !== newBagSize) {
+        order.bagSize = newBagSize;
+        const qty = parseFloat(order.bagQty) || 1;
+        const ordRate = parseFloat(order.perKgRate) || newRate;
+        order.totalKg = order.bagSize * qty;
+        order.totalAmount = Math.round(order.totalKg * ordRate);
+        orderChanged = true;
+      }
+    }
+
+    // 3. Recompute order aggregate totals if any item was updated
+    if (orderChanged) {
+      if (Array.isArray(order.items) && order.items.length > 0) {
+        let sumBags = 0;
+        let sumKg = 0;
+        let sumAmount = 0;
+        order.items.forEach(it => {
+          const iSize = parseFloat(it.bagSize) || newBagSize;
+          const iQty = parseFloat(it.bagQty) || 1;
+          const iRate = parseFloat(it.perKgRate) || newRate;
+          it.totalKg = iSize * iQty;
+          it.totalAmount = Math.round(it.totalKg * iRate);
+          sumBags += iQty;
+          sumKg += it.totalKg;
+          sumAmount += it.totalAmount;
+        });
+
+        order.bagQty = sumBags;
+        order.totalKg = sumKg;
+        order.totalAmount = Math.round(sumAmount);
+        order.perKgRate = sumKg > 0 ? Math.round((sumAmount / sumKg) * 100) / 100 : (order.perKgRate || newRate);
+
+        const firstItem = order.items[0];
+        const primaryDisplay = order.items.length === 1
+          ? firstItem.productName
+          : `${firstItem.productName} (+${order.items.length - 1} more)`;
+        order.product = { id: firstItem.productId, name: primaryDisplay };
+        order.bagSize = firstItem.bagSize;
+      }
+
+      changedOrdersCount++;
+      affectedOrders.push(order);
+    }
+  });
+
+  if (changedOrdersCount > 0) {
+    try {
+      localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+    } catch (e) {}
+
+    if (typeof syncCloudOrder === 'function') {
+      affectedOrders.forEach(ord => syncCloudOrder(ord));
+    }
+  }
+
+  return changedOrdersCount;
+}
+
+/**
+ * Ensures DC White and DC Gold are normalized to Basmati category and 30 kg bag size
+ * across both the active products catalog and all historical orders.
+ */
+function normalizeExistingDCOrdersAndProducts() {
+  let catalogUpdated = false;
+
+  // 1. Normalize in products array
+  if (Array.isArray(products)) {
+    products.forEach(p => {
+      if (!p || !p.name) return;
+      const lower = p.name.trim().toLowerCase();
+      if (lower.includes('dc white') || lower.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
+        if (p.category !== 'Basmati' || p.bagSize !== 30) {
+          p.category = 'Basmati';
+          p.bagSize = 30;
+          catalogUpdated = true;
+        }
+      }
+    });
+  }
+
+  // 2. Cascade to orders that used DC White or DC Gold at 26kg or Kolam
+  const dcWhite = (Array.isArray(products) && products.find(p => (p.name || '').toLowerCase().includes('dc white') || p.id === 'prod_dcw')) ||
+                  { id: 'prod_dcw', name: 'DC White', category: 'Basmati', bagSize: 30, defaultRateKg: 90 };
+  const dcGold = (Array.isArray(products) && products.find(p => (p.name || '').toLowerCase().includes('dc gold') || p.id === 'prod_dcg')) ||
+                 { id: 'prod_dcg', name: 'DC Gold', category: 'Basmati', bagSize: 30, defaultRateKg: 92 };
+
+  cascadeProductUpdateToOrders(dcWhite.id, 'DC White', dcWhite);
+  cascadeProductUpdateToOrders(dcGold.id, 'DC Gold', dcGold);
+
+  if (catalogUpdated) {
+    try {
+      localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
+      localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
+    } catch (e) {}
+    if (typeof syncCloudConfig === 'function') syncCloudConfig();
+  }
+}
+
 // ==================== INITIALIZATION ====================
 
 function initApp() {
   try {
     loadDataFromStorage();
+    normalizeExistingDCOrdersAndProducts();
     purgeUnwantedDummyProducts(false);
     extractCustomersFromOrdersIfMissing(false);
     if (typeof deduplicateCustomersList === 'function') {
@@ -378,60 +550,58 @@ function loadDataFromStorage() {
       }
     }
 
-    // Merge existing loaded products with USER_CONFIRMED_PRODUCTS
-    // If a confirmed product already exists in loadedProducts, preserve user's custom rate, bag size, image, etc.
-    const mergedProducts = [];
-    USER_CONFIRMED_PRODUCTS.forEach(baseProd => {
-      const existing = loadedProducts && loadedProducts.find(p => {
-        const pName = (p.name || '').trim().toLowerCase();
-        return pName === baseProd.name.toLowerCase() || p.id === baseProd.id;
-      });
-      if (existing) {
-        mergedProducts.push({
-          ...baseProd,
-          ...existing,
-          id: existing.id || baseProd.id,
-          name: baseProd.name,
-          category: existing.category || baseProd.category,
-          bagSize: parseFloat(existing.bagSize) || baseProd.bagSize,
-          defaultRateKg: parseFloat(existing.defaultRateKg) || parseFloat(existing.rateKg) || baseProd.defaultRateKg,
-          imageUrl: existing.imageUrl || ''
-        });
-      } else {
-        mergedProducts.push({ ...baseProd });
-      }
-    });
-
-    // Also include any other custom products the user may have added via form
-    if (loadedProducts) {
-      loadedProducts.forEach(lp => {
-        if (!isDemoSampleProduct(lp)) {
-          const lpName = (lp.name || '').trim().toLowerCase();
-          const alreadyIn = mergedProducts.some(mp => mp.name.toLowerCase() === lpName || mp.id === lp.id);
-          if (!alreadyIn) {
-            mergedProducts.push(lp);
-          }
-        }
-      });
+    // ==================== RESTORE USER'S PRODUCTS ====================
+    let finalProducts = [];
+    if (loadedProducts && loadedProducts.length > 0) {
+      // User has existing products in storage! Use them directly without re-forcing hardcoded names
+      finalProducts = loadedProducts.filter(p => !isDemoSampleProduct(p));
     }
 
-    products = mergedProducts.filter(p => !isDemoSampleProduct(p));
+    // Only if storage had no valid products at all, initialize with official confirmed varieties
+    if (finalProducts.length === 0) {
+      finalProducts = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
+    }
 
-    // Normalize each product to ensure category, bagSize, and defaultRateKg exist
-    products.forEach((p, idx) => {
-      if (!p.id) p.id = 'p_' + (idx + 1);
+    // Deduplicate by ID and lowercase name (cleans any duplicate products created previously)
+    const seenIds = new Set();
+    const seenNames = new Set();
+    const dedupedProducts = [];
+
+    finalProducts.forEach((p, idx) => {
+      if (!p.id) p.id = 'prod_' + (idx + 1);
+      const nameKey = (p.name || '').trim().toLowerCase();
+      if (!nameKey || seenIds.has(p.id) || seenNames.has(nameKey)) return;
+
+      seenIds.add(p.id);
+      seenNames.add(nameKey);
+
+      // Normalize DC products to Basmati and 30 kg as requested by user
+      if (nameKey.includes('dc white') || nameKey.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
+        p.category = 'Basmati';
+        if (!p.bagSize || p.bagSize === 26) {
+          p.bagSize = 30;
+        }
+      }
+
       if (!p.category) {
         p.category = detectCategoryFromName(p.name);
       }
       p.bagSize = parseFloat(p.bagSize) || 26;
-      p.defaultRateKg = parseFloat(p.defaultRateKg) || 90;
+      p.defaultRateKg = parseFloat(p.defaultRateKg) || parseFloat(p.rateKg) || 90;
+
+      dedupedProducts.push(p);
     });
+
+    products = dedupedProducts;
 
     // Save cleaned product list to prevent dummy restoration
     try {
       localStorage.setItem('biriyani_rice_products_v1', JSON.stringify(products));
       localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
     } catch (e) {}
+
+    // Auto-normalize DC products in previous orders if needed
+    normalizeExistingDCOrdersAndProducts();
 
     // ==================== RESTORE USER'S BAG SIZES ====================
     let loadedBagSizes = null;
@@ -634,16 +804,28 @@ function purgeUnwantedDummyProducts(syncToCloud = true) {
   // 1. Remove dummy products
   products = products.filter(p => !isDemoSampleProduct(p));
 
-  // 2. Ensure all 6 user-confirmed products exist
-  USER_CONFIRMED_PRODUCTS.forEach(baseProd => {
-    const exists = products.some(p => (p.name || '').trim().toLowerCase() === baseProd.name.toLowerCase());
-    if (!exists) {
-      products.push({ ...baseProd });
-    }
-  });
+  // 2. Only seed if catalog is completely empty
+  if (products.length === 0) {
+    products = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
+  }
 
-  // 3. Final filter
-  products = products.filter(p => !isDemoSampleProduct(p));
+  // 3. Normalize DC products to Basmati & 30kg and deduplicate
+  const seenIds = new Set();
+  const seenNames = new Set();
+  const deduped = [];
+  products.forEach(p => {
+    if (!p || !p.name) return;
+    const lower = p.name.trim().toLowerCase();
+    if (seenIds.has(p.id) || seenNames.has(lower)) return;
+    seenIds.add(p.id);
+    seenNames.add(lower);
+    if (lower.includes('dc white') || lower.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
+      p.category = 'Basmati';
+      if (p.bagSize === 26) p.bagSize = 30;
+    }
+    deduped.push(p);
+  });
+  products = deduped;
 
   // 4. Save to localStorage
   try {
@@ -670,15 +852,19 @@ function cleanAllDemoProductsPrompt() {
         <li>Mohabbath Green [Kaima • 26kg]</li>
         <li>Mohabbath Gold [Kaima • 26kg]</li>
         <li>Jasmine [Basmati • 30kg]</li>
-        <li>DC White [Kolam • 26kg]</li>
-        <li>DC Gold [Kolam • 26kg]</li>
+        <li>DC White [Basmati • 30kg]</li>
+        <li>DC Gold [Basmati • 30kg]</li>
         <li>JMT Rose 2nd [Other • 26kg]</li>
       </ul>`,
     hint: '🛡️ Any custom rates or images you set for these products will be preserved.',
     confirmText: 'Keep Only My Products',
     confirmClass: 'bg-blue-600 hover:bg-blue-700 text-white',
     onConfirm: () => {
-      purgeUnwantedDummyProducts(true);
+      products = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
+      saveDataToStorage();
+      if (typeof syncCloudConfig === 'function') syncCloudConfig();
+      populateProductDropdown();
+      renderProductsManageList();
       showNotification('✓ Products catalog locked to your 6 official varieties!');
     }
   });
@@ -888,16 +1074,27 @@ function setupFirestoreRealtimeListeners() {
           }
         });
 
-        // Ensure 6 confirmed products exist
-        USER_CONFIRMED_PRODUCTS.forEach(baseProd => {
-          const exists = products.some(p => (p.name || '').trim().toLowerCase() === baseProd.name.toLowerCase());
-          if (!exists) {
-            products.push({ ...baseProd });
-          }
-        });
+        // Only seed confirmed products if products list is completely empty
+        if (products.length === 0) {
+          products = USER_CONFIRMED_PRODUCTS.map(p => ({ ...p }));
+        }
 
-        // Purge dummy products
-        products = products.filter(p => !isDemoSampleProduct(p));
+        // Deduplicate and normalize DC products to Basmati & 30kg
+        const seenIds = new Set();
+        const seenNames = new Set();
+        products = products.filter(p => {
+          if (!p || !p.name) return false;
+          if (isDemoSampleProduct(p)) return false;
+          const lower = p.name.trim().toLowerCase();
+          if (seenIds.has(p.id) || seenNames.has(lower)) return false;
+          seenIds.add(p.id);
+          seenNames.add(lower);
+          if (lower.includes('dc white') || lower.includes('dc gold') || p.id === 'prod_dcw' || p.id === 'prod_dcg') {
+            p.category = 'Basmati';
+            if (p.bagSize === 26) p.bagSize = 30;
+          }
+          return true;
+        });
 
         localStorage.setItem(STORAGE_PRODUCTS, JSON.stringify(products));
         localStorage.setItem('biriyani_rice_products_fresh_v2', JSON.stringify(products));
@@ -5817,7 +6014,7 @@ function saveProductForm() {
   const imageUrl = imgInput ? imgInput.value.trim() : '';
 
   if (!name) {
-    alert('Please enter a product name (e.g. Wayanadan Kaima Rice).');
+    alert('Please enter a product name (e.g. Mohabbath Green, DC White).');
     if (nameInput) nameInput.focus();
     return;
   }
@@ -5832,6 +6029,9 @@ function saveProductForm() {
     // EDIT EXISTING PRODUCT
     const index = products.findIndex(p => p.id === editingId);
     if (index !== -1) {
+      const oldProd = { ...products[index] };
+      const oldName = oldProd.name;
+
       products[index].name = name;
       products[index].category = category;
       products[index].bagSize = bagSize;
@@ -5842,13 +6042,48 @@ function saveProductForm() {
         products[index].imageUrl = '';
       }
 
+      // Cascade product name, category, and bag size updates to all previous orders
+      const ordersUpdated = cascadeProductUpdateToOrders(editingId, oldName, products[index]);
+
       saveDataToStorage();
+      if (typeof syncCloudConfig === 'function') syncCloudConfig();
       populateProductDropdown();
       renderProductsManageList();
       cancelProductEdit();
-      showNotification(`Product '${name}' updated successfully!`);
+      updateDashboard();
+      if (typeof renderOrdersTable === 'function') renderOrdersTable();
+
+      const orderNote = ordersUpdated > 0 ? ` (${ordersUpdated} past orders updated!)` : '';
+      showNotification(`Product '${name}' updated successfully!${orderNote}`);
     }
   } else {
+    // Check if product with same name already exists to prevent duplicate creation
+    const existingIndex = products.findIndex(p => (p.name || '').trim().toLowerCase() === name.toLowerCase());
+    if (existingIndex !== -1) {
+      const oldProd = { ...products[existingIndex] };
+      products[existingIndex].category = category;
+      products[existingIndex].bagSize = bagSize;
+      products[existingIndex].defaultRateKg = rate;
+      if (imageUrl) {
+        products[existingIndex].imageUrl = imageUrl;
+      } else if (imgInput && imgInput.dataset.removed === 'true') {
+        products[existingIndex].imageUrl = '';
+      }
+
+      const ordersUpdated = cascadeProductUpdateToOrders(products[existingIndex].id, oldProd.name, products[existingIndex]);
+      saveDataToStorage();
+      if (typeof syncCloudConfig === 'function') syncCloudConfig();
+      populateProductDropdown();
+      renderProductsManageList();
+      cancelProductEdit();
+      updateDashboard();
+      if (typeof renderOrdersTable === 'function') renderOrdersTable();
+
+      const orderNote = ordersUpdated > 0 ? ` (${ordersUpdated} past orders updated!)` : '';
+      showNotification(`Product '${name}' updated successfully!${orderNote}`);
+      return;
+    }
+
     // ADD NEW PRODUCT
     const newProduct = {
       id: 'p_' + Date.now(),
@@ -5861,6 +6096,7 @@ function saveProductForm() {
 
     products.push(newProduct);
     saveDataToStorage();
+    if (typeof syncCloudConfig === 'function') syncCloudConfig();
     populateProductDropdown();
     renderProductsManageList();
     cancelProductEdit();
@@ -9608,3 +9844,11 @@ window.deduplicateCustomersList = deduplicateCustomersList;
 window.getCanonicalCustomerInfo = getCanonicalCustomerInfo;
 window.runManualCustomerDeduplication = runManualCustomerDeduplication;
 window.editCustomerFromDetail = editCustomerFromDetail;
+
+// Product & Orders Cascading Exports
+window.cascadeProductUpdateToOrders = cascadeProductUpdateToOrders;
+window.normalizeExistingDCOrdersAndProducts = normalizeExistingDCOrdersAndProducts;
+window.saveProductForm = saveProductForm;
+window.editProduct = editProduct;
+window.deleteProduct = deleteProduct;
+window.cancelProductEdit = cancelProductEdit;
