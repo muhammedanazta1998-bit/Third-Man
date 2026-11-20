@@ -491,7 +491,7 @@ function deduplicateProductsList(inputProducts = null, syncToCloud = true) {
 
     // Never keep aggregate order display strings (e.g. "Mohabbath Green (+1 more)") as products
     const nameStr = (p.name || '').trim();
-    if (nameStr.includes('(+' || nameStr.includes('more)')) return;
+    if (nameStr.includes('(+') || nameStr.includes('more)')) return;
 
     const canon = getCanonicalProduct(p);
     if (canon) {
@@ -2568,7 +2568,7 @@ function addOrderItemRow(itemData = null) {
       }
       // Never create a product from aggregate strings like "(+1 more)" or dummy sample names
       const pName = (itemData.productName || '').trim();
-      const isAggregate = pName.includes('(+' || pName.includes('more)');
+      const isAggregate = pName.includes('(+') || pName.includes('more)');
       if (!currentProd && pName && !isAggregate && !isUnwantedDummyProduct({ name: pName })) {
         currentProd = {
           id: itemData.productId || ('prod_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
