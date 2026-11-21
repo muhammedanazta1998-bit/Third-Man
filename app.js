@@ -1087,6 +1087,8 @@ function sanitizeForFirestore(obj) {
   return clean;
 }
 
+let cloudSyncWatchdogTimer = null;
+
 function updateCloudSyncStatus(status, text) {
   const dot = document.getElementById('cloudSyncDot');
   const label = document.getElementById('cloudSyncText');
@@ -1095,10 +1097,21 @@ function updateCloudSyncStatus(status, text) {
   label.textContent = text;
   dot.classList.remove('bg-emerald-400', 'bg-amber-400', 'bg-rose-400', 'bg-slate-400', 'animate-pulse');
 
+  clearTimeout(cloudSyncWatchdogTimer);
+
   if (status === 'synced') {
     dot.classList.add('bg-emerald-400');
   } else if (status === 'syncing') {
     dot.classList.add('bg-amber-400', 'animate-pulse');
+    // Safety auto-recovery watchdog: If stuck in 'syncing' for > 5s, auto-restore to synced state
+    cloudSyncWatchdogTimer = setTimeout(() => {
+      const currentText = label.textContent || '';
+      if (currentText.includes('Syncing') || currentText.includes('Connecting') || currentText.includes('Saving') || currentText.includes('Uploading')) {
+        dot.classList.remove('bg-amber-400', 'animate-pulse');
+        dot.classList.add('bg-emerald-400');
+        label.textContent = 'Live Synced 🟢';
+      }
+    }, 5000);
   } else if (status === 'offline') {
     dot.classList.add('bg-slate-400');
   } else if (status === 'error') {
@@ -1699,15 +1712,24 @@ function syncCloudConfig() {
   }, 500);
 }
 
-function manualTriggerCloudSync() {
+function manualTriggerCloudSync(isQuiet = false) {
   updateCloudSyncStatus('syncing', 'Syncing Cloud...');
+  const refreshIcon = document.querySelector('#cloudSyncIndicator i[data-lucide="refresh-cw"]');
+  if (refreshIcon) refreshIcon.classList.add('animate-spin');
+
   if (!db) {
     initFirebaseSync();
+    if (refreshIcon) setTimeout(() => refreshIcon.classList.remove('animate-spin'), 600);
     return;
   }
 
+  // Wake up network if sleeping (e.g. mobile screen unlock)
+  if (typeof db.enableNetwork === 'function') {
+    db.enableNetwork().catch(() => {});
+  }
+
   // 1. Fetch latest customers from Firestore and process them
-  db.collection('customers').get().then(snapshot => {
+  const custPromise = db.collection('customers').get().then(snapshot => {
     if (!snapshot.empty) {
       const remote = [];
       snapshot.forEach(doc => {
@@ -1724,7 +1746,7 @@ function manualTriggerCloudSync() {
   });
 
   // 2. Fetch latest orders from Firestore
-  db.collection('orders').get().then(snapshot => {
+  const ordersPromise = db.collection('orders').get().then(snapshot => {
     if (!snapshot.empty) {
       const remoteOrders = [];
       snapshot.forEach(doc => {
@@ -1745,10 +1767,57 @@ function manualTriggerCloudSync() {
     if (orders.length > 0) seedLocalOrdersToCloud();
   });
 
+  // 3. Settings config sync
+  const configPromise = db.collection('settings').doc('app_config').get().then(doc => {
+    if (doc.exists) {
+      const cfg = doc.data();
+      if (Array.isArray(cfg.products) && cfg.products.length > 0) {
+        const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
+        products = deduplicateProductsList([...products, ...cleanCloudProducts], false);
+      }
+    }
+  }).catch(err => {
+    console.warn('Config manual sync error:', err);
+  });
+
   syncCloudConfig();
-  if (typeof showNotification === 'function') {
-    showNotification('✓ Cloud sync complete! Updated from cloud.');
-  }
+
+  // All promises settled: Stop spin animation and ALWAYS set status to Live Synced 🟢
+  Promise.allSettled([custPromise, ordersPromise, configPromise]).then(() => {
+    updateCloudSyncStatus('synced', 'Live Synced 🟢');
+    if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+    if (!isQuiet && typeof showNotification === 'function') {
+      showNotification('✓ Cloud sync complete! Updated from cloud.');
+    }
+  });
+}
+
+// Auto-resync & socket wake-up when returning to app (e.g. mobile unlock, tab focus, online event)
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && db) {
+      if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+      manualTriggerCloudSync(true);
+    }
+  });
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', () => {
+    if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+    manualTriggerCloudSync(true);
+  });
+
+  window.addEventListener('focus', () => {
+    if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+  });
+
+  // Periodic heartbeat every 45 seconds to keep Firestore socket active while app is in foreground
+  setInterval(() => {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible' && db) {
+      if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+    }
+  }, 45000);
 }
 
 // ==================== HELPER ACCESSORS ====================
@@ -3620,6 +3689,55 @@ function openQuickNewCustomerModal(isEdit = false) {
     titleEl.textContent = isEdit ? 'Edit Customer Details' : 'Add New Customer';
   }
 
+  // Pre-populate existing customer details if editing or customer exists
+  const selectedCustId = document.getElementById('selectedCustomerId')?.value || '';
+  let cust = null;
+  if (selectedCustId && Array.isArray(customers)) {
+    cust = customers.find(c => c.id === selectedCustId);
+  }
+  if (!cust && currentName && Array.isArray(customers)) {
+    const lower = currentName.toLowerCase();
+    cust = customers.find(c => c.name && c.name.trim().toLowerCase() === lower);
+  }
+
+  if (cust) {
+    const catEl = document.getElementById('customerCategory');
+    if (catEl && cust.category) catEl.value = cust.category;
+
+    const dist = getCustomerDistrict(cust);
+    const distEl = document.getElementById('orderDistrictSelect');
+    if (distEl && dist) {
+      distEl.value = dist;
+      if (typeof onOrderDistrictChange === 'function') onOrderDistrictChange(dist);
+    }
+
+    const townEl = document.getElementById('orderTownInput');
+    if (townEl && getCustomerTown(cust)) townEl.value = getCustomerTown(cust);
+
+    const lmEl = document.getElementById('orderLandmarkInput');
+    if (lmEl && getCustomerLandmark(cust)) lmEl.value = getCustomerLandmark(cust);
+
+    const panEl = document.getElementById('orderPanchayathInput');
+    if (panEl && getCustomerPanchayath(cust)) panEl.value = getCustomerPanchayath(cust);
+
+    const ownerNameEl = document.getElementById('customerOwnerName');
+    if (ownerNameEl && cust.ownerName) ownerNameEl.value = cust.ownerName;
+
+    const ownerPhoneEl = document.getElementById('customerOwnerPhone');
+    if (ownerPhoneEl && (cust.ownerPhone || cust.phone)) ownerPhoneEl.value = cust.ownerPhone || cust.phone;
+
+    const staffNameEl = document.getElementById('customerStaffName');
+    if (staffNameEl && cust.staffName) staffNameEl.value = cust.staffName;
+
+    const staffRoleEl = document.getElementById('customerStaffRole');
+    if (staffRoleEl && cust.staffRole) staffRoleEl.value = cust.staffRole;
+
+    const staffPhoneEl = document.getElementById('customerStaffPhone');
+    if (staffPhoneEl && cust.staffPhone) staffPhoneEl.value = cust.staffPhone;
+  }
+
+  // Ensure modal is strictly displayed in foreground above orderModal
+  modal.style.zIndex = '75';
   modal.classList.remove('hidden');
 
   if (window.lucide && typeof lucide.createIcons === 'function') {

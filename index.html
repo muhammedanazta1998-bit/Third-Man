@@ -1307,7 +1307,7 @@
   </div>
 
   <!-- QUICK ADD / EDIT CUSTOMER MODAL (Opens cleanly on top of Order Modal) -->
-  <div id="quickNewCustomerModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-60 flex items-center justify-center p-3 sm:p-5 hidden">
+  <div id="quickNewCustomerModal" class="fixed inset-0 bg-slate-900/70 backdrop-blur-sm z-[75] flex items-center justify-center p-3 sm:p-5 hidden" style="z-index: 75;">
     <div class="bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-lg overflow-hidden border border-slate-200 flex flex-col max-h-[92vh]">
       
       <!-- Header -->
@@ -2847,7 +2847,7 @@
   </div>
 
   <!-- 9. CUSTOMER PROFILE & TEAM MEMBERS MODAL -->
-  <div id="customerDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+  <div id="customerDetailModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-3 sm:p-5 hidden" style="z-index: 70;">
     <div class="modal-expandable bg-white rounded-2xl sm:rounded-3xl shadow-2xl w-full max-w-5xl lg:max-w-6xl max-h-[94vh] flex flex-col overflow-hidden border border-slate-200">
       
       <!-- Modal Header -->
@@ -3194,7 +3194,7 @@
   </div>
 
   <!-- 7. SAFE CONFIRMATION MODAL (ACCIDENTAL DELETION PREVENTER) -->
-  <div id="safeConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[70] flex items-center justify-center p-4 hidden">
+  <div id="safeConfirmModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[80] flex items-center justify-center p-4 hidden" style="z-index: 80;">
     <div class="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 border border-slate-200">
       <div class="flex items-start gap-4">
         <div id="confirmIconBox" class="w-12 h-12 rounded-2xl bg-rose-50 border border-rose-200 text-rose-600 flex items-center justify-center shrink-0">
@@ -3663,6 +3663,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.9.6"></script>
+  <script src="app.js?v=2.9.7"></script>
 </body>
 </html>
