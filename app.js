@@ -5690,6 +5690,7 @@ function renderOrdersTable() {
       ? '<span class="px-1.5 py-0.5 bg-amber-100 text-amber-900 border border-amber-300 rounded text-[9px] font-bold inline-flex items-center gap-0.5">⭐ Bonus</span>'
       : '';
 
+    let rateDisplay = '';
     if (items.length === 1) {
       itemsHtml = `
         <div class="font-bold text-slate-800 flex items-center gap-1.5 flex-wrap">
@@ -5700,6 +5701,7 @@ function renderOrdersTable() {
           ${items[0].bagSize} kg Bag × ${items[0].bagQty}
         </span>
       `;
+      rateDisplay = `<span class="font-bold text-slate-900 text-xs">₹${items[0].perKgRate}</span><span class="text-[10px] text-slate-400 font-normal">/kg</span>`;
     } else {
       itemsHtml = `
         <div class="font-bold text-slate-900 flex items-center gap-1.5 flex-wrap">
@@ -5707,15 +5709,29 @@ function renderOrdersTable() {
           ${specialBrandTag}
           <span class="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded-full text-[9px] font-black">+${items.length - 1} more</span>
         </div>
-        <div class="text-[10px] text-slate-500 mt-0.5 space-y-0.5">
-          ${items.map(it => `<div>• ${escapeHtml(it.productName)}: ${it.bagQty} bags (${it.bagSize}kg)</div>`).join('')}
+        <div class="text-[10px] text-slate-600 mt-1 space-y-1">
+          ${items.map(it => `
+            <div class="flex items-center justify-between gap-2 bg-slate-50 px-2 py-0.5 rounded border border-slate-100">
+              <span class="font-semibold text-slate-800 truncate">${escapeHtml(it.productName)}:</span>
+              <span class="text-slate-600 whitespace-nowrap">${it.bagQty} bags (${it.bagSize}kg)</span>
+            </div>
+          `).join('')}
+        </div>
+      `;
+      rateDisplay = `
+        <div class="space-y-1 text-right">
+          ${items.map(it => {
+            const shortName = (it.productName || 'Rice').split(' ')[0];
+            return `
+              <div class="text-[11px] whitespace-nowrap flex items-center justify-end gap-1">
+                <span class="text-[10px] text-slate-400 font-normal truncate max-w-[85px]">${escapeHtml(shortName)}:</span>
+                <span class="font-bold text-slate-900">₹${it.perKgRate}</span><span class="text-[9px] text-slate-400 font-normal">/kg</span>
+              </div>
+            `;
+          }).join('')}
         </div>
       `;
     }
-
-    const rateDisplay = items.length === 1
-      ? `₹${items[0].perKgRate}/kg`
-      : `Avg ₹${Math.round(o.perKgRate || (o.totalAmount / (o.totalKg || 1)))}/kg`;
 
     const totalBagsCount = (o.bagQty !== undefined) ? o.bagQty : items.reduce((s, i) => s + (i.bagQty || 0), 0);
 
@@ -10946,6 +10962,12 @@ function applyAppLogo(logoUrl, isCustom = false) {
     if (favicon) {
       favicon.href = logoUrl;
     }
+
+    // Sync user's custom logo to Apple Touch Icon for iOS 'Add to Home Screen'
+    const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+    appleTouchIcons.forEach(link => {
+      link.href = logoUrl;
+    });
   } else {
     if (sidebarImg) sidebarImg.classList.add('hidden');
     if (sidebarFallback) sidebarFallback.classList.remove('hidden');
@@ -10955,6 +10977,11 @@ function applyAppLogo(logoUrl, isCustom = false) {
 
     if (settingsImg) settingsImg.classList.add('hidden');
     if (settingsFallback) settingsFallback.classList.remove('hidden');
+
+    const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+    appleTouchIcons.forEach(link => {
+      link.href = 'apple-touch-icon.png';
+    });
   }
 
   if (removeBtn) {
@@ -11030,7 +11057,7 @@ function handleAppLogoUpload(event) {
       canvas.height = h;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, w, h);
-      const dataUrl = canvas.toDataURL(file.type === 'image/png' ? 'image/png' : 'image/jpeg', 0.9);
+      const dataUrl = canvas.toDataURL('image/png');
       try {
         localStorage.setItem(STORAGE_APP_LOGO, dataUrl);
         applyAppLogo(dataUrl, true);
