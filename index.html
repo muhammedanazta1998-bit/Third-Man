@@ -126,6 +126,85 @@
 </head>
 <body class="antialiased min-h-screen flex flex-col md:flex-row">
 
+  <!-- ==================== SECURITY PIN LOCK SCREEN ==================== -->
+  <div id="appSecurityLockOverlay" class="fixed inset-0 z-[9999] bg-[#070d18] flex items-center justify-center p-4 select-none">
+    <div class="bg-slate-900/95 border border-slate-700/80 rounded-3xl p-6 sm:p-8 max-w-sm w-full shadow-2xl backdrop-blur-xl text-center flex flex-col items-center space-y-4 relative">
+      
+      <!-- Brand & Icon -->
+      <div class="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center shadow-lg shadow-blue-600/30 border border-blue-400/30">
+        <i data-lucide="shield-check" class="w-8 h-8 text-cyan-300"></i>
+      </div>
+
+      <div class="space-y-1">
+        <h2 class="text-xl font-black text-white tracking-wider uppercase">THIRD MAN</h2>
+        <p class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Sales &amp; Incentive Dashboard</p>
+      </div>
+
+      <!-- Instruction -->
+      <div class="text-xs font-semibold text-cyan-400 flex items-center justify-center gap-1.5">
+        <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+        <span>Enter 4-Digit Security PIN</span>
+      </div>
+
+      <!-- PIN Dots Indicator -->
+      <div id="pinDotsWrapper" class="flex items-center justify-center gap-3.5 py-2">
+        <span id="pinDot0" class="w-4 h-4 rounded-full border-2 border-slate-600 bg-slate-800 transition-all duration-200"></span>
+        <span id="pinDot1" class="w-4 h-4 rounded-full border-2 border-slate-600 bg-slate-800 transition-all duration-200"></span>
+        <span id="pinDot2" class="w-4 h-4 rounded-full border-2 border-slate-600 bg-slate-800 transition-all duration-200"></span>
+        <span id="pinDot3" class="w-4 h-4 rounded-full border-2 border-slate-600 bg-slate-800 transition-all duration-200"></span>
+      </div>
+
+      <!-- Error / Status Message -->
+      <div id="pinErrorMessage" class="text-xs font-bold text-rose-400 min-h-[1.25rem] text-center"></div>
+
+      <!-- Numeric Keypad Grid (3 x 4) -->
+      <div class="grid grid-cols-3 gap-2.5 w-full max-w-[260px] pt-1">
+        <button type="button" onclick="enterPinDigit('1')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">1</button>
+        <button type="button" onclick="enterPinDigit('2')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">2</button>
+        <button type="button" onclick="enterPinDigit('3')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">3</button>
+        <button type="button" onclick="enterPinDigit('4')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">4</button>
+        <button type="button" onclick="enterPinDigit('5')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">5</button>
+        <button type="button" onclick="enterPinDigit('6')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">6</button>
+        <button type="button" onclick="enterPinDigit('7')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">7</button>
+        <button type="button" onclick="enterPinDigit('8')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">8</button>
+        <button type="button" onclick="enterPinDigit('9')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">9</button>
+        <button type="button" onclick="backspacePinDigit()" title="Clear / Backspace" class="h-12 rounded-xl bg-slate-800/60 hover:bg-slate-800 text-slate-400 hover:text-white font-bold text-xs border border-slate-700/60 active:scale-95 transition flex items-center justify-center">
+          <i data-lucide="delete" class="w-5 h-5"></i>
+        </button>
+        <button type="button" onclick="enterPinDigit('0')" class="h-12 rounded-xl bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-lg border border-slate-700/80 active:scale-95 transition shadow-xs">0</button>
+        <button type="button" onclick="submitPinUnlock()" title="Unlock Dashboard" class="h-12 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs shadow-md shadow-blue-600/30 active:scale-95 transition flex items-center justify-center">
+          <i data-lucide="key" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <!-- Remember Me Checkbox -->
+      <div class="pt-2 flex items-center justify-center gap-2">
+        <label class="flex items-center gap-2 text-xs font-semibold text-slate-400 cursor-pointer hover:text-slate-200 transition">
+          <input type="checkbox" id="pinRememberMeCheckbox" checked class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-blue-600 focus:ring-0">
+          <span>Remember me on this device</span>
+        </label>
+      </div>
+
+      <!-- Default PIN Hint -->
+      <p class="text-[11px] text-slate-500 pt-1">
+        Default PIN: <span class="font-bold text-amber-400">1234</span> • Change anytime in Settings
+      </p>
+
+    </div>
+  </div>
+  <script>
+    (function() {
+      try {
+        var isUnlocked = sessionStorage.getItem('third_man_pin_unlocked_v1') === 'true' || localStorage.getItem('third_man_pin_unlocked_v1') === 'true';
+        var isEnabled = localStorage.getItem('third_man_security_enabled_v1') !== 'false';
+        if (isUnlocked || !isEnabled) {
+          var el = document.getElementById('appSecurityLockOverlay');
+          if (el) el.style.display = 'none';
+        }
+      } catch(e) {}
+    })();
+  </script>
+
   <!-- Floating Diagnostic Banner (Appears only if an uncaught JS error happens) -->
   <div id="globalAppErrorBanner" class="hidden fixed top-3 left-1/2 -translate-x-1/2 z-[100] max-w-xl w-[90%] bg-red-600 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center justify-between text-xs font-semibold">
     <div class="flex items-center gap-2">
@@ -228,6 +307,12 @@
           </div>
           <span id="settingsTrashCountIndicator" class="hidden px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-rose-500/20 text-rose-300 border border-rose-500/30" title="Items in Recycle Bin">0</span>
         </button>
+
+        <!-- Lock Dashboard Nav Button -->
+        <button type="button" onclick="lockDashboard()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-rose-400/90 hover:text-white hover:bg-rose-900/40 transition">
+          <i data-lucide="lock" class="w-4 h-4 text-rose-400"></i>
+          <span>Lock Dashboard</span>
+        </button>
         <input type="file" id="importJsonFileInput" accept=".json,application/json" class="hidden" onchange="handleImportDataJSON(event)">
       </nav>
 
@@ -292,6 +377,12 @@
           <!-- Print Dashboard -->
           <button type="button" onclick="window.print()" title="Print Dashboard" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 shadow-2xs transition active:scale-95">
             <i data-lucide="printer" class="w-4 h-4"></i>
+          </button>
+
+          <!-- Lock Dashboard -->
+          <button type="button" onclick="lockDashboard()" title="Lock Dashboard" class="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-rose-50 hover:text-rose-700 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 transition active:scale-95">
+            <i data-lucide="lock" class="w-3.5 h-3.5 text-slate-500"></i>
+            <span class="hidden sm:inline">Lock</span>
           </button>
         </div>
       </div>
@@ -1392,6 +1483,10 @@
           <i data-lucide="database" class="w-4 h-4"></i>
           <span>Data, Backup &amp; Trash</span>
         </button>
+        <button type="button" onclick="setSettingsTab('security')" id="settingsTabBtn-security" class="settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-white text-slate-600 hover:text-slate-900 border border-slate-200">
+          <i data-lucide="shield-check" class="w-4 h-4"></i>
+          <span>Security PIN</span>
+        </button>
       </div>
 
       <!-- ==================== TAB 1: DISTRICTS & TOWNS ==================== -->
@@ -1936,6 +2031,82 @@
                 <i data-lucide="alert-triangle" class="w-3.5 h-3.5"></i>
                 <span>Clear All Orders</span>
               </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ==================== TAB 6: SECURITY PIN LOCK ==================== -->
+      <div id="settingsTabContent-security" class="hidden flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50/50">
+        <div class="max-w-xl mx-auto space-y-6">
+          
+          <!-- Security Status Card -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div class="flex items-center gap-2.5">
+                <div class="w-10 h-10 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-200">
+                  <i data-lucide="shield-check" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h4 class="text-sm font-extrabold text-slate-900">Dashboard Security Lock</h4>
+                  <p class="text-[11px] text-slate-500">Protect your sales register and business data with a PIN</p>
+                </div>
+              </div>
+              <span id="securityStatusBadge" class="px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
+                ACTIVE
+              </span>
+            </div>
+
+            <div class="flex items-center justify-between pt-1">
+              <div>
+                <span class="text-xs font-bold text-slate-800">Require PIN Lock</span>
+                <p class="text-[11px] text-slate-500">Prompt for PIN when opening the app</p>
+              </div>
+              <label class="relative inline-flex items-center cursor-pointer">
+                <input type="checkbox" id="settingsSecurityLockToggle" onchange="onSecurityToggleChange(this.checked)" checked class="sr-only peer">
+                <div class="w-11 h-6 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Change PIN Card -->
+          <div class="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <div class="pb-2 border-b border-slate-100">
+              <h4 class="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                <i data-lucide="key" class="w-4 h-4 text-amber-600"></i>
+                <span>Change Security PIN</span>
+              </h4>
+              <p class="text-[11px] text-slate-500 mt-0.5">Enter your current PIN and choose a new 4-digit code</p>
+            </div>
+
+            <div class="space-y-3">
+              <div>
+                <label class="block text-[11px] font-bold text-slate-700 mb-1">Current PIN *</label>
+                <input type="password" id="inputCurrentPin" maxlength="6" inputmode="numeric" placeholder="Enter current PIN (Default: 1234)" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500/20">
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">New 4-Digit PIN *</label>
+                  <input type="password" id="inputNewPin" maxlength="6" inputmode="numeric" placeholder="e.g. 5678" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500/20">
+                </div>
+                <div>
+                  <label class="block text-[11px] font-bold text-slate-700 mb-1">Confirm New PIN *</label>
+                  <input type="password" id="inputConfirmPin" maxlength="6" inputmode="numeric" placeholder="Re-enter new PIN" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500/20">
+                </div>
+              </div>
+
+              <div class="pt-2 flex items-center justify-between">
+                <button type="button" onclick="lockDashboard()" class="px-3.5 py-2 text-xs font-bold text-rose-600 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center gap-1.5">
+                  <i data-lucide="lock" class="w-3.5 h-3.5"></i>
+                  <span>Lock Dashboard Now</span>
+                </button>
+                <button type="button" onclick="handleSaveNewPin()" class="px-5 py-2 text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white rounded-xl shadow-sm transition flex items-center gap-1.5 active:scale-95">
+                  <i data-lucide="check" class="w-3.5 h-3.5"></i>
+                  <span>Save New PIN</span>
+                </button>
+              </div>
             </div>
           </div>
 
@@ -3117,6 +3288,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.7.1"></script>
+  <script src="app.js?v=2.8.0"></script>
 </body>
 </html>

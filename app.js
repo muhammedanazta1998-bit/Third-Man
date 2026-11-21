@@ -730,6 +730,9 @@ function initApp() {
 
     // Initialize Google Firebase Cloud Realtime Sync
     initFirebaseSync();
+
+    // Initialize Dashboard Security PIN Lock
+    initSecurityLock();
   } catch (err) {
     console.error('Initialization error in app.js:', err);
   }
@@ -5596,6 +5599,257 @@ function updateSchemeEffectiveDateFromSettings() {
   showNotification(`Incentive scheme start date updated to ${formatSchemeDate(input.value)}`);
 }
 
+// ==================== DASHBOARD SECURITY PIN LOCK ====================
+const STORAGE_SECURITY_PIN = 'third_man_security_pin_v1';
+const STORAGE_SECURITY_ENABLED = 'third_man_security_enabled_v1';
+const STORAGE_PIN_UNLOCKED = 'third_man_pin_unlocked_v1';
+
+let enteredPin = '';
+
+function getSecurityPin() {
+  try {
+    return localStorage.getItem(STORAGE_SECURITY_PIN) || '1234';
+  } catch (e) {
+    return '1234';
+  }
+}
+
+function isSecurityEnabled() {
+  try {
+    return localStorage.getItem(STORAGE_SECURITY_ENABLED) !== 'false';
+  } catch (e) {
+    return true;
+  }
+}
+
+function isDashboardUnlocked() {
+  if (!isSecurityEnabled()) return true;
+  try {
+    return sessionStorage.getItem(STORAGE_PIN_UNLOCKED) === 'true' ||
+           localStorage.getItem(STORAGE_PIN_UNLOCKED) === 'true';
+  } catch (e) {
+    return false;
+  }
+}
+
+function updatePinDots() {
+  for (let i = 0; i < 4; i++) {
+    const dot = document.getElementById(`pinDot${i}`);
+    if (dot) {
+      if (i < enteredPin.length) {
+        dot.className = 'w-4 h-4 rounded-full border-2 border-cyan-400 bg-cyan-400 shadow-md shadow-cyan-400/50 scale-110 transition-all duration-150';
+      } else {
+        dot.className = 'w-4 h-4 rounded-full border-2 border-slate-600 bg-slate-800 transition-all duration-150';
+      }
+    }
+  }
+}
+
+function enterPinDigit(digit) {
+  if (enteredPin.length < 6) {
+    enteredPin += String(digit);
+    updatePinDots();
+    const errEl = document.getElementById('pinErrorMessage');
+    if (errEl) errEl.textContent = '';
+
+    if (enteredPin.length === 4) {
+      setTimeout(() => {
+        submitPinUnlock();
+      }, 150);
+    }
+  }
+}
+
+function backspacePinDigit() {
+  if (enteredPin.length > 0) {
+    enteredPin = enteredPin.slice(0, -1);
+    updatePinDots();
+    const errEl = document.getElementById('pinErrorMessage');
+    if (errEl) errEl.textContent = '';
+  }
+}
+
+function clearPin() {
+  enteredPin = '';
+  updatePinDots();
+  const errEl = document.getElementById('pinErrorMessage');
+  if (errEl) errEl.textContent = '';
+}
+
+function submitPinUnlock() {
+  const correctPin = getSecurityPin();
+  const errEl = document.getElementById('pinErrorMessage');
+  const overlay = document.getElementById('appSecurityLockOverlay');
+  const dotsWrapper = document.getElementById('pinDotsWrapper');
+
+  if (enteredPin === correctPin) {
+    try {
+      sessionStorage.setItem(STORAGE_PIN_UNLOCKED, 'true');
+      const remCheck = document.getElementById('pinRememberMeCheckbox');
+      if (remCheck && remCheck.checked) {
+        localStorage.setItem(STORAGE_PIN_UNLOCKED, 'true');
+      } else {
+        localStorage.removeItem(STORAGE_PIN_UNLOCKED);
+      }
+    } catch (e) {}
+
+    if (overlay) {
+      overlay.classList.add('transition-opacity', 'duration-300', 'opacity-0');
+      setTimeout(() => {
+        overlay.classList.add('hidden');
+        overlay.classList.remove('opacity-0');
+        overlay.style.display = 'none';
+      }, 300);
+    }
+
+    clearPin();
+    if (typeof showNotification === 'function') {
+      showNotification('✓ Dashboard Unlocked!');
+    }
+  } else {
+    if (errEl) {
+      errEl.textContent = 'Incorrect PIN! Please try again.';
+    }
+    if (dotsWrapper) {
+      dotsWrapper.classList.add('animate-bounce');
+      setTimeout(() => dotsWrapper.classList.remove('animate-bounce'), 500);
+    }
+    if (navigator.vibrate) {
+      try { navigator.vibrate(200); } catch (e) {}
+    }
+    setTimeout(() => {
+      clearPin();
+    }, 600);
+  }
+}
+
+function lockDashboard() {
+  try {
+    sessionStorage.removeItem(STORAGE_PIN_UNLOCKED);
+    localStorage.removeItem(STORAGE_PIN_UNLOCKED);
+  } catch (e) {}
+
+  clearPin();
+  const overlay = document.getElementById('appSecurityLockOverlay');
+  if (overlay) {
+    overlay.classList.remove('hidden', 'opacity-0');
+    overlay.style.display = 'flex';
+  }
+
+  const closeSettings = document.getElementById('settingsModal');
+  if (closeSettings) closeSettings.classList.add('hidden');
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+  if (typeof showNotification === 'function') {
+    showNotification('Dashboard Locked.');
+  }
+}
+
+let pinKeydownAttached = false;
+function initSecurityLock() {
+  const overlay = document.getElementById('appSecurityLockOverlay');
+  if (!overlay) return;
+
+  if (isDashboardUnlocked()) {
+    overlay.classList.add('hidden');
+    overlay.style.display = 'none';
+  } else {
+    overlay.classList.remove('hidden');
+    overlay.style.display = 'flex';
+    clearPin();
+  }
+
+  if (!pinKeydownAttached) {
+    pinKeydownAttached = true;
+    window.addEventListener('keydown', (e) => {
+      const lockOverlay = document.getElementById('appSecurityLockOverlay');
+      if (lockOverlay && !lockOverlay.classList.contains('hidden') && lockOverlay.style.display !== 'none') {
+        if (e.key >= '0' && e.key <= '9') {
+          e.preventDefault();
+          enterPinDigit(e.key);
+        } else if (e.key === 'Backspace') {
+          e.preventDefault();
+          backspacePinDigit();
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          submitPinUnlock();
+        } else if (e.key === 'Escape') {
+          e.preventDefault();
+          clearPin();
+        }
+      }
+    });
+  }
+}
+
+function handleSaveNewPin() {
+  const curInput = document.getElementById('inputCurrentPin');
+  const newInput = document.getElementById('inputNewPin');
+  const confInput = document.getElementById('inputConfirmPin');
+
+  const curVal = curInput ? curInput.value.trim() : '';
+  const newVal = newInput ? newInput.value.trim() : '';
+  const confVal = confInput ? confInput.value.trim() : '';
+
+  const activePin = getSecurityPin();
+
+  if (curVal !== activePin) {
+    alert('Current PIN is incorrect! (Default is 1234)');
+    if (curInput) curInput.focus();
+    return;
+  }
+
+  if (newVal.length < 4) {
+    alert('New PIN must be at least 4 digits!');
+    if (newInput) newInput.focus();
+    return;
+  }
+
+  if (newVal !== confVal) {
+    alert('New PIN and Confirm PIN do not match!');
+    if (confInput) confInput.focus();
+    return;
+  }
+
+  try {
+    localStorage.setItem(STORAGE_SECURITY_PIN, newVal);
+  } catch (e) {}
+
+  if (curInput) curInput.value = '';
+  if (newInput) newInput.value = '';
+  if (confInput) confInput.value = '';
+
+  updateSettingsSecurityTab();
+  showNotification('✓ Security PIN changed successfully!');
+}
+
+function onSecurityToggleChange(enabled) {
+  try {
+    localStorage.setItem(STORAGE_SECURITY_ENABLED, enabled ? 'true' : 'false');
+  } catch (e) {}
+  updateSettingsSecurityTab();
+  showNotification(enabled ? 'PIN Lock Enabled' : 'PIN Lock Disabled');
+}
+
+function updateSettingsSecurityTab() {
+  const toggle = document.getElementById('settingsSecurityLockToggle');
+  const badge = document.getElementById('securityStatusBadge');
+  const enabled = isSecurityEnabled();
+
+  if (toggle) toggle.checked = enabled;
+  if (badge) {
+    if (enabled) {
+      badge.textContent = 'ACTIVE';
+      badge.className = 'px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300';
+    } else {
+      badge.textContent = 'DISABLED';
+      badge.className = 'px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-300';
+    }
+  }
+}
+
 function setSettingsTab(tabName) {
   currentSettingsTab = tabName || 'towns';
   if (currentSettingsTab === 'general') currentSettingsTab = 'data';
@@ -5605,15 +5859,17 @@ function setSettingsTab(tabName) {
   const tabIncentive = document.getElementById('settingsTabContent-incentive');
   const tabBranding = document.getElementById('settingsTabContent-branding');
   const tabData = document.getElementById('settingsTabContent-data');
+  const tabSecurity = document.getElementById('settingsTabContent-security');
 
   const btnTowns = document.getElementById('settingsTabBtn-towns');
   const btnProducts = document.getElementById('settingsTabBtn-products');
   const btnIncentive = document.getElementById('settingsTabBtn-incentive');
   const btnBranding = document.getElementById('settingsTabBtn-branding');
   const btnData = document.getElementById('settingsTabBtn-data');
+  const btnSecurity = document.getElementById('settingsTabBtn-security');
 
-  const allTabs = [tabTowns, tabProducts, tabIncentive, tabBranding, tabData];
-  const allBtns = [btnTowns, btnProducts, btnIncentive, btnBranding, btnData];
+  const allTabs = [tabTowns, tabProducts, tabIncentive, tabBranding, tabData, tabSecurity];
+  const allBtns = [btnTowns, btnProducts, btnIncentive, btnBranding, btnData, btnSecurity];
 
   // Reset tab button styles
   allBtns.forEach(btn => {
@@ -5649,6 +5905,10 @@ function setSettingsTab(tabName) {
     if (tabData) tabData.classList.remove('hidden');
     if (btnData) btnData.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
     updateSettingsDataTab();
+  } else if (currentSettingsTab === 'security') {
+    if (tabSecurity) tabSecurity.classList.remove('hidden');
+    if (btnSecurity) btnSecurity.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
+    updateSettingsSecurityTab();
   }
 
   if (window.lucide && typeof lucide.createIcons === 'function') {
@@ -10252,3 +10512,14 @@ window.deduplicateProductsList = deduplicateProductsList;
 window.getCanonicalProduct = getCanonicalProduct;
 window.cascadeCanonicalProductsToOrders = cascadeCanonicalProductsToOrders;
 window.ALL_OFFICIAL_PRODUCTS = ALL_OFFICIAL_PRODUCTS;
+
+// Security PIN Lock Exports
+window.enterPinDigit = enterPinDigit;
+window.backspacePinDigit = backspacePinDigit;
+window.clearPin = clearPin;
+window.submitPinUnlock = submitPinUnlock;
+window.lockDashboard = lockDashboard;
+window.initSecurityLock = initSecurityLock;
+window.handleSaveNewPin = handleSaveNewPin;
+window.onSecurityToggleChange = onSecurityToggleChange;
+window.updateSettingsSecurityTab = updateSettingsSecurityTab;
