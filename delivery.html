@@ -140,9 +140,16 @@
           </div>
         </div>
       </div>
-      <div class="text-right">
-        <span class="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total Load Weight</span>
-        <span id="statFilteredKgCount" class="text-base sm:text-lg font-black text-white">0 <span class="text-xs text-cyan-300 font-bold">kg</span></span>
+      <div class="flex items-center gap-2.5">
+        <button type="button" id="btnMarkAllPendingDelivered" onclick="markAllPendingDelivered()" class="hidden px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-xl transition shadow-sm active:scale-95 flex items-center gap-1">
+          <i data-lucide="check-check" class="w-3.5 h-3.5"></i>
+          <span class="hidden sm:inline">Mark All Delivered</span>
+          <span class="sm:hidden">Deliver All</span>
+        </button>
+        <div class="text-right">
+          <span class="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total Load Weight</span>
+          <span id="statFilteredKgCount" class="text-base sm:text-lg font-black text-white">0 <span class="text-xs text-cyan-300 font-bold">kg</span></span>
+        </div>
       </div>
     </div>
 
@@ -251,12 +258,52 @@
       });
     }
 
+    function normalizeHistoricalOrders(list) {
+      if (!Array.isArray(list)) return [];
+      const needsSync = [];
+      const nowIso = new Date().toISOString();
+      list.forEach(o => {
+        if (!o) return;
+        // Business rule: All orders placed on or before 2026-11-21 are DELIVERED
+        if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
+          o.dispatchStatus = 'Delivered';
+          o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+          needsSync.push(o);
+        }
+      });
+      return needsSync;
+    }
+
+    function syncOrdersDispatchStatusToFirestore(orderList) {
+      if (!db || !Array.isArray(orderList) || orderList.length === 0) return;
+      const CHUNK_SIZE = 400;
+      for (let i = 0; i < orderList.length; i += CHUNK_SIZE) {
+        const chunk = orderList.slice(i, i + CHUNK_SIZE);
+        try {
+          const batch = db.batch();
+          chunk.forEach(o => {
+            if (o && o.id) {
+              const ref = db.collection('orders').doc(o.id);
+              batch.set(ref, {
+                dispatchStatus: 'Delivered',
+                deliveredAt: o.deliveredAt || new Date().toISOString()
+              }, { merge: true });
+            }
+          });
+          batch.commit().catch(err => console.warn('Delivery batch mark notice:', err));
+        } catch (e) {
+          console.warn('Batch write error:', e);
+        }
+      }
+    }
+
     function loadInitialOrdersFromCache() {
       try {
         const raw = localStorage.getItem(STORAGE_DELIVERY_CACHE) || localStorage.getItem(STORAGE_ORDERS);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
+            normalizeHistoricalOrders(parsed);
             allOrders = parsed;
             sortOrders(allOrders);
             populateTownDropdown();
@@ -386,12 +433,17 @@
         }
       });
 
+      const needsCloudSync = normalizeHistoricalOrders(loaded);
       sortOrders(loaded);
       allOrders = loaded;
 
       try {
         localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(loaded));
       } catch (e) {}
+
+      if (needsCloudSync.length > 0 && db) {
+        syncOrdersDispatchStatusToFirestore(needsCloudSync);
+      }
 
       updateSyncStatus('synced', 'Live Synced 🟢');
       populateTownDropdown();
@@ -474,6 +526,7 @@
         }).filter(o => o && o.id);
 
         if (restOrders.length > 0 && allOrders.length === 0) {
+          normalizeHistoricalOrders(restOrders);
           sortOrders(restOrders);
           allOrders = restOrders;
           try {
@@ -663,9 +716,18 @@
         statTitleEl.textContent = currentTab === 'pending' ? 'Pending Load Summary' : (currentTab === 'delivered_today' ? 'Delivered Today Summary' : 'Total Load Summary');
       }
 
+      const btnMarkAll = document.getElementById('btnMarkAllPendingDelivered');
+      if (btnMarkAll) {
+        if (currentTab === 'pending' && filtered.length > 0) {
+          btnMarkAll.classList.remove('hidden');
+        } else {
+          btnMarkAll.classList.add('hidden');
+        }
+      }
+
       if (filtered.length === 0) {
-        let emptyTitle = 'No Pending Deliveries';
-        let emptyDesc = 'All orders have been delivered! New orders placed by the office will appear here automatically in real time.';
+        let emptyTitle = 'No Pending Deliveries (0)';
+        let emptyDesc = 'All orders up to now have been delivered! (ഇതുവരെയുള്ള എല്ലാ ഓർഡറുകളും ഡെലിവേർഡ് ആയി രേഖപ്പെടുത്തിയിരിക്കുന്നു.) New orders placed by the office will appear here automatically in real time.';
         if (currentTab === 'delivered_today') {
           emptyTitle = 'No Deliveries Completed Today';
           emptyDesc = 'Orders marked as Delivered today will be recorded here.';
@@ -1154,6 +1216,31 @@
         console.error('Error saving delivery status:', err);
         alert('Error: ' + err.message);
       });
+    }
+
+    function markAllPendingDelivered() {
+      const pendingOrders = allOrders.filter(o => o.dispatchStatus !== 'Delivered');
+      if (pendingOrders.length === 0) {
+        alert('പെൻഡിങ് ഡെലിവറികൾ ഒന്നുമില്ല! (No pending deliveries to mark)');
+        return;
+      }
+      if (!confirm(`നിലവിലുള്ള ${pendingOrders.length} പെൻഡിങ് ഓർഡറുകളും 'Delivered' ആയി മാർക്ക് ചെയ്യണമോ?\n(Mark all ${pendingOrders.length} pending orders as Delivered?)`)) {
+        return;
+      }
+      const nowIso = new Date().toISOString();
+      pendingOrders.forEach(o => {
+        o.dispatchStatus = 'Delivered';
+        o.deliveredAt = o.deliveredAt || nowIso;
+      });
+      try {
+        localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
+      } catch (e) {}
+      if (db) {
+        syncOrdersDispatchStatusToFirestore(pendingOrders);
+      }
+      showToast(`✅ ${pendingOrders.length} orders marked as Delivered!`);
+      updateTabBadges();
+      renderOrders();
     }
 
     function startDeliveryApp() {

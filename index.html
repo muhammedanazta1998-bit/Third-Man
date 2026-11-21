@@ -3463,6 +3463,13 @@
               <span>Open View</span>
             </a>
           </div>
+
+          <div class="pt-1">
+            <button type="button" onclick="markAllCurrentOrdersDelivered(true)" class="w-full py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl text-xs border border-emerald-200 transition flex items-center justify-center gap-1.5 active:scale-95">
+              <i data-lucide="check-check" class="w-4 h-4 text-emerald-600"></i>
+              <span>Mark All Existing Orders as Delivered (ഇതുവരെയുള്ള എല്ലാ ഓർഡറുകളും 'Delivered' ആക്കുക)</span>
+            </button>
+          </div>
         </div>
 
         <!-- Upcoming Future Views Placeholder -->
@@ -3498,6 +3505,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.9.3"></script>
+  <script src="app.js?v=2.9.4"></script>
 </body>
 </html>

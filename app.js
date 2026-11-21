@@ -813,6 +813,12 @@ function loadDataFromStorage() {
       o.totalAmount = parseFloat(o.totalAmount) || o.items.reduce((sum, it) => sum + (parseFloat(it.totalAmount) || 0), 0);
       o.deliveryStatus = o.deliveryStatus || 'Normal';
 
+      // All existing/historical orders placed up to now are marked Delivered as requested by business owner
+      if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
+        o.dispatchStatus = 'Delivered';
+        o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+      }
+
       return o;
     }).filter(Boolean);
 
@@ -1309,7 +1315,21 @@ function setupFirestoreRealtimeListeners() {
 
       // Sort orders descending by date / id
       remoteOrders.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+
+      // Ensure historical / past orders up to 2026-11-21 are Delivered
+      const needsCloudDeliveredSync = [];
+      remoteOrders.forEach(o => {
+        if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
+          o.dispatchStatus = 'Delivered';
+          o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+          needsCloudDeliveredSync.push(o);
+        }
+      });
       orders = remoteOrders;
+
+      if (needsCloudDeliveredSync.length > 0 && db) {
+        batchSyncOrdersDispatchStatus(needsCloudDeliveredSync);
+      }
 
       try {
         localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
@@ -1428,18 +1448,97 @@ function seedLocalOrdersToCloud() {
   hasPerformedInitialOrdersCloudSeed = true;
   updateCloudSyncStatus('syncing', 'Uploading Local Orders...');
   
-  const batch = db.batch();
-  orders.forEach(order => {
-    if (order && order.id) {
-      const ref = db.collection('orders').doc(order.id);
-      batch.set(ref, sanitizeForFirestore(order));
+  // Ensure all historical orders up to now are marked Delivered before seeding
+  orders.forEach(o => {
+    if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
+      o.dispatchStatus = 'Delivered';
+      o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
     }
   });
-  batch.commit().then(() => {
-    updateCloudSyncStatus('synced', 'Live Synced 🟢');
-  }).catch(err => {
-    console.error('Initial orders seed error:', err);
+
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
+    const chunk = orders.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = db.batch();
+      chunk.forEach(order => {
+        if (order && order.id) {
+          const ref = db.collection('orders').doc(order.id);
+          batch.set(ref, sanitizeForFirestore(order));
+        }
+      });
+      batch.commit().then(() => {
+        updateCloudSyncStatus('synced', 'Live Synced 🟢');
+      }).catch(err => {
+        console.error('Initial orders seed batch error:', err);
+      });
+    } catch (e) {
+      console.warn('Batch seed error:', e);
+    }
+  }
+}
+
+function batchSyncOrdersDispatchStatus(orderList) {
+  if (!db || !Array.isArray(orderList) || orderList.length === 0) return;
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < orderList.length; i += CHUNK_SIZE) {
+    const chunk = orderList.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = db.batch();
+      chunk.forEach(o => {
+        if (o && o.id) {
+          const ref = db.collection('orders').doc(o.id);
+          batch.set(ref, {
+            dispatchStatus: 'Delivered',
+            deliveredAt: o.deliveredAt || new Date().toISOString()
+          }, { merge: true });
+        }
+      });
+      batch.commit().catch(err => console.warn('Orders dispatch status batch sync notice:', err));
+    } catch (e) {
+      console.warn('Batch dispatch commit error:', e);
+    }
+  }
+}
+
+function markAllCurrentOrdersDelivered(interactive = false) {
+  if (interactive) {
+    const pendingCount = (orders || []).filter(o => o.dispatchStatus !== 'Delivered').length;
+    const msg = pendingCount > 0 
+      ? `നിലവിലുള്ള ${pendingCount} പെൻഡിങ് ഓർഡറുകളും 'Delivered' ആയി മാർക്ക് ചെയ്യണമോ?\n(Mark all ${pendingCount} pending orders as Delivered?)`
+      : `ഇതുവരെയുള്ള എല്ലാ ഓർഡറുകളും 'Delivered' ആയി മാർക്ക് ചെയ്യണമോ?\n(Mark all existing orders as Delivered?)`;
+    if (!confirm(msg)) return;
+  }
+
+  const nowIso = new Date().toISOString();
+  let updatedCount = 0;
+  const toSync = [];
+
+  (orders || []).forEach(o => {
+    if (o.dispatchStatus !== 'Delivered') {
+      o.dispatchStatus = 'Delivered';
+      o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : nowIso);
+      updatedCount++;
+      toSync.push(o);
+    }
   });
+
+  try {
+    localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+  } catch (e) {}
+
+  if (toSync.length > 0 && db) {
+    batchSyncOrdersDispatchStatus(toSync);
+  }
+
+  updateDashboard();
+  if (typeof renderOrdersTable === 'function') {
+    renderOrdersTable();
+  }
+
+  if (typeof showNotification === 'function') {
+    showNotification(`✓ ${updatedCount > 0 ? updatedCount : 'All'} orders marked as Delivered!`);
+  }
 }
 
 function seedLocalCustomersToCloud() {
@@ -10861,3 +10960,5 @@ window.getDeliveryPortalUrl = getDeliveryPortalUrl;
 // Views & Portals Hub Exports
 window.openViewsModal = openViewsModal;
 window.closeViewsModal = closeViewsModal;
+window.markAllCurrentOrdersDelivered = markAllCurrentOrdersDelivered;
+window.batchSyncOrdersDispatchStatus = batchSyncOrdersDispatchStatus;
