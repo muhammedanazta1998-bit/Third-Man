@@ -352,7 +352,14 @@
         // 3. Concurrently trigger direct get() fetch so we don't depend solely on onSnapshot stream
         fetchOrdersDirect();
 
-        // 4. Timeout watchdog: If after 6 seconds still 0 orders, show retry UI
+        // 4. REST fallback after 2.5 seconds if cloud connection is lagging
+        setTimeout(() => {
+          if (allOrders.length === 0) {
+            fetchOrdersFromRestFallback();
+          }
+        }, 2500);
+
+        // 5. Timeout watchdog: If after 6 seconds still 0 orders, show retry UI
         setTimeout(() => {
           if (allOrders.length === 0) {
             showEmptyOrErrorState('Connecting to cloud is taking longer than usual.');
@@ -361,6 +368,7 @@
 
       } catch (e) {
         console.error('Firebase init error in delivery portal:', e);
+        fetchOrdersFromRestFallback();
         updateSyncStatus('error', 'Connection Error');
         if (allOrders.length === 0) {
           showEmptyOrErrorState('Connection Error: ' + e.message);
@@ -397,6 +405,7 @@
         processIncomingOrdersSnapshot(snapshot);
       }, err => {
         console.warn('Orders onSnapshot error:', err);
+        fetchOrdersFromRestFallback();
         updateSyncStatus('error', 'Offline');
         if (allOrders.length === 0) {
           showEmptyOrErrorState('Could not load orders: ' + (err.message || 'Network error'));
@@ -405,7 +414,10 @@
     }
 
     function fetchOrdersDirect() {
-      if (!db) return;
+      if (!db) {
+        fetchOrdersFromRestFallback();
+        return;
+      }
       db.collection('orders').get().then(snapshot => {
         if (!snapshot.empty) {
           processIncomingOrdersSnapshot(snapshot);
@@ -418,7 +430,63 @@
         }
       }).catch(err => {
         console.warn('Direct get orders notice:', err);
+        fetchOrdersFromRestFallback();
       });
+    }
+
+    async function fetchOrdersFromRestFallback() {
+      if (allOrders.length > 0) return;
+      try {
+        const resp = await fetch('https://firestore.googleapis.com/v1/projects/third-man-1998/databases/(default)/documents/orders?pageSize=300');
+        if (!resp.ok) return;
+        const json = await resp.json();
+        if (!json || !Array.isArray(json.documents) || json.documents.length === 0) return;
+
+        function parseRestVal(v) {
+          if (!v) return null;
+          if (v.stringValue !== undefined) return v.stringValue;
+          if (v.integerValue !== undefined) return parseInt(v.integerValue, 10);
+          if (v.doubleValue !== undefined) return parseFloat(v.doubleValue);
+          if (v.booleanValue !== undefined) return v.booleanValue;
+          if (v.nullValue !== undefined) return null;
+          if (v.timestampValue !== undefined) return v.timestampValue;
+          if (v.arrayValue !== undefined) {
+            return (v.arrayValue.values || []).map(parseRestVal);
+          }
+          if (v.mapValue !== undefined) {
+            const m = {};
+            const fields = v.mapValue.fields || {};
+            for (const k in fields) {
+              m[k] = parseRestVal(fields[k]);
+            }
+            return m;
+          }
+          return null;
+        }
+
+        const restOrders = json.documents.map(doc => {
+          const fields = doc.fields || {};
+          const obj = {};
+          for (const k in fields) {
+            obj[k] = parseRestVal(fields[k]);
+          }
+          return obj;
+        }).filter(o => o && o.id);
+
+        if (restOrders.length > 0 && allOrders.length === 0) {
+          sortOrders(restOrders);
+          allOrders = restOrders;
+          try {
+            localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(restOrders));
+          } catch (e) {}
+          updateSyncStatus('synced', 'Live Synced 🟢');
+          populateTownDropdown();
+          updateTabBadges();
+          renderOrders();
+        }
+      } catch (err) {
+        console.warn('REST fallback fetch notice:', err);
+      }
     }
 
     function showEmptyOrErrorState(msg) {
@@ -770,7 +838,6 @@
         </tr>
       `;
     }
-    }
 
     function renderOrderCard(o) {
       const isUrgent = (o.deliveryStatus === 'Urgent');
@@ -1089,10 +1156,16 @@
       });
     }
 
-    document.addEventListener('DOMContentLoaded', () => {
+    function startDeliveryApp() {
       updateViewModeButtons();
       initFirebase();
-    });
+    }
+
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', startDeliveryApp);
+    } else {
+      startDeliveryApp();
+    }
   </script>
 </body>
 </html>
