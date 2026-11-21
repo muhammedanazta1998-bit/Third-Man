@@ -10964,10 +10964,14 @@ function applyAppLogo(logoUrl, isCustom = false) {
     }
 
     // Sync user's custom logo to Apple Touch Icon for iOS 'Add to Home Screen'
-    const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
-    appleTouchIcons.forEach(link => {
-      link.href = logoUrl;
-    });
+    // iOS Safari SpringBoard requires a valid HTTP(S) URL and fails/omits icon on data: URIs.
+    // Static apple-touch-icon.png in root provides the actual high-res brand photo.
+    if (logoUrl && !logoUrl.startsWith('data:')) {
+      const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+      appleTouchIcons.forEach(link => {
+        link.href = logoUrl;
+      });
+    }
   } else {
     if (sidebarImg) sidebarImg.classList.add('hidden');
     if (sidebarFallback) sidebarFallback.classList.remove('hidden');
@@ -11080,6 +11084,26 @@ function removeAppLogo() {
   showNotification('App logo reset to default');
 }
 
+function downloadAppLogoForHomeIcon() {
+  let logoData = null;
+  try {
+    logoData = localStorage.getItem(STORAGE_APP_LOGO);
+  } catch (e) {}
+
+  if (!logoData) {
+    // If not in localStorage, offer apple-touch-icon.png
+    logoData = 'apple-touch-icon.png';
+  }
+
+  const a = document.createElement('a');
+  a.href = logoData;
+  a.download = 'apple-touch-icon.png';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showNotification('✓ apple-touch-icon.png downloaded!');
+}
+
 // Global Exports
 window.initApp = initApp;
 window.updateDashboard = updateDashboard;
@@ -11113,6 +11137,7 @@ window.extractCustomersFromOrdersIfMissing = extractCustomersFromOrdersIfMissing
 window.triggerAppLogoUpload = triggerAppLogoUpload;
 window.handleAppLogoUpload = handleAppLogoUpload;
 window.removeAppLogo = removeAppLogo;
+window.downloadAppLogoForHomeIcon = downloadAppLogoForHomeIcon;
 window.setSettingsTab = setSettingsTab;
 window.renderSettingsTownsList = renderSettingsTownsList;
 window.addNewDistrictTown = addNewDistrictTown;

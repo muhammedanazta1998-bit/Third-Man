@@ -18,12 +18,14 @@
       try {
         var customLogo = localStorage.getItem('thirdman_app_logo');
         if (customLogo) {
-          var at1 = document.getElementById('appAppleTouchIcon');
-          var at2 = document.getElementById('appAppleTouchIcon180');
           var fav = document.getElementById('appFavicon');
-          if (at1) at1.href = customLogo;
-          if (at2) at2.href = customLogo;
           if (fav) fav.href = customLogo;
+          if (!customLogo.startsWith('data:')) {
+            var at1 = document.getElementById('appAppleTouchIcon');
+            var at2 = document.getElementById('appAppleTouchIcon180');
+            if (at1) at1.href = customLogo;
+            if (at2) at2.href = customLogo;
+          }
         }
       } catch (e) {}
     })();
@@ -2089,6 +2091,10 @@
                     <i data-lucide="upload" class="w-3.5 h-3.5"></i>
                     <span>Upload New Logo</span>
                   </button>
+                  <button type="button" id="btnDownloadLogo" onclick="downloadAppLogoForHomeIcon()" class="px-3.5 py-2 text-xs font-bold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition flex items-center gap-1.5 active:scale-95" title="Download apple-touch-icon.png">
+                    <i data-lucide="download" class="w-3.5 h-3.5"></i>
+                    <span>Download App Icon</span>
+                  </button>
                   <button type="button" id="btnRemoveLogo" onclick="removeAppLogo()" class="hidden px-3.5 py-2 text-xs font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition flex items-center gap-1.5 active:scale-95">
                     <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
                     <span>Reset to Default Logo</span>
@@ -3683,6 +3689,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.9.9"></script>
+  <script src="app.js?v=2.10.0"></script>
 </body>
 </html>

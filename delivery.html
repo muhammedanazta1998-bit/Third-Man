@@ -18,7 +18,7 @@
     (function() {
       try {
         var customLogo = localStorage.getItem('thirdman_app_logo');
-        if (customLogo) {
+        if (customLogo && !customLogo.startsWith('data:')) {
           var at1 = document.getElementById('deliveryAppleTouchIcon');
           var at2 = document.getElementById('deliveryAppleTouchIcon180');
           if (at1) at1.href = customLogo;
