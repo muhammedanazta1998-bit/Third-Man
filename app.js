@@ -5678,8 +5678,7 @@ function formatWhatsAppOrderMessage(order) {
 🆔 Order ID: ${orderId}
 ${deliveryStatusText}
 
-👤 Customer:
-${customerName}
+👤 Customer: ${customerName}
 
 📦 *ITEMS*
 
@@ -5689,9 +5688,7 @@ ${itemsText}
 🛍️ Total: ${totalBags} Bags
 ━━━━━━━━━━━━━━━━━━
 
-📝 Note: ${noteText}
-
-🙏 Thank you!`;
+📝 Note: ${noteText}`;
 
   return message;
 }
