@@ -1,0 +1,697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Third Man Delivery">
+  <meta name="theme-color" content="#0f172a">
+  <title>Third Man - Staff Delivery & Dispatch Portal</title>
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="manifest" href="manifest.json">
+  <link rel="apple-touch-icon" href="logo.svg">
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Google Fonts: Plus Jakarta Sans -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background-color: #f8fafc;
+      color: #0f172a;
+      -webkit-tap-highlight-color: transparent;
+    }
+    @media (max-width: 768px) {
+      input, select, textarea {
+        font-size: 16px !important;
+      }
+      button, a, input, select, textarea {
+        touch-action: manipulation;
+      }
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col bg-slate-100 text-slate-800">
+
+  <!-- TOP HEADER -->
+  <header class="bg-slate-900 text-white sticky top-0 z-40 shadow-lg border-b border-slate-800">
+    <div class="max-w-4xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3 min-w-0">
+        <img src="logo.svg" alt="Third Man Logo" class="w-10 h-10 rounded-xl shrink-0 shadow-md">
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h1 class="font-black text-sm sm:text-base tracking-tight text-white truncate">THIRD MAN</h1>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-400/30">Delivery Portal</span>
+          </div>
+          <p class="text-[11px] text-slate-400 truncate">Staff Dispatch &amp; Delivery Management</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Live Cloud Sync Status -->
+        <div id="syncBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-[11px] font-semibold text-slate-300 shadow-inner">
+          <span id="syncDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+          <span id="syncText">Connecting...</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- MAIN CONTENT CONTAINER -->
+  <main class="max-w-4xl mx-auto w-full px-3 sm:px-4 py-4 flex-1 space-y-3.5 pb-20">
+
+    <!-- SEARCH & FILTER CONTROLS -->
+    <div class="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-xs space-y-3">
+      
+      <!-- Search Input -->
+      <div class="relative">
+        <i data-lucide="search" class="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400"></i>
+        <input type="text" id="deliverySearchInput" oninput="onSearchChange()" placeholder="Search customer, shop name, town, order ID..." class="w-full text-xs sm:text-sm pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+      </div>
+
+      <!-- Filter Tabs: Pending (Default) vs Delivered vs All -->
+      <div class="flex items-center gap-2 overflow-x-auto pb-1">
+        <button type="button" id="tabBtnPending" onclick="switchDeliveryTab('pending')" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-blue-600 text-white shadow-sm">
+          <i data-lucide="clock" class="w-3.5 h-3.5"></i>
+          <span>Pending Deliveries</span>
+          <span id="badgePendingCount" class="ml-1 px-1.5 py-0.2 bg-white/20 text-white text-[10px] font-black rounded-full">0</span>
+        </button>
+        <button type="button" id="tabBtnDelivered" onclick="switchDeliveryTab('delivered_today')" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200">
+          <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-600"></i>
+          <span>Delivered Today</span>
+          <span id="badgeDeliveredCount" class="ml-1 px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-full">0</span>
+        </button>
+        <button type="button" id="tabBtnAll" onclick="switchDeliveryTab('all')" class="py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 shrink-0">
+          <i data-lucide="list" class="w-3.5 h-3.5"></i>
+          <span>All (<span id="badgeAllCount">0</span>)</span>
+        </button>
+      </div>
+
+      <!-- Quick Town & Urgency Dropdowns -->
+      <div class="flex items-center gap-2 text-xs">
+        <div class="flex-1">
+          <select id="townFilterSelect" onchange="onTownFilterChange(this.value)" class="w-full p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:bg-white">
+            <option value="all">🏙️ All Towns</option>
+          </select>
+        </div>
+        <div class="shrink-0">
+          <select id="urgencyFilterSelect" onchange="onUrgencyFilterChange(this.value)" class="p-2 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-700 focus:bg-white">
+            <option value="all">⚡ All Priorities</option>
+            <option value="Urgent">🔥 Urgent Only</option>
+            <option value="Normal">🚚 Normal</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- ORDERS LIST CONTAINER -->
+    <div id="ordersListContainer" class="space-y-3">
+      <!-- Loading Skeleton -->
+      <div class="bg-white p-6 rounded-2xl border border-slate-200 text-center space-y-3">
+        <div class="w-8 h-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mx-auto"></div>
+        <p class="text-xs text-slate-500 font-bold">Loading orders from cloud...</p>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- CONFIRM DELIVERY & NOTE MODAL -->
+  <div id="deliveryActionModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-lg border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div class="bg-slate-900 text-white p-4 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+            <i data-lucide="check-circle" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-extrabold text-sm text-white" id="modalActionTitle">Confirm Delivery</h3>
+            <p class="text-[11px] text-slate-400" id="modalCustomerSubtitle">Customer Name</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeDeliveryActionModal()" class="w-7 h-7 rounded-lg text-slate-400 hover:text-white flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <div class="p-4 sm:p-5 space-y-4">
+        <!-- Quick Remark Chips -->
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Quick Delivery Remarks:</label>
+          <div class="flex flex-wrap gap-1.5">
+            <button type="button" onclick="appendQuickRemark('Handed over to Chef / Cook')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">👨‍🍳 Handed to Chef</button>
+            <button type="button" onclick="appendQuickRemark('Delivered at Shop / Hotel')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">🏪 Delivered at Shop</button>
+            <button type="button" onclick="appendQuickRemark('Received by Owner / Manager')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">👑 Received by Owner</button>
+            <button type="button" onclick="appendQuickRemark('Cash payment collected')" class="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">💵 Cash Collected</button>
+            <button type="button" onclick="appendQuickRemark('Gave to Kitchen staff')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">🥘 Kitchen Staff</button>
+          </div>
+        </div>
+
+        <!-- Custom Notes Textarea -->
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">Staff Delivery Note / Vehicle Details:</label>
+          <textarea id="modalDeliveryNoteInput" rows="3" placeholder="e.g. Delivered 35 bags to Chef Moideen, driver Ramesh vehicle KL-07-CB-4560..." class="w-full text-xs sm:text-sm p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"></textarea>
+        </div>
+
+        <!-- Action Button -->
+        <div class="flex items-center gap-2 pt-2">
+          <button type="button" onclick="closeDeliveryActionModal()" class="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition">
+            Cancel
+          </button>
+          <button type="button" id="btnConfirmSubmit" onclick="submitDeliveryAction()" class="flex-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs transition shadow-md shadow-emerald-600/30 flex items-center justify-center gap-1.5 active:scale-95">
+            <i data-lucide="check" class="w-4 h-4"></i>
+            <span id="btnConfirmSubmitText">Mark as Delivered</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FLOATING TOAST NOTIFICATION -->
+  <div id="toastNotification" class="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white px-4 py-2.5 rounded-2xl shadow-xl text-xs font-bold border border-slate-800 flex items-center gap-2 transition-all transform translate-y-20 opacity-0 pointer-events-none">
+    <i data-lucide="check-circle" class="w-4 h-4 text-emerald-400"></i>
+    <span id="toastMessage">Action completed</span>
+  </div>
+
+  <!-- FIREBASE SDKs -->
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
+
+  <script>
+    const FIREBASE_CONFIG = {
+      apiKey: "AIzaSyDvU5PL0rINxwGwyZlpvdY6el0dLbz4UYY",
+      authDomain: "third-man-1998.firebaseapp.com",
+      projectId: "third-man-1998",
+      storageBucket: "third-man-1998.firebasestorage.app",
+      messagingSenderId: "928547046358",
+      appAppId: "1:928547046358:web:723643e5a083a81f66da77"
+    };
+
+    let db = null;
+    let allOrders = [];
+    let currentTab = 'pending'; // 'pending', 'delivered_today', 'all'
+    let searchQuery = '';
+    let selectedTown = 'all';
+    let selectedUrgency = 'all';
+    let activeActionOrderId = null;
+    let activeActionType = 'delivered'; // 'delivered' or 'note_only'
+
+    function updateSyncStatus(status, text) {
+      const dot = document.getElementById('syncDot');
+      const label = document.getElementById('syncText');
+      if (!dot || !label) return;
+      label.textContent = text;
+      dot.className = 'w-2 h-2 rounded-full shrink-0';
+      if (status === 'synced') {
+        dot.classList.add('bg-emerald-400');
+      } else if (status === 'syncing') {
+        dot.classList.add('bg-amber-400', 'animate-pulse');
+      } else {
+        dot.classList.add('bg-rose-400');
+      }
+    }
+
+    function showToast(msg) {
+      const toast = document.getElementById('toastNotification');
+      const text = document.getElementById('toastMessage');
+      if (!toast || !text) return;
+      text.textContent = msg;
+      toast.classList.remove('translate-y-20', 'opacity-0', 'pointer-events-none');
+      setTimeout(() => {
+        toast.classList.add('translate-y-20', 'opacity-0', 'pointer-events-none');
+      }, 3000);
+    }
+
+    function initFirebase() {
+      if (typeof firebase === 'undefined') {
+        updateSyncStatus('error', 'Offline Mode');
+        return;
+      }
+      try {
+        if (!firebase.apps || !firebase.apps.length) {
+          firebase.initializeApp(FIREBASE_CONFIG);
+        }
+        db = firebase.firestore();
+        db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
+        updateSyncStatus('syncing', 'Connecting...');
+        listenToOrders();
+      } catch (e) {
+        console.error('Firebase init error in delivery portal:', e);
+        updateSyncStatus('error', 'Connection Error');
+      }
+    }
+
+    function listenToOrders() {
+      if (!db) return;
+      db.collection('orders').onSnapshot(snapshot => {
+        const loaded = [];
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d && d.id) {
+            loaded.push(d);
+          }
+        });
+
+        // Sort: Urgent first, then newest date/id
+        loaded.sort((a, b) => {
+          const aUrg = (a.deliveryStatus === 'Urgent') ? 1 : 0;
+          const bUrg = (b.deliveryStatus === 'Urgent') ? 1 : 0;
+          if (bUrg !== aUrg) return bUrg - aUrg;
+          return (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '');
+        });
+
+        allOrders = loaded;
+        updateSyncStatus('synced', 'Live Synced 🟢');
+        populateTownDropdown();
+        updateTabBadges();
+        renderOrders();
+      }, err => {
+        console.warn('Orders listener error:', err);
+        updateSyncStatus('error', 'Offline');
+      });
+    }
+
+    function populateTownDropdown() {
+      const select = document.getElementById('townFilterSelect');
+      if (!select) return;
+      const towns = new Set();
+      allOrders.forEach(o => {
+        const cust = o.customer || {};
+        const t = (typeof cust === 'object') ? (cust.town || cust.location || '') : '';
+        if (t && t.toLowerCase() !== 'local') towns.add(t);
+      });
+      const sorted = Array.from(towns).sort((a, b) => a.localeCompare(b));
+      const cur = select.value || 'all';
+      let html = '<option value="all">🏙️ All Towns</option>';
+      sorted.forEach(t => {
+        html += `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`;
+      });
+      select.innerHTML = html;
+      select.value = cur;
+    }
+
+    function switchDeliveryTab(tab) {
+      currentTab = tab;
+      const btnPending = document.getElementById('tabBtnPending');
+      const btnDelivered = document.getElementById('tabBtnDelivered');
+      const btnAll = document.getElementById('tabBtnAll');
+
+      [btnPending, btnDelivered, btnAll].forEach(btn => {
+        if (!btn) return;
+        btn.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200';
+      });
+
+      if (tab === 'pending') {
+        btnPending.className = 'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-blue-600 text-white shadow-sm';
+      } else if (tab === 'delivered_today') {
+        btnDelivered.className = 'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-sm';
+      } else {
+        btnAll.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-900 text-white shadow-sm';
+      }
+
+      renderOrders();
+    }
+
+    function onSearchChange() {
+      searchQuery = (document.getElementById('deliverySearchInput')?.value || '').trim().toLowerCase();
+      renderOrders();
+    }
+
+    function onTownFilterChange(val) {
+      selectedTown = val;
+      renderOrders();
+    }
+
+    function onUrgencyFilterChange(val) {
+      selectedUrgency = val;
+      renderOrders();
+    }
+
+    function isDeliveredToday(order) {
+      if (order.dispatchStatus !== 'Delivered') return false;
+      if (!order.deliveredAt) return false;
+      const today = new Date().toISOString().split('T')[0];
+      return String(order.deliveredAt).startsWith(today);
+    }
+
+    function updateTabBadges() {
+      const pendingCount = allOrders.filter(o => o.dispatchStatus !== 'Delivered').length;
+      const deliveredCount = allOrders.filter(isDeliveredToday).length;
+      const allCount = allOrders.length;
+
+      const pEl = document.getElementById('badgePendingCount');
+      const dEl = document.getElementById('badgeDeliveredCount');
+      const aEl = document.getElementById('badgeAllCount');
+
+      if (pEl) pEl.textContent = pendingCount;
+      if (dEl) dEl.textContent = deliveredCount;
+      if (aEl) aEl.textContent = allCount;
+    }
+
+    function renderOrders() {
+      const container = document.getElementById('ordersListContainer');
+      if (!container) return;
+
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      const filtered = allOrders.filter(o => {
+        // Tab Filter
+        if (currentTab === 'pending') {
+          if (o.dispatchStatus === 'Delivered') return false;
+        } else if (currentTab === 'delivered_today') {
+          if (!isDeliveredToday(o)) return false;
+        }
+
+        // Urgency Filter
+        if (selectedUrgency !== 'all') {
+          if ((o.deliveryStatus || 'Normal') !== selectedUrgency) return false;
+        }
+
+        // Town Filter
+        if (selectedTown !== 'all') {
+          const cust = o.customer || {};
+          const t = (typeof cust === 'object') ? (cust.town || cust.location || '') : '';
+          if (t.toLowerCase() !== selectedTown.toLowerCase()) return false;
+        }
+
+        // Search Filter
+        if (searchQuery) {
+          const custName = getCustName(o).toLowerCase();
+          const town = getCustTown(o).toLowerCase();
+          const oid = (o.id || '').toLowerCase();
+          const itemsText = (o.items || []).map(i => i.productName || '').join(' ').toLowerCase();
+          if (!custName.includes(searchQuery) && !town.includes(searchQuery) && !oid.includes(searchQuery) && !itemsText.includes(searchQuery)) {
+            return false;
+          }
+        }
+
+        return true;
+      });
+
+      if (filtered.length === 0) {
+        let emptyTitle = 'No Pending Deliveries';
+        let emptyDesc = 'All orders have been delivered! New orders placed by the office will appear here automatically in real time.';
+        if (currentTab === 'delivered_today') {
+          emptyTitle = 'No Deliveries Completed Today';
+          emptyDesc = 'Orders marked as Delivered today will be recorded here.';
+        } else if (currentTab === 'all') {
+          emptyTitle = 'No Orders Found';
+          emptyDesc = 'Try changing search keywords or filters.';
+        }
+
+        container.innerHTML = `
+          <div class="bg-white p-8 rounded-3xl border border-slate-200/80 text-center space-y-2.5 shadow-xs">
+            <div class="w-12 h-12 rounded-2xl bg-slate-100 text-slate-400 mx-auto flex items-center justify-center">
+              <i data-lucide="package-check" class="w-6 h-6 text-emerald-600"></i>
+            </div>
+            <h3 class="font-bold text-sm sm:text-base text-slate-800">${emptyTitle}</h3>
+            <p class="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">${emptyDesc}</p>
+          </div>
+        `;
+        if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+        return;
+      }
+
+      container.innerHTML = filtered.map(o => renderOrderCard(o)).join('');
+
+      if (window.lucide && typeof lucide.createIcons === 'function') {
+        lucide.createIcons();
+      }
+    }
+
+    function renderOrderCard(o) {
+      const isUrgent = (o.deliveryStatus === 'Urgent');
+      const isDelivered = (o.dispatchStatus === 'Delivered');
+      const isOut = (o.dispatchStatus === 'OutForDelivery');
+
+      const items = (Array.isArray(o.items) && o.items.length > 0) ? o.items : [
+        { productName: (o.product && o.product.name) || o.productName || 'Biriyani Rice', bagQty: o.bagQty || 0, bagSize: o.bagSize || 25 }
+      ];
+
+      const totalBags = (o.bagQty !== undefined) ? o.bagQty : items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+
+      const custName = getCustName(o);
+      const custTown = getCustTown(o);
+      const custPhone = getCustPhone(o);
+      const cleanPhone = custPhone.replace(/\D/g, '');
+
+      // Priority pill
+      const urgencyPill = isUrgent
+        ? `<span class="px-2.5 py-1 bg-rose-500/10 text-rose-700 border border-rose-300 rounded-full text-[10px] font-black inline-flex items-center gap-1 shadow-2xs animate-pulse">🔥 URGENT DELIVERY</span>`
+        : `<span class="px-2 py-0.5 bg-slate-100 text-slate-600 rounded-full text-[10px] font-bold">🚚 NORMAL</span>`;
+
+      // Status pill
+      let statusPill = `<span class="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-300 rounded-full text-[10px] font-bold inline-flex items-center gap-1">⏳ PENDING</span>`;
+      if (isDelivered) {
+        statusPill = `<span class="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded-full text-[10px] font-extrabold inline-flex items-center gap-1">✅ DELIVERED</span>`;
+      } else if (isOut) {
+        statusPill = `<span class="px-2.5 py-1 bg-blue-50 text-blue-800 border border-blue-300 rounded-full text-[10px] font-bold inline-flex items-center gap-1">🚚 OUT FOR DELIVERY</span>`;
+      }
+
+      // Border and background highlighting
+      let cardBorder = isDelivered ? 'border-emerald-200 bg-white' : (isUrgent ? 'border-rose-300 ring-2 ring-rose-200/50 bg-white' : 'border-slate-200 bg-white');
+
+      return `
+        <div class="rounded-2xl sm:rounded-3xl border ${cardBorder} p-4 sm:p-5 shadow-xs transition-all space-y-3.5">
+          
+          <!-- Card Top Bar: ID, Date, Priority, Status -->
+          <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 flex-wrap">
+            <div class="flex items-center gap-2">
+              <span class="font-mono font-black text-blue-700 text-xs sm:text-sm">${escapeHtml(o.id)}</span>
+              <span class="text-slate-300">•</span>
+              <span class="text-xs font-medium text-slate-500">📅 ${escapeHtml(o.date || '')}</span>
+            </div>
+            <div class="flex items-center gap-1.5">
+              ${urgencyPill}
+              ${statusPill}
+            </div>
+          </div>
+
+          <!-- Customer Shop Name & Location -->
+          <div class="space-y-1">
+            <h2 class="font-black text-base sm:text-lg text-slate-900 tracking-tight leading-tight">${escapeHtml(custName)}</h2>
+            <div class="flex items-center gap-1.5 flex-wrap text-xs text-slate-600">
+              ${custTown ? `<span class="inline-flex items-center gap-1 font-bold bg-blue-50 text-blue-800 px-2 py-0.5 rounded-lg border border-blue-200/60">📍 ${escapeHtml(custTown)}</span>` : ''}
+              ${cleanPhone ? `
+                <a href="tel:${cleanPhone}" class="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-lg transition active:scale-95">
+                  <i data-lucide="phone" class="w-3 h-3 text-emerald-600"></i>
+                  <span>${escapeHtml(cleanPhone)}</span>
+                </a>
+              ` : ''}
+            </div>
+          </div>
+
+          <!-- Items Ordered Box -->
+          <div class="bg-slate-50/80 p-3 rounded-xl border border-slate-200/70 space-y-1.5">
+            <div class="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+              <span>Items for Delivery:</span>
+              <span class="text-slate-900 font-black text-xs">🛍️ Total: ${totalBags} Bags</span>
+            </div>
+            <div class="space-y-1">
+              ${items.map(it => `
+                <div class="flex items-center justify-between text-xs py-0.5">
+                  <span class="font-bold text-slate-800 flex items-center gap-1.5">
+                    <span class="text-amber-600">🌾</span>
+                    <span>${escapeHtml(it.productName || 'Rice')}</span>
+                  </span>
+                  <span class="font-extrabold text-blue-900 bg-white px-2 py-0.5 rounded-md border border-slate-200 shadow-2xs">
+                    ${it.bagQty} Bags <span class="text-[10px] font-normal text-slate-500">(${it.bagSize}kg)</span>
+                  </span>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+
+          <!-- Owner's Order Note (if any) -->
+          ${o.notes ? `
+            <div class="p-2.5 rounded-xl bg-amber-50/80 border border-amber-200/90 text-xs text-amber-950 flex items-start gap-2">
+              <span class="font-black shrink-0">📝 Office Note:</span>
+              <span class="font-medium">${escapeHtml(o.notes)}</span>
+            </div>
+          ` : ''}
+
+          <!-- Delivery Note / Remarks (if previously added) -->
+          ${o.deliveryNote ? `
+            <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex items-start justify-between gap-2">
+              <div>
+                <span class="font-bold">🚚 Delivery Note:</span>
+                <span class="ml-1">${escapeHtml(o.deliveryNote)}</span>
+                ${o.deliveredAt ? `<div class="text-[10px] text-emerald-700 mt-0.5">⏰ ${formatTime(o.deliveredAt)}</div>` : ''}
+              </div>
+              <button type="button" onclick="openDeliveryActionModal('${o.id}', 'note_only')" class="text-[11px] text-blue-700 font-bold hover:underline shrink-0">Edit</button>
+            </div>
+          ` : ''}
+
+          <!-- Action Buttons Bar -->
+          <div class="pt-2 flex items-center gap-2 flex-wrap border-t border-slate-100">
+            ${!isDelivered ? `
+              ${!isOut ? `
+                <button type="button" onclick="setOutForDelivery('${o.id}')" class="px-3.5 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition active:scale-95 inline-flex items-center gap-1.5">
+                  <i data-lucide="truck" class="w-3.5 h-3.5"></i>
+                  <span>Out for Delivery</span>
+                </button>
+              ` : ''}
+              <button type="button" onclick="openDeliveryActionModal('${o.id}', 'delivered')" class="flex-1 py-2.5 px-4 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white transition shadow-sm active:scale-95 inline-flex items-center justify-center gap-1.5">
+                <i data-lucide="check-circle" class="w-4 h-4"></i>
+                <span>Mark as Delivered</span>
+              </button>
+              <button type="button" onclick="openDeliveryActionModal('${o.id}', 'note_only')" class="p-2.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 border border-slate-200 transition active:scale-95" title="Add delivery remark">
+                <i data-lucide="file-text" class="w-4 h-4"></i>
+              </button>
+            ` : `
+              <div class="flex-1 text-xs text-emerald-800 font-bold flex items-center gap-1.5">
+                <i data-lucide="check-circle" class="w-4 h-4 text-emerald-600"></i>
+                <span>Completed ${o.deliveredAt ? `(${formatTime(o.deliveredAt)})` : ''}</span>
+              </div>
+              <button type="button" onclick="openDeliveryActionModal('${o.id}', 'note_only')" class="px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition">
+                <span>Edit Note</span>
+              </button>
+              <button type="button" onclick="revertToPending('${o.id}')" class="px-2.5 py-1.5 rounded-xl text-xs font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200 transition" title="Revert to pending delivery">
+                <span>Revert</span>
+              </button>
+            `}
+          </div>
+
+        </div>
+      `;
+    }
+
+    function getCustName(o) {
+      if (!o.customer) return 'Customer';
+      if (typeof o.customer === 'string') return o.customer;
+      return o.customer.name || 'Customer';
+    }
+
+    function getCustTown(o) {
+      if (!o.customer) return '';
+      if (typeof o.customer === 'object') {
+        return o.customer.town || o.customer.area || o.customer.location || '';
+      }
+      return '';
+    }
+
+    function getCustPhone(o) {
+      if (!o.customer) return '';
+      if (typeof o.customer === 'object') {
+        return o.customer.phone || o.customer.ownerPhone || o.customer.staffPhone || '';
+      }
+      return '';
+    }
+
+    function formatTime(isoStr) {
+      if (!isoStr) return '';
+      try {
+        const d = new Date(isoStr);
+        return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str && str !== 0) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    function setOutForDelivery(orderId) {
+      if (!db || !orderId) return;
+      const o = allOrders.find(item => item.id === orderId);
+      if (!o) return;
+
+      db.collection('orders').doc(orderId).update({
+        dispatchStatus: 'OutForDelivery'
+      }).then(() => {
+        showToast(`🚚 Order ${orderId} marked: Out for Delivery`);
+      }).catch(err => {
+        console.error('Error updating status:', err);
+        alert('Could not update status: ' + err.message);
+      });
+    }
+
+    function revertToPending(orderId) {
+      if (!confirm(`Move ${orderId} back to Pending Deliveries?`)) return;
+      db.collection('orders').doc(orderId).update({
+        dispatchStatus: 'Pending',
+        deliveredAt: null
+      }).then(() => {
+        showToast(`↩️ Order ${orderId} reverted to Pending.`);
+      }).catch(err => alert(err.message));
+    }
+
+    function openDeliveryActionModal(orderId, type = 'delivered') {
+      activeActionOrderId = orderId;
+      activeActionType = type;
+      const order = allOrders.find(o => o.id === orderId);
+      if (!order) return;
+
+      const modal = document.getElementById('deliveryActionModal');
+      const title = document.getElementById('modalActionTitle');
+      const subtitle = document.getElementById('modalCustomerSubtitle');
+      const noteInput = document.getElementById('modalDeliveryNoteInput');
+      const submitBtnText = document.getElementById('btnConfirmSubmitText');
+
+      if (title) title.textContent = (type === 'delivered') ? 'Confirm Delivery' : 'Update Delivery Note';
+      if (subtitle) subtitle.textContent = `${getCustName(order)} • ${order.id}`;
+      if (noteInput) noteInput.value = order.deliveryNote || '';
+      if (submitBtnText) submitBtnText.textContent = (type === 'delivered') ? 'Mark as Delivered' : 'Save Note';
+
+      if (modal) modal.classList.remove('hidden');
+      noteInput?.focus();
+
+      if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function closeDeliveryActionModal() {
+      const modal = document.getElementById('deliveryActionModal');
+      if (modal) modal.classList.add('hidden');
+      activeActionOrderId = null;
+    }
+
+    function appendQuickRemark(text) {
+      const input = document.getElementById('modalDeliveryNoteInput');
+      if (!input) return;
+      if (input.value && !input.value.endsWith(' ')) {
+        input.value += ' • ' + text;
+      } else {
+        input.value = text;
+      }
+    }
+
+    function submitDeliveryAction() {
+      if (!db || !activeActionOrderId) return;
+      const noteInput = document.getElementById('modalDeliveryNoteInput');
+      const noteText = (noteInput?.value || '').trim();
+
+      const updatePayload = {
+        deliveryNote: noteText
+      };
+
+      if (activeActionType === 'delivered') {
+        updatePayload.dispatchStatus = 'Delivered';
+        updatePayload.deliveredAt = new Date().toISOString();
+      }
+
+      db.collection('orders').doc(activeActionOrderId).update(updatePayload).then(() => {
+        showToast(activeActionType === 'delivered' ? `✅ Order ${activeActionOrderId} delivered!` : `📝 Note updated!`);
+        closeDeliveryActionModal();
+      }).catch(err => {
+        console.error('Error saving delivery status:', err);
+        alert('Error: ' + err.message);
+      });
+    }
+
+    document.addEventListener('DOMContentLoaded', initFirebase);
+  </script>
+</body>
+</html>

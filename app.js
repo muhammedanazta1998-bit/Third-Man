@@ -3962,6 +3962,9 @@ function handleSaveOrder(event) {
       perKgRate: Math.round(averagePerKgRate * 100) / 100,
       totalAmount: Math.round(totalAmount),
       notes: notes,
+      dispatchStatus: 'Pending',
+      deliveryNote: '',
+      deliveredAt: null,
       createdAt: new Date().toISOString()
     };
 
@@ -5412,10 +5415,33 @@ function renderOrdersTable() {
 
     const totalBagsCount = (o.bagQty !== undefined) ? o.bagQty : items.reduce((s, i) => s + (i.bagQty || 0), 0);
 
+    const isUrgent = (o.deliveryStatus === 'Urgent');
+    let dispatchBadgeHtml = '';
+    if (o.dispatchStatus === 'Delivered') {
+      dispatchBadgeHtml = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200" title="Delivered: ${escapeHtml(o.deliveredAt || '')}">
+        <span class="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+        Delivered
+      </span>`;
+    } else if (o.dispatchStatus === 'OutForDelivery') {
+      dispatchBadgeHtml = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-extrabold bg-blue-100 text-blue-800 border border-blue-200">
+        <span class="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse"></span>
+        Out for Delivery
+      </span>`;
+    } else {
+      dispatchBadgeHtml = `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+        <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+        Pending
+      </span>`;
+    }
+
     tr.innerHTML = `
       <td class="px-4 py-3 whitespace-nowrap">
-        <div class="font-mono font-bold text-blue-700 text-xs">${escapeHtml(o.id)}</div>
+        <div class="flex items-center gap-1.5">
+          <div class="font-mono font-bold text-blue-700 text-xs">${escapeHtml(o.id)}</div>
+          ${isUrgent ? '<span class="px-1 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-200">Urgent</span>' : ''}
+        </div>
         <div class="text-[11px] text-slate-500 font-medium">${escapeHtml(o.date)}</div>
+        <div class="mt-1">${dispatchBadgeHtml}</div>
       </td>
       <td class="px-4 py-3">
         <div class="font-bold text-slate-900 text-xs sm:text-sm tracking-tight">${escapeHtml(getCustomerName(o.customer))}</div>
@@ -5423,6 +5449,12 @@ function renderOrdersTable() {
           <div class="text-[10px] text-slate-500 mt-0.5 flex items-start gap-1 max-w-[260px]">
             <span class="font-semibold text-slate-700 shrink-0">📝 Note:</span>
             <span class="truncate" title="${escapeHtml(o.notes)}">${escapeHtml(o.notes)}</span>
+          </div>
+        ` : ''}
+        ${o.deliveryNote ? `
+          <div class="text-[10px] text-emerald-800 bg-emerald-50/90 px-2 py-0.5 rounded border border-emerald-200 mt-1 flex items-start gap-1 max-w-[260px]">
+            <span class="font-bold shrink-0">🚚 Staff:</span>
+            <span class="truncate" title="${escapeHtml(o.deliveryNote)}">${escapeHtml(o.deliveryNote)}</span>
           </div>
         ` : ''}
       </td>
@@ -5604,6 +5636,81 @@ function shareInvoiceOrderToWhatsApp() {
   if (currentInvoiceOrderId) {
     shareOrderToWhatsApp(currentInvoiceOrderId);
   }
+}
+
+// ==================== STAFF DELIVERY PORTAL SHARING ====================
+
+function getDeliveryPortalUrl() {
+  if (window.location.protocol === 'file:') {
+    return 'delivery.html';
+  }
+  const url = new URL('delivery.html', window.location.href);
+  return url.href;
+}
+
+function openShareDeliveryModal() {
+  const modal = document.getElementById('shareDeliveryModal');
+  const input = document.getElementById('deliveryPortalUrlInput');
+  if (!modal) return;
+
+  const portalUrl = getDeliveryPortalUrl();
+  if (input) {
+    input.value = portalUrl;
+  }
+
+  modal.classList.remove('hidden');
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function closeShareDeliveryModal() {
+  const modal = document.getElementById('shareDeliveryModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function copyDeliveryPortalLink() {
+  const input = document.getElementById('deliveryPortalUrlInput');
+  const copyBtnText = document.getElementById('copyDeliveryBtnText');
+  const url = input ? input.value : getDeliveryPortalUrl();
+
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(url).then(() => {
+      if (copyBtnText) copyBtnText.textContent = 'Copied!';
+      setTimeout(() => {
+        if (copyBtnText) copyBtnText.textContent = 'Copy Link';
+      }, 2500);
+      showNotification('Delivery Portal Link copied!');
+    }).catch(() => {
+      fallbackCopyText(url);
+    });
+  } else {
+    fallbackCopyText(url);
+  }
+}
+
+function fallbackCopyText(text) {
+  const temp = document.createElement('textarea');
+  temp.value = text;
+  document.body.appendChild(temp);
+  temp.select();
+  document.execCommand('copy');
+  document.body.removeChild(temp);
+  showNotification('Delivery Portal Link copied!');
+}
+
+function shareDeliveryPortalWhatsApp() {
+  const portalUrl = getDeliveryPortalUrl();
+  const text =
+`🚚 *THIRD MAN - DELIVERY & DISPATCH PORTAL*
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ഷോപ്പിലെയും വണ്ടിയിലെയും സ്റ്റാഫിനുള്ള ഓർഡർ ഡെലിവറി പോർട്ടൽ ലിങ്ക്:
+${portalUrl}
+
+✅ ഓർഡറുകൾ കാണാനും ഡെലിവറി മാർക്ക് ചെയ്യാനും ഈ ലിങ്ക് ഉപയോഗിക്കാം.`;
+
+  const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+  window.open(whatsappUrl, '_blank');
 }
 
 // ==================== INVOICE MODAL & PRINT ====================
@@ -7107,6 +7214,7 @@ function setCustomerCategoryFilter(cat) {
 function openCustomersModal() {
   const modal = document.getElementById('customersModal');
   if (modal) modal.classList.remove('hidden');
+  cancelEditCustomer(); // Ensure form is hidden by default and fields are clean
   renderCustomersList();
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
@@ -7339,28 +7447,7 @@ function handleCustomerFormSubmit(event) {
       populateCustomerDropdown();
       populateSavedAreasDatalists();
       renderCustomersList();
-
-      // Reset inputs
-      document.getElementById('custNameInput').value = '';
-      document.getElementById('custCategoryInput').value = 'Caterer';
-      const distSelect = document.getElementById('custDistrictSelect');
-      if (distSelect) {
-        distSelect.value = 'Ernakulam';
-        onCustDistrictChange('Ernakulam');
-      }
-      if (document.getElementById('custTownInput')) document.getElementById('custTownInput').value = '';
-      if (document.getElementById('custLandmarkInput')) document.getElementById('custLandmarkInput').value = '';
-      if (document.getElementById('custPanchayathInput')) document.getElementById('custPanchayathInput').value = '';
-      if (document.getElementById('custAreaInput')) document.getElementById('custAreaInput').value = '';
-      if (document.getElementById('custPlaceInput')) document.getElementById('custPlaceInput').value = '';
-      if (document.getElementById('custLocationInput')) document.getElementById('custLocationInput').value = '';
-      if (document.getElementById('custOwnerNameInput')) document.getElementById('custOwnerNameInput').value = '';
-      if (document.getElementById('custOwnerPhoneInput')) document.getElementById('custOwnerPhoneInput').value = '';
-      if (document.getElementById('custStaffNameInput')) document.getElementById('custStaffNameInput').value = '';
-      if (document.getElementById('custStaffRoleInput')) document.getElementById('custStaffRoleInput').value = 'Chef / Cook';
-      if (document.getElementById('custStaffPhoneInput')) document.getElementById('custStaffPhoneInput').value = '';
-      if (document.getElementById('custPhoneInput')) document.getElementById('custPhoneInput').value = '';
-      if (document.getElementById('custNotesInput')) document.getElementById('custNotesInput').value = '';
+      cancelEditCustomer();
 
       showNotification(`Customer '${name}' added!`);
     }
@@ -7439,8 +7526,9 @@ function editCustomer(customerId) {
     if (cancelBtn) cancelBtn.classList.remove('hidden');
 
     if (formCard) {
-      formCard.classList.remove('bg-blue-50/60', 'border-blue-200/70');
+      formCard.classList.remove('hidden', 'bg-blue-50/60', 'border-blue-200/70', 'border-blue-400/80');
       formCard.classList.add('bg-amber-50/80', 'border-amber-300', 'ring-2', 'ring-amber-300/40');
+      formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
     // Scroll to form inside modal
@@ -7451,6 +7539,31 @@ function editCustomer(customerId) {
     nameInput?.focus();
   } catch (err) {
     console.error('Error opening customer edit form:', err);
+  }
+}
+
+function openAddCustomerForm() {
+  cancelEditCustomer();
+  const formCard = document.getElementById('customerFormCard');
+  const titleText = document.getElementById('custFormTitleText');
+  const submitText = document.getElementById('custSubmitText');
+  const cancelBtn = document.getElementById('custCancelEditBtn');
+  const nameInput = document.getElementById('custNameInput');
+
+  if (titleText) titleText.textContent = 'Add New Customer';
+  if (submitText) submitText.textContent = 'Save Customer';
+  if (cancelBtn) cancelBtn.classList.remove('hidden');
+
+  if (formCard) {
+    formCard.classList.remove('hidden', 'bg-amber-50/80', 'border-amber-300', 'ring-2', 'ring-amber-300/40');
+    formCard.classList.add('bg-white', 'border-blue-400/80');
+    formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  nameInput?.focus();
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
   }
 }
 
@@ -7504,8 +7617,8 @@ function cancelEditCustomer() {
   if (cancelBtn) cancelBtn.classList.add('hidden');
 
   if (formCard) {
+    formCard.classList.add('hidden');
     formCard.classList.remove('bg-amber-50/80', 'border-amber-300', 'ring-2', 'ring-amber-300/40');
-    formCard.classList.add('bg-blue-50/60', 'border-blue-200/70');
   }
 }
 
@@ -9632,6 +9745,7 @@ window.updateCustomerPill = updateCustomerPill;
 window.onCustomerNameManualChange = onCustomerNameManualChange;
 window.openCustomersModal = openCustomersModal;
 window.closeCustomersModal = closeCustomersModal;
+window.openAddCustomerForm = openAddCustomerForm;
 window.handleAddNewCustomer = handleAddNewCustomer;
 window.handleCustomerFormSubmit = handleCustomerFormSubmit;
 window.editCustomer = editCustomer;
@@ -10721,3 +10835,10 @@ window.initSecurityLock = initSecurityLock;
 window.handleSaveNewPin = handleSaveNewPin;
 window.onSecurityToggleChange = onSecurityToggleChange;
 window.updateSettingsSecurityTab = updateSettingsSecurityTab;
+
+// Staff Delivery Portal Exports
+window.openShareDeliveryModal = openShareDeliveryModal;
+window.closeShareDeliveryModal = closeShareDeliveryModal;
+window.copyDeliveryPortalLink = copyDeliveryPortalLink;
+window.shareDeliveryPortalWhatsApp = shareDeliveryPortalWhatsApp;
+window.getDeliveryPortalUrl = getDeliveryPortalUrl;
