@@ -343,6 +343,11 @@ let currentTrashSearch = '';
  * Ensures orders accurately reflect the product change, recalculates total kg and total amount,
  * and synchronizes changes to localStorage and Cloud Firestore.
  */
+/**
+ * Safely cascades product name and category display label updates to existing orders
+ * STRICT RULE: Changing a product's bag size or rate in the catalog must NEVER alter
+ * or recalculate any historical order's bagSize, perKgRate, totalKg, or totalAmount!
+ */
 function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
   if (!Array.isArray(orders) || orders.length === 0 || !updatedProduct) return 0;
 
@@ -350,27 +355,28 @@ function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
   const targetOldName = (oldName || '').trim().toLowerCase();
   const newName = (updatedProduct.name || '').trim();
   const newCategory = updatedProduct.category || detectCategoryFromName(newName);
-  const newBagSize = parseFloat(updatedProduct.bagSize) || 26;
-  const newRate = parseFloat(updatedProduct.defaultRateKg) || 0;
+
+  // If the product name did not change, NEVER touch existing orders!
+  if (!targetOldName || !newName || targetOldName === newName.toLowerCase()) {
+    return 0;
+  }
 
   let changedOrdersCount = 0;
-  const affectedOrders = [];
 
   orders.forEach(order => {
     if (!order) return;
     let orderChanged = false;
 
-    // 1. Cascade to multi-item or single-item array
+    // 1. Update text label on items without altering historical bagSize, rate, kg, or amount
     if (Array.isArray(order.items) && order.items.length > 0) {
       order.items.forEach(it => {
         if (!it) return;
         const itName = (it.productName || it.name || '').trim().toLowerCase();
         const matchesId = targetId && (it.productId === targetId || it.id === targetId);
         const matchesOldName = targetOldName && itName === targetOldName;
-        const matchesNewName = newName && itName === newName.toLowerCase();
 
-        if (matchesId || matchesOldName || matchesNewName) {
-          if (it.productName !== newName && newName) {
+        if (matchesId || matchesOldName) {
+          if (it.productName !== newName) {
             it.productName = newName;
             orderChanged = true;
           }
@@ -382,73 +388,42 @@ function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
             it.category = newCategory;
             orderChanged = true;
           }
-          // Preserve historical bag size if already recorded; only populate if missing
-          if (!it.bagSize && newBagSize) {
-            it.bagSize = newBagSize;
-            const qty = parseFloat(it.bagQty) || 1;
-            const itemRate = parseFloat(it.perKgRate) || newRate;
-            it.totalKg = it.bagSize * qty;
-            it.totalAmount = Math.round(it.totalKg * itemRate);
-            orderChanged = true;
-          }
         }
       });
-    }
 
-    // 2. Cascade to order-level product object
-    const ordProdName = (order.product?.name || order.productName || '').trim().toLowerCase();
-    const ordProdId = order.product?.id || order.productId;
-    const ordMatchesId = targetId && ordProdId === targetId;
-    const ordMatchesOldName = targetOldName && (ordProdName === targetOldName || ordProdName.includes(targetOldName));
-    const ordMatchesNewName = newName && ordProdName.includes(newName.toLowerCase());
+      // Update primary product display name on the order object
+      const firstItem = order.items[0];
+      const otherCount = order.items.length - 1;
+      const expectedDisplayName = otherCount > 0
+        ? `${firstItem.productName} (+${otherCount} more)`
+        : firstItem.productName;
 
-    if (ordMatchesId || ordMatchesOldName || ordMatchesNewName) {
-      if (order.product && targetId) {
-        order.product.id = targetId;
+      if (!order.product || order.product.name !== expectedDisplayName) {
+        if (!order.product) order.product = {};
+        order.product.name = expectedDisplayName;
+        order.product.id = firstItem.productId;
+        orderChanged = true;
       }
-      // Preserve order bagSize if already present
-      if (!order.bagSize && newBagSize) {
-        order.bagSize = newBagSize;
-        const qty = parseFloat(order.bagQty) || 1;
-        const ordRate = parseFloat(order.perKgRate) || newRate;
-        order.totalKg = order.bagSize * qty;
-        order.totalAmount = Math.round(order.totalKg * ordRate);
+    } else if (order.product) {
+      // Single-item legacy order object: update display label only
+      const ordProdName = (order.product?.name || order.productName || '').trim().toLowerCase();
+      const ordProdId = order.product?.id || order.productId;
+      const ordMatchesId = targetId && ordProdId === targetId;
+      const ordMatchesOldName = targetOldName && (ordProdName === targetOldName || ordProdName.includes(targetOldName));
+
+      if (ordMatchesId || ordMatchesOldName) {
+        if (typeof order.product === 'object') {
+          order.product.name = newName;
+          if (targetId) order.product.id = targetId;
+        } else {
+          order.product = { id: targetId, name: newName };
+        }
         orderChanged = true;
       }
     }
 
-    // 3. Recompute order aggregate totals if any item was updated
     if (orderChanged) {
-      if (Array.isArray(order.items) && order.items.length > 0) {
-        let sumBags = 0;
-        let sumKg = 0;
-        let sumAmount = 0;
-        order.items.forEach(it => {
-          const iSize = parseFloat(it.bagSize) || newBagSize;
-          const iQty = parseFloat(it.bagQty) || 1;
-          const iRate = parseFloat(it.perKgRate) || newRate;
-          it.totalKg = iSize * iQty;
-          it.totalAmount = Math.round(it.totalKg * iRate);
-          sumBags += iQty;
-          sumKg += it.totalKg;
-          sumAmount += it.totalAmount;
-        });
-
-        order.bagQty = sumBags;
-        order.totalKg = sumKg;
-        order.totalAmount = Math.round(sumAmount);
-        order.perKgRate = sumKg > 0 ? Math.round((sumAmount / sumKg) * 100) / 100 : (order.perKgRate || newRate);
-
-        const firstItem = order.items[0];
-        const primaryDisplay = order.items.length === 1
-          ? firstItem.productName
-          : `${firstItem.productName} (+${order.items.length - 1} more)`;
-        order.product = { id: firstItem.productId, name: primaryDisplay };
-        order.bagSize = firstItem.bagSize;
-      }
-
       changedOrdersCount++;
-      affectedOrders.push(order);
     }
   });
 
@@ -456,10 +431,6 @@ function cascadeProductUpdateToOrders(productId, oldName, updatedProduct) {
     try {
       localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
     } catch (e) {}
-
-    if (typeof syncCloudOrder === 'function') {
-      affectedOrders.forEach(ord => syncCloudOrder(ord));
-    }
   }
 
   return changedOrdersCount;
@@ -565,6 +536,12 @@ function deduplicateProductsList(inputProducts = null, syncToCloud = true) {
     const nameStr = (p.name || '').trim();
     if (nameStr.includes('(+') || nameStr.includes('more)')) return;
 
+    const pBagSize = parseFloat(p.bagSize);
+    const hasValidBag = !isNaN(pBagSize) && pBagSize > 0;
+    const pRate = parseFloat(p.defaultRateKg);
+    const hasValidRate = !isNaN(pRate) && pRate > 0;
+    const pImg = p.imageUrl || p.photoUrl || p.image || '';
+
     const canon = getCanonicalProduct(p);
     if (canon) {
       const targetId = canon.id;
@@ -572,27 +549,62 @@ function deduplicateProductsList(inputProducts = null, syncToCloud = true) {
         idRedirections.set(p.id, targetId);
       }
       if (dedupedMap.has(targetId)) {
-        // Merge with existing canonical record: preserve photos and customized rates
+        // Merge with existing canonical record: strictly preserve photos and customized rates & bag sizes
         const existing = dedupedMap.get(targetId);
-        if (!existing.imageUrl && (p.imageUrl || p.photoUrl || p.image)) {
-          existing.imageUrl = p.imageUrl || p.photoUrl || p.image;
+        if (!existing.imageUrl && pImg) {
+          existing.imageUrl = pImg;
         }
-        if (p.defaultRateKg && p.defaultRateKg !== canon.defaultRateKg && !existing.isRateCustomized) {
-          existing.defaultRateKg = p.defaultRateKg;
-          existing.isRateCustomized = true;
+
+        const isPCustomized = Boolean(p.isCustomized);
+        const pIsNewer = (p.updatedAt || 0) >= (existing.updatedAt || 0);
+
+        if (isPCustomized || pIsNewer) {
+          if (hasValidBag && (isPCustomized || pBagSize !== canon.bagSize)) {
+            existing.bagSize = pBagSize;
+            existing.isCustomized = true;
+          }
+          if (hasValidRate && (isPCustomized || pRate !== canon.defaultRateKg)) {
+            existing.defaultRateKg = pRate;
+            existing.isCustomized = true;
+          }
+          if (p.name && isPCustomized) {
+            existing.name = p.name.trim();
+          }
+          if (p.category && isPCustomized) {
+            existing.category = p.category;
+          }
+          if (pImg) {
+            existing.imageUrl = pImg;
+          }
+          if (p.updatedAt) {
+            existing.updatedAt = p.updatedAt;
+          }
+        } else {
+          if (hasValidBag && pBagSize !== canon.bagSize && !existing.isCustomized) {
+            existing.bagSize = pBagSize;
+            existing.isCustomized = true;
+          }
+          if (hasValidRate && pRate !== canon.defaultRateKg && !existing.isCustomized) {
+            existing.defaultRateKg = pRate;
+            existing.isCustomized = true;
+          }
         }
       } else {
+        const validBag = hasValidBag ? pBagSize : (canon.bagSize || 26);
+        const validRate = hasValidRate ? pRate : (canon.defaultRateKg || 90);
+        const isCust = Boolean(p.isCustomized || (hasValidBag && pBagSize !== canon.bagSize) || (hasValidRate && pRate !== canon.defaultRateKg));
+
         const newObj = {
           id: canon.id,
-          name: canon.name,
-          category: canon.category,
-          bagSize: canon.bagSize,
-          defaultRateKg: parseFloat(p.defaultRateKg) || canon.defaultRateKg,
-          active: canon.active !== false
+          name: (p.isCustomized && p.name) ? p.name.trim() : canon.name,
+          category: (p.isCustomized && p.category) ? p.category : (p.category || canon.category),
+          bagSize: validBag,
+          defaultRateKg: validRate,
+          active: canon.active !== false && p.active !== false,
+          imageUrl: pImg,
+          isCustomized: isCust
         };
-        if (p.imageUrl || p.photoUrl || p.image) {
-          newObj.imageUrl = p.imageUrl || p.photoUrl || p.image;
-        }
+        if (p.updatedAt) newObj.updatedAt = p.updatedAt;
         dedupedMap.set(targetId, newObj);
       }
     } else {
@@ -601,17 +613,22 @@ function deduplicateProductsList(inputProducts = null, syncToCloud = true) {
       if (!normKey) return;
       if (dedupedMap.has(normKey)) {
         const existing = dedupedMap.get(normKey);
-        if (!existing.imageUrl && (p.imageUrl || p.photoUrl)) existing.imageUrl = p.imageUrl || p.photoUrl;
+        if (hasValidBag) existing.bagSize = pBagSize;
+        if (hasValidRate) existing.defaultRateKg = pRate;
+        if (!existing.imageUrl && pImg) existing.imageUrl = pImg;
+        if (p.updatedAt) existing.updatedAt = p.updatedAt;
       } else {
         const customId = p.id || ('prod_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4));
         dedupedMap.set(normKey, {
           id: customId,
           name: nameStr,
           category: p.category || detectCategoryFromName(nameStr),
-          bagSize: parseFloat(p.bagSize) || 26,
-          defaultRateKg: parseFloat(p.defaultRateKg) || 90,
+          bagSize: hasValidBag ? pBagSize : 26,
+          defaultRateKg: hasValidRate ? pRate : 90,
           active: p.active !== false,
-          imageUrl: p.imageUrl || p.photoUrl || ''
+          imageUrl: pImg,
+          isCustomized: true,
+          updatedAt: p.updatedAt || Date.now()
         });
       }
     }
@@ -6200,7 +6217,23 @@ function editProduct(prodId) {
   if (editingInput) editingInput.value = prod.id;
   if (nameInput) nameInput.value = prod.name;
   if (catSelect) catSelect.value = prod.category || 'Kaima';
-  if (bagSelect) bagSelect.value = prod.bagSize || 26;
+  if (bagSelect) {
+    const targetBag = parseFloat(prod.bagSize) || 26;
+    let found = false;
+    for (let i = 0; i < bagSelect.options.length; i++) {
+      if (parseFloat(bagSelect.options[i].value) === targetBag) {
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      const opt = document.createElement('option');
+      opt.value = targetBag;
+      opt.textContent = `${targetBag} kg ${targetBag >= 50 ? 'Sack' : 'Bag'}`;
+      bagSelect.appendChild(opt);
+    }
+    bagSelect.value = targetBag;
+  }
   if (rateInput) rateInput.value = prod.defaultRateKg;
 
   // Load existing product image or clear preview
@@ -6321,6 +6354,18 @@ function saveProductForm() {
     return;
   }
 
+  // Ensure this bagSize is included in global bagSizes
+  if (!bagSizes.includes(bagSize)) {
+    bagSizes.push(bagSize);
+    bagSizes.sort((a, b) => a - b);
+    try {
+      localStorage.setItem(STORAGE_BAG_SIZES, JSON.stringify(bagSizes));
+      localStorage.setItem('biriyani_rice_bag_sizes_fresh_v2', JSON.stringify(bagSizes));
+    } catch (e) {}
+    populateBagSizesDropdown();
+    if (typeof renderBagSizesBadges === 'function') renderBagSizesBadges();
+  }
+
   if (editingId) {
     // EDIT EXISTING PRODUCT
     const index = products.findIndex(p => p.id === editingId);
@@ -6332,14 +6377,19 @@ function saveProductForm() {
       products[index].category = category;
       products[index].bagSize = bagSize;
       products[index].defaultRateKg = rate;
+      products[index].isCustomized = true;
+      products[index].updatedAt = Date.now();
       if (imageUrl) {
         products[index].imageUrl = imageUrl;
       } else if (imgInput && imgInput.dataset.removed === 'true') {
         products[index].imageUrl = '';
       }
 
-      // Cascade product name, category, and bag size updates to all previous orders
-      const ordersUpdated = cascadeProductUpdateToOrders(editingId, oldName, products[index]);
+      // ONLY cascade to orders if the product NAME changed (historical rates, bag sizes & totals are strictly protected)
+      let ordersUpdated = 0;
+      if (oldName && oldName.trim().toLowerCase() !== name.toLowerCase()) {
+        ordersUpdated = cascadeProductUpdateToOrders(editingId, oldName, products[index]);
+      }
 
       saveDataToStorage();
       if (typeof syncCloudConfig === 'function') syncCloudConfig();
@@ -6349,7 +6399,7 @@ function saveProductForm() {
       updateDashboard();
       if (typeof renderOrdersTable === 'function') renderOrdersTable();
 
-      const orderNote = ordersUpdated > 0 ? ` (${ordersUpdated} past orders updated!)` : '';
+      const orderNote = ordersUpdated > 0 ? ` (${ordersUpdated} past order labels updated)` : '';
       showNotification(`Product '${name}' updated successfully!${orderNote}`);
     }
   } else {
@@ -6360,13 +6410,14 @@ function saveProductForm() {
       products[existingIndex].category = category;
       products[existingIndex].bagSize = bagSize;
       products[existingIndex].defaultRateKg = rate;
+      products[existingIndex].isCustomized = true;
+      products[existingIndex].updatedAt = Date.now();
       if (imageUrl) {
         products[existingIndex].imageUrl = imageUrl;
       } else if (imgInput && imgInput.dataset.removed === 'true') {
         products[existingIndex].imageUrl = '';
       }
 
-      const ordersUpdated = cascadeProductUpdateToOrders(products[existingIndex].id, oldProd.name, products[existingIndex]);
       saveDataToStorage();
       if (typeof syncCloudConfig === 'function') syncCloudConfig();
       populateProductDropdown();
@@ -6375,8 +6426,7 @@ function saveProductForm() {
       updateDashboard();
       if (typeof renderOrdersTable === 'function') renderOrdersTable();
 
-      const orderNote = ordersUpdated > 0 ? ` (${ordersUpdated} past orders updated!)` : '';
-      showNotification(`Product '${name}' updated successfully!${orderNote}`);
+      showNotification(`Product '${name}' updated successfully!`);
       return;
     }
 
@@ -6387,7 +6437,9 @@ function saveProductForm() {
       category: category,
       bagSize: bagSize,
       defaultRateKg: rate,
-      imageUrl: imageUrl || ''
+      imageUrl: imageUrl || '',
+      isCustomized: true,
+      updatedAt: Date.now()
     };
 
     products.push(newProduct);
