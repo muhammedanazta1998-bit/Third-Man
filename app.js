@@ -5004,8 +5004,75 @@ function viewMonthOnDashboard(year, monthIndex) {
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
+function printInvoice() {
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('printing-history', 'printing-dashboard');
+    document.body.classList.add('printing-invoice');
+  }
+  try {
+    window.print();
+  } finally {
+    if (typeof document !== 'undefined') {
+      setTimeout(() => {
+        document.body.classList.remove('printing-invoice');
+      }, 1000);
+    }
+  }
+}
+
 function printMonthlyHistory() {
-  window.print();
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('printing-invoice', 'printing-dashboard');
+    document.body.classList.add('printing-history');
+  }
+  try {
+    window.print();
+  } finally {
+    if (typeof document !== 'undefined') {
+      setTimeout(() => {
+        document.body.classList.remove('printing-history');
+      }, 1000);
+    }
+  }
+}
+
+function printDashboardReport() {
+  if (typeof document !== 'undefined') {
+    document.body.classList.remove('printing-invoice', 'printing-history');
+    document.body.classList.add('printing-dashboard');
+  }
+  try {
+    window.print();
+  } finally {
+    if (typeof document !== 'undefined') {
+      setTimeout(() => {
+        document.body.classList.remove('printing-dashboard');
+      }, 1000);
+    }
+  }
+}
+
+// Global browser print event listeners for auto-detecting print intent (e.g. Ctrl+P)
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeprint', () => {
+    const invoiceModal = document.getElementById('invoiceModal');
+    const monthlyModal = document.getElementById('monthlyHistoryModal');
+
+    if (invoiceModal && !invoiceModal.classList.contains('hidden')) {
+      document.body.classList.add('printing-invoice');
+      document.body.classList.remove('printing-history', 'printing-dashboard');
+    } else if (monthlyModal && !monthlyModal.classList.contains('hidden')) {
+      document.body.classList.add('printing-history');
+      document.body.classList.remove('printing-invoice', 'printing-dashboard');
+    } else {
+      document.body.classList.add('printing-dashboard');
+      document.body.classList.remove('printing-invoice', 'printing-history');
+    }
+  });
+
+  window.addEventListener('afterprint', () => {
+    document.body.classList.remove('printing-invoice', 'printing-history', 'printing-dashboard');
+  });
 }
 
 function seedSampleMultiMonthDataPrompt() {
@@ -10933,6 +11000,8 @@ window.onHistoryYearChange = onHistoryYearChange;
 window.renderMonthlyHistoryList = renderMonthlyHistoryList;
 window.viewMonthOnDashboard = viewMonthOnDashboard;
 window.printMonthlyHistory = printMonthlyHistory;
+window.printInvoice = printInvoice;
+window.printDashboardReport = printDashboardReport;
 window.seedSampleMultiMonthDataPrompt = seedSampleMultiMonthDataPrompt;
 
 // Customer Deduplication Exports

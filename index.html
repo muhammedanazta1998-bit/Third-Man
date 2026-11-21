@@ -119,24 +119,182 @@
       border: none !important;
     }
 
-    /* Print styles */
+    /* ==========================================================================
+       PRINT STYLES: Multi-target clean printing (Invoice, Monthly History, Dashboard)
+       ========================================================================== */
     @media print {
-      body * {
-        visibility: hidden;
+      /* 1. Global Reset for Print */
+      @page {
+        margin: 8mm;
+        size: auto;
       }
-      #invoiceModal, #invoiceModal * {
-        visibility: visible;
+      *, *::before, *::after {
+        box-shadow: none !important;
+        text-shadow: none !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
       }
-      #invoiceModal {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        margin: 0;
-        padding: 0;
-        background: white !important;
+      html, body {
+        width: 100% !important;
+        min-width: 100% !important;
+        height: auto !important;
+        min-height: auto !important;
+        background: #ffffff !important;
+        color: #0f172a !important;
+        font-size: 11pt !important;
+        overflow: visible !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        display: block !important;
       }
-      .no-print {
+
+      /* 2. Universal Non-Print Elements */
+      .no-print,
+      #appSecurityLockOverlay,
+      #toastNotification,
+      #customerQuickNotesBar,
+      #actionNotificationBanner,
+      button.fixed,
+      aside,
+      nav,
+      .lucide-printer,
+      .lucide-maximize-2,
+      .lucide-x {
+        display: none !important;
+      }
+
+      /* ==================== A. INVOICE PRINT MODE ==================== */
+      body.printing-invoice main,
+      body.printing-invoice aside,
+      body.printing-invoice #monthlyHistoryModal,
+      body:has(#invoiceModal:not(.hidden)) main,
+      body:has(#invoiceModal:not(.hidden)) aside,
+      body:has(#invoiceModal:not(.hidden)) #monthlyHistoryModal {
+        display: none !important;
+      }
+
+      body.printing-invoice #invoiceModal,
+      body:has(#invoiceModal:not(.hidden)) #invoiceModal {
+        display: block !important;
+        position: static !important;
+        inset: auto !important;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        z-index: 1 !important;
+      }
+
+      body.printing-invoice #invoiceModal .modal-expandable,
+      body:has(#invoiceModal:not(.hidden)) #invoiceModal .modal-expandable {
+        display: block !important;
+        position: static !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        max-height: none !important;
+        height: auto !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        background: #ffffff !important;
+      }
+
+      body.printing-invoice #invoicePrintArea,
+      body:has(#invoiceModal:not(.hidden)) #invoicePrintArea {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        overflow: visible !important;
+        color: #0f172a !important;
+        padding: 4mm !important;
+      }
+
+      /* ==================== B. MONTHLY HISTORY / ANNUAL STATEMENT PRINT MODE ==================== */
+      body.printing-history main,
+      body.printing-history aside,
+      body.printing-history #invoiceModal,
+      body:has(#monthlyHistoryModal:not(.hidden)) main,
+      body:has(#monthlyHistoryModal:not(.hidden)) aside,
+      body:has(#monthlyHistoryModal:not(.hidden)) #invoiceModal {
+        display: none !important;
+      }
+
+      body.printing-history #monthlyHistoryModal,
+      body:has(#monthlyHistoryModal:not(.hidden)) #monthlyHistoryModal {
+        display: block !important;
+        position: static !important;
+        inset: auto !important;
+        background: transparent !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        width: 100% !important;
+        height: auto !important;
+        max-height: none !important;
+        overflow: visible !important;
+        z-index: 1 !important;
+      }
+
+      body.printing-history #monthlyHistoryModal .modal-expandable,
+      body:has(#monthlyHistoryModal:not(.hidden)) #monthlyHistoryModal .modal-expandable {
+        display: block !important;
+        position: static !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        max-height: none !important;
+        height: auto !important;
+        overflow: visible !important;
+        padding: 0 !important;
+        margin: 0 !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0 !important;
+        background: #ffffff !important;
+      }
+
+      body.printing-history #monthlyHistoryModal .modal-expandable > div,
+      body:has(#monthlyHistoryModal:not(.hidden)) #monthlyHistoryModal .modal-expandable > div {
+        overflow: visible !important;
+        max-height: none !important;
+        height: auto !important;
+      }
+
+      /* Hide Action column in monthly table during print */
+      body.printing-history #monthlyHistoryTableBody td:last-child,
+      body.printing-history #monthlyHistoryModal thead th:last-child,
+      body:has(#monthlyHistoryModal:not(.hidden)) #monthlyHistoryTableBody td:last-child,
+      body:has(#monthlyHistoryModal:not(.hidden)) #monthlyHistoryModal thead th:last-child {
+        display: none !important;
+      }
+
+      /* ==================== C. DASHBOARD PRINT MODE ==================== */
+      body.printing-dashboard main,
+      body:not(.printing-invoice):not(.printing-history):not(:has(#invoiceModal:not(.hidden))):not(:has(#monthlyHistoryModal:not(.hidden))) main {
+        display: block !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        overflow: visible !important;
+      }
+
+      body.printing-dashboard aside,
+      body:not(.printing-invoice):not(.printing-history):not(:has(#invoiceModal:not(.hidden))):not(:has(#monthlyHistoryModal:not(.hidden))) aside {
+        display: none !important;
+      }
+
+      /* Hide all modals when printing dashboard */
+      body.printing-dashboard [id$="Modal"],
+      body:not(.printing-invoice):not(.printing-history):not(:has(#invoiceModal:not(.hidden))):not(:has(#monthlyHistoryModal:not(.hidden))) [id$="Modal"] {
         display: none !important;
       }
     }
@@ -417,7 +575,7 @@
           </button>
 
           <!-- Print Dashboard -->
-          <button type="button" onclick="window.print()" title="Print Dashboard" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 shadow-2xs transition active:scale-95">
+          <button type="button" onclick="printDashboardReport()" title="Print Dashboard" class="w-8 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200 shadow-2xs transition active:scale-95">
             <i data-lucide="printer" class="w-4 h-4"></i>
           </button>
 
@@ -1314,7 +1472,7 @@
             <i data-lucide="message-circle" class="w-4 h-4"></i>
             <span>Send to WhatsApp</span>
           </button>
-          <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition">
+          <button onclick="printInvoice()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs px-4 py-2 rounded-xl flex items-center gap-1.5 shadow transition">
             <i data-lucide="printer" class="w-4 h-4"></i>
             <span>Print Bill</span>
           </button>
@@ -3505,6 +3663,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.9.5"></script>
+  <script src="app.js?v=2.9.6"></script>
 </body>
 </html>
