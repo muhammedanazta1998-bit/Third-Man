@@ -1130,6 +1130,162 @@ function initFirebaseSync() {
   }
 }
 
+function processIncomingCloudCustomers(remoteCustomers) {
+  if (!Array.isArray(remoteCustomers) || remoteCustomers.length === 0) return;
+
+  isReceivingCloudCustomers = true;
+
+  const localById = new Map();
+  const localByName = new Map();
+  if (Array.isArray(customers)) {
+    customers.forEach(c => {
+      if (!c) return;
+      if (c.id) localById.set(c.id, c);
+      if (c.name) localByName.set(c.name.trim().toLowerCase(), c);
+    });
+  }
+
+  const mergedCustomers = [];
+  const processedIds = new Set();
+  const processedNames = new Set();
+  const needsCloudUpload = [];
+
+  // 1. Process all incoming customers from Cloud Firestore
+  remoteCustomers.forEach(remoteCust => {
+    if (!remoteCust || (!remoteCust.id && !remoteCust.name)) return;
+
+    // Apply canonical alias if any (e.g. "Riyas" -> "Riyas Traders")
+    const rawLower = (remoteCust.name || '').trim().toLowerCase();
+    const alias = (typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined') ? CANONICAL_CUSTOMER_ALIASES[rawLower] : null;
+    if (alias) {
+      remoteCust.name = alias.canonicalName;
+      if (!remoteCust.town || remoteCust.town === 'Ernakulam' || remoteCust.town === 'Local') {
+        remoteCust.town = alias.town;
+      }
+    }
+
+    const normName = (remoteCust.name || '').trim().toLowerCase();
+    const localMatch = (remoteCust.id && localById.get(remoteCust.id)) ||
+                       (normName && localByName.get(normName));
+
+    let merged = { ...remoteCust };
+
+    if (localMatch) {
+      // Merge members from both remote (cloud) and local (this device)
+      const remoteMembers = Array.isArray(remoteCust.members) ? [...remoteCust.members] : (typeof getCustomerMembers === 'function' ? getCustomerMembers(remoteCust) : []);
+      const localMembers = Array.isArray(localMatch.members) ? [...localMatch.members] : (typeof getCustomerMembers === 'function' ? getCustomerMembers(localMatch) : []);
+
+      let localHasNewMembers = false;
+      localMembers.forEach(lm => {
+        const lmP = typeof cleanPhoneNumber === 'function' ? cleanPhoneNumber(lm.phone) : (lm.phone || '');
+        const lmName = (lm.name || '').trim().toLowerCase();
+        const existsInRemote = remoteMembers.some(rm => {
+          const rmP = typeof cleanPhoneNumber === 'function' ? cleanPhoneNumber(rm.phone) : (rm.phone || '');
+          const rmName = (rm.name || '').trim().toLowerCase();
+          return (rm.id && lm.id && rm.id === lm.id) || (lmP && rmP && lmP === rmP) || (lmName && rmName && lmName === rmName);
+        });
+        if (!existsInRemote) {
+          remoteMembers.push(lm);
+          localHasNewMembers = true;
+        }
+      });
+
+      merged.members = remoteMembers;
+      if (typeof syncCustomerMemberLegacyFields === 'function') {
+        syncCustomerMemberLegacyFields(merged);
+      }
+
+      // Preserve local custom data if remote was empty
+      if (!merged.ownerPhone && localMatch.ownerPhone) merged.ownerPhone = localMatch.ownerPhone;
+      if (!merged.staffPhone && localMatch.staffPhone) merged.staffPhone = localMatch.staffPhone;
+      if (!merged.phone && localMatch.phone) merged.phone = localMatch.phone;
+      if (!merged.notes && localMatch.notes) merged.notes = localMatch.notes;
+
+      // If local device had new members that cloud didn't have, queue customer to upload to cloud
+      if (localHasNewMembers) {
+        needsCloudUpload.push(merged);
+      }
+    } else {
+      if (!Array.isArray(merged.members) || merged.members.length === 0) {
+        merged.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(merged) : [];
+      }
+    }
+
+    if (!merged.id) {
+      merged.id = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+    }
+
+    if (!processedIds.has(merged.id) && !processedNames.has(normName)) {
+      processedIds.add(merged.id);
+      if (normName) processedNames.add(normName);
+      mergedCustomers.push(merged);
+    }
+  });
+
+  // 2. Preserve any local customer that hasn't synced to cloud yet
+  if (Array.isArray(customers)) {
+    customers.forEach(localCust => {
+      if (!localCust || !localCust.id) return;
+      const lowerName = (localCust.name || '').trim().toLowerCase();
+      if (processedIds.has(localCust.id) || (lowerName && processedNames.has(lowerName))) return;
+
+      processedIds.add(localCust.id);
+      if (lowerName) processedNames.add(lowerName);
+      if (!Array.isArray(localCust.members) || localCust.members.length === 0) {
+        localCust.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(localCust) : [];
+      }
+      mergedCustomers.push(localCust);
+      needsCloudUpload.push(localCust);
+    });
+  }
+
+  // 3. Ensure all 69 canonical pre-November customers exist
+  if (typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined' && Array.isArray(PRE_NOVEMBER_CANONICAL_CUSTOMERS)) {
+    PRE_NOVEMBER_CANONICAL_CUSTOMERS.forEach(canon => {
+      const key = canon.name.trim().toLowerCase();
+      const exists = mergedCustomers.some(c => (c.name && c.name.trim().toLowerCase() === key) || (c.id === canon.id));
+      if (!exists) {
+        const fresh = { ...canon };
+        fresh.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(fresh) : [];
+        mergedCustomers.push(fresh);
+        needsCloudUpload.push(fresh);
+      }
+    });
+  }
+
+  // 4. Clean & deduplicate final list
+  customers = (typeof deduplicateCustomersList === 'function')
+    ? deduplicateCustomersList(mergedCustomers, false)
+    : mergedCustomers;
+
+  try {
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+  } catch (e) {}
+
+  populateCustomerDropdown();
+  if (typeof renderCustomersList === 'function') renderCustomersList();
+  if (typeof populateSavedAreasDatalists === 'function') populateSavedAreasDatalists();
+
+  // If customer detail modal is currently open, refresh members list and badge in real time!
+  if (activeDetailCustomerId) {
+    const currentOpenCust = customers.find(c => c.id === activeDetailCustomerId);
+    if (currentOpenCust) {
+      if (typeof renderCustomerMembersList === 'function') renderCustomerMembersList();
+      const countBadge = document.getElementById('cdMembersCountBadge');
+      if (countBadge) countBadge.textContent = (currentOpenCust.members || []).length;
+    }
+  }
+
+  isReceivingCloudCustomers = false;
+
+  // 5. Automatically sync back to Cloud Firestore if local had new members or new customers
+  if (needsCloudUpload.length > 0 && typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
+    needsCloudUpload.forEach(c => {
+      syncCloudCustomer(c);
+    });
+  }
+}
+
 function setupFirestoreRealtimeListeners() {
   if (!db) return;
 
@@ -1199,7 +1355,6 @@ function setupFirestoreRealtimeListeners() {
     }
 
     if (!snapshot.empty) {
-      isReceivingCloudCustomers = true;
       const remoteCustomers = [];
       snapshot.forEach(doc => {
         const d = doc.data();
@@ -1208,22 +1363,9 @@ function setupFirestoreRealtimeListeners() {
         }
       });
 
-      // Reset customers strictly to verified pre-November sales and purge manual duplicates from cloud
-      if (typeof resetCustomersToPreNovemberSales === 'function') {
-        customers = resetCustomersToPreNovemberSales(true);
-      } else if (typeof deduplicateCustomersList === 'function') {
-        customers = deduplicateCustomersList(remoteCustomers, true);
-      } else {
-        customers = remoteCustomers;
-      }
-
-      try {
-        localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
-      } catch (e) {}
-
-      populateCustomerDropdown();
-      if (typeof renderCustomersList === 'function') renderCustomersList();
-      isReceivingCloudCustomers = false;
+      // Merge cloud customers, preserve custom members, and update mobile UI in real time
+      processIncomingCloudCustomers(remoteCustomers);
+      updateCloudSyncStatus('synced', 'Live Synced 🟢');
     }
   }, err => {
     console.warn('Customers snapshot error:', err);
@@ -1456,15 +1598,49 @@ function manualTriggerCloudSync() {
     initFirebaseSync();
     return;
   }
-  if (orders.length > 0) {
-    seedLocalOrdersToCloud();
-  }
-  if (customers.length > 0) {
-    seedLocalCustomersToCloud();
-  }
+
+  // 1. Fetch latest customers from Firestore and process them
+  db.collection('customers').get().then(snapshot => {
+    if (!snapshot.empty) {
+      const remote = [];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d && (d.id || d.name)) remote.push(d);
+      });
+      processIncomingCloudCustomers(remote);
+    } else if (customers.length > 0) {
+      seedLocalCustomersToCloud();
+    }
+  }).catch(err => {
+    console.warn('Manual sync customers fetch error:', err);
+    if (customers.length > 0) seedLocalCustomersToCloud();
+  });
+
+  // 2. Fetch latest orders from Firestore
+  db.collection('orders').get().then(snapshot => {
+    if (!snapshot.empty) {
+      const remoteOrders = [];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d && d.id) remoteOrders.push(d);
+      });
+      remoteOrders.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+      orders = remoteOrders;
+      try {
+        localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+      } catch (e) {}
+      updateDashboard();
+    } else if (orders.length > 0) {
+      seedLocalOrdersToCloud();
+    }
+  }).catch(err => {
+    console.warn('Manual sync orders fetch error:', err);
+    if (orders.length > 0) seedLocalOrdersToCloud();
+  });
+
   syncCloudConfig();
   if (typeof showNotification === 'function') {
-    showNotification('✓ Cloud sync triggered!');
+    showNotification('✓ Cloud sync complete! Updated from cloud.');
   }
 }
 
@@ -2139,9 +2315,11 @@ function resetCustomersToPreNovemberSales(syncToCloud = true) {
           deletedCloudIds.push(cust.id);
         }
       } else {
-        if (cust.id) {
-          deletedCloudIds.push(cust.id);
+        // Legitimate customer added after November - preserve in directory
+        if (!Array.isArray(cust.members) || cust.members.length === 0) {
+          cust.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(cust) : [];
         }
+        rebuilt.push(cust);
       }
     });
   }
@@ -2151,11 +2329,21 @@ function resetCustomersToPreNovemberSales(syncToCloud = true) {
   populateCustomerDropdown();
   if (typeof renderCustomersList === 'function') renderCustomersList();
 
-  if (syncToCloud && deletedCloudIds.length > 0 && typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
-    deletedCloudIds.forEach(dupId => {
-      try {
-        deleteCloudCustomer(dupId);
-      } catch (e) {}
+  if (syncToCloud && typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
+    if (deletedCloudIds.length > 0) {
+      deletedCloudIds.forEach(dupId => {
+        try {
+          deleteCloudCustomer(dupId);
+        } catch (e) {}
+      });
+    }
+    // Also push canonical customers that have members so cloud is always up to date
+    rebuilt.forEach(c => {
+      if (c && Array.isArray(c.members) && c.members.length > 0 && typeof syncCloudCustomer === 'function') {
+        try {
+          syncCloudCustomer(c);
+        } catch (e) {}
+      }
     });
   }
 
@@ -7744,6 +7932,9 @@ function openCustomerDetailModal(customerId, openAddFormImmediately = false) {
   if (!Array.isArray(cust.members)) {
     cust.members = getCustomerMembers(cust);
     saveDataToStorage();
+    if (typeof syncCloudCustomer === 'function') {
+      syncCloudCustomer(cust);
+    }
   }
 
   const modal = document.getElementById('customerDetailModal');
@@ -7966,6 +8157,9 @@ function handleSaveMember(event) {
 
   syncCustomerMemberLegacyFields(cust);
   saveDataToStorage();
+  if (typeof syncCloudCustomer === 'function') {
+    syncCloudCustomer(cust);
+  }
   closeAddMemberForm();
   renderCustomerMembersList();
   renderCustomersList();
@@ -7997,6 +8191,9 @@ function deleteCustomerMember(customerId, memberId) {
       cust.members = cust.members.filter(m => m.id !== memberId);
       syncCustomerMemberLegacyFields(cust);
       saveDataToStorage();
+      if (typeof syncCloudCustomer === 'function') {
+        syncCloudCustomer(cust);
+      }
       renderCustomerMembersList();
       renderCustomersList();
       showNotification(`Member '${member.name}' removed.`);
@@ -10499,6 +10696,7 @@ window.getCanonicalCustomerInfo = getCanonicalCustomerInfo;
 window.runManualCustomerDeduplication = runManualCustomerDeduplication;
 window.editCustomerFromDetail = editCustomerFromDetail;
 window.resetCustomersToPreNovemberSales = resetCustomersToPreNovemberSales;
+window.processIncomingCloudCustomers = processIncomingCloudCustomers;
 window.PRE_NOVEMBER_CANONICAL_CUSTOMERS = PRE_NOVEMBER_CANONICAL_CUSTOMERS;
 
 // Product & Orders Cascading Exports
