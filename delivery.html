@@ -270,6 +270,15 @@
           o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
           needsSync.push(o);
         }
+        // Normalize customer alias (e.g. 'Thanima' -> 'Thanima Hotel')
+        const curName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim();
+        const curLower = curName.toLowerCase();
+        if (curLower === 'thanima' || curLower === 'hotel thanima') {
+          if (typeof o.customer === 'object') o.customer.name = 'Thanima Hotel';
+          else o.customer = 'Thanima Hotel';
+          o.customerName = 'Thanima Hotel';
+          needsSync.push(o);
+        }
       });
       return needsSync;
     }
@@ -1090,9 +1099,18 @@
     }
 
     function getCustName(o) {
-      if (!o.customer) return 'Customer';
-      if (typeof o.customer === 'string') return o.customer;
-      return o.customer.name || 'Customer';
+      let raw = 'Customer';
+      if (!o.customer) raw = 'Customer';
+      else if (typeof o.customer === 'string') raw = o.customer;
+      else raw = o.customer.name || 'Customer';
+
+      const lower = raw.trim().toLowerCase();
+      if (lower === 'thanima' || lower === 'hotel thanima') return 'Thanima Hotel';
+      if (lower === 'riyas') return 'Riyas Traders';
+      if (lower === 'maj angamaly') return 'MAJ';
+      if (lower === 'pkbr elamakkara') return 'PKBR';
+      if (lower.includes('al-safi food court')) return 'Al-Safi Food Court';
+      return raw;
     }
 
     function getCustTown(o) {

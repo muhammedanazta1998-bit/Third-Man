@@ -969,6 +969,9 @@ function loadDataFromStorage() {
     if (typeof deduplicateCustomersList === 'function') {
       customers = deduplicateCustomersList(customers, false);
     }
+    if (typeof normalizeOrderCustomerNames === 'function') {
+      normalizeOrderCustomerNames();
+    }
 
     loadDistrictTowns();
     loadSavedAreas();
@@ -1160,10 +1163,15 @@ function processIncomingCloudCustomers(remoteCustomers) {
   remoteCustomers.forEach(remoteCust => {
     if (!remoteCust || (!remoteCust.id && !remoteCust.name)) return;
 
-    // Apply canonical alias if any (e.g. "Riyas" -> "Riyas Traders")
+    // Apply canonical alias if any (e.g. "Riyas" -> "Riyas Traders", "Thanima" -> "Thanima Hotel")
     const rawLower = (remoteCust.name || '').trim().toLowerCase();
     const alias = (typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined') ? CANONICAL_CUSTOMER_ALIASES[rawLower] : null;
     if (alias) {
+      if (rawLower !== alias.canonicalName.toLowerCase() && remoteCust.id && !remoteCust.id.startsWith('c_hist_')) {
+        if (db) {
+          db.collection('customers').doc(remoteCust.id).delete().catch(err => console.warn('Clean alias doc error:', err));
+        }
+      }
       remoteCust.name = alias.canonicalName;
       if (!remoteCust.town || remoteCust.town === 'Ernakulam' || remoteCust.town === 'Local') {
         remoteCust.town = alias.town;
@@ -2298,6 +2306,9 @@ function findDuplicateCustomer(name, ownerPhone = '', staffPhone = '', legacyPho
 // ==================== CUSTOMER DEDUPLICATION & NORMALIZATION ====================
 
 const CANONICAL_CUSTOMER_ALIASES = {
+  'thanima': { canonicalName: 'Thanima Hotel', town: 'Ernakulam' },
+  'thanima hotel': { canonicalName: 'Thanima Hotel', town: 'Ernakulam' },
+  'hotel thanima': { canonicalName: 'Thanima Hotel', town: 'Ernakulam' },
   'riyas': { canonicalName: 'Riyas Traders', town: 'Ernakulam' },
   'riyas traders': { canonicalName: 'Riyas Traders', town: 'Ernakulam' },
   'maj angamaly': { canonicalName: 'MAJ', town: 'Angamaly' },
@@ -2343,6 +2354,15 @@ function normalizeOrderCustomerNames() {
     try {
       localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
     } catch (e) {}
+    if (typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
+      orders.forEach(o => {
+        const cName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim();
+        const alias = CANONICAL_CUSTOMER_ALIASES[cName.toLowerCase()];
+        if (alias && o.id) {
+          db.collection('orders').doc(o.id).set(sanitizeForFirestore(o), { merge: true }).catch(err => {});
+        }
+      });
+    }
   }
   return changed;
 }
