@@ -5303,8 +5303,8 @@ function formatWhatsAppOrderMessage(order) {
   if (!order) return '';
 
   const orderId = order.id || 'ORD-0000';
-  const isUrgent = (order.deliveryStatus === 'Urgent');
-  const deliveryStatusText = isUrgent ? '⚡ Urgent' : '🚚 Normal';
+  const isUrgent = (String(order.deliveryStatus || '').toLowerCase() === 'urgent');
+  const deliveryStatusText = isUrgent ? '⚡ Delivery: URGENT' : '🚚 Delivery: NORMAL';
   const customerName = getCustomerName(order.customer);
 
   const items = (order.items && order.items.length > 0) ? order.items : [
@@ -5320,21 +5320,36 @@ function formatWhatsAppOrderMessage(order) {
 
   const totalBags = (order.bagQty !== undefined) ? order.bagQty : items.reduce((s, i) => s + (parseFloat(i.bagQty) || 0), 0);
 
-  let itemsText = '';
-  items.forEach((it) => {
+  const maxNameLen = Math.max(...items.map(it => (it.productName || '').length), 10);
+  const itemsText = items.map(it => {
     const qty = it.bagQty || 0;
-    itemsText += `   • *${it.productName}:* ${qty} Bags\n`;
-  });
+    const pName = (it.productName || 'Biriyani Rice').padEnd(maxNameLen + 2, ' ');
+    return `🌾 ${pName} × ${qty} Bags`;
+  }).join('\n');
 
   const noteText = (order.notes && order.notes.trim()) ? order.notes.trim() : '-';
 
   const message =
-`1. *Order ID:* ${orderId}
-2. *Delivery:* ${deliveryStatusText}
-3. *Customer Name:* ${customerName}
-4. *Orders:*
-${itemsText}   👉 *Total:* ${totalBags} Bags
-5. *Note:* ${noteText}`;
+`🛒 *ORDER DETAILS*
+━━━━━━━━━━━━━━━━━━
+
+🆔 Order ID: ${orderId}
+${deliveryStatusText}
+
+👤 Customer:
+${customerName}
+
+📦 *ITEMS*
+
+${itemsText}
+
+━━━━━━━━━━━━━━━━━━
+🛍️ Total: ${totalBags} Bags
+━━━━━━━━━━━━━━━━━━
+
+📝 Note: ${noteText}
+
+🙏 Thank you!`;
 
   return message;
 }
