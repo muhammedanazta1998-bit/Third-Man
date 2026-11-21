@@ -9,11 +9,9 @@
   <meta name="apple-mobile-web-app-title" content="Third Man">
   <meta name="theme-color" content="#0f172a">
   <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="logo.svg">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>Third Man - Sales & Incentive Dashboard</title>
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="icon" id="appFavicon" type="image/svg+xml" href="logo.svg">
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -51,12 +49,19 @@
   <script>
     window.addEventListener('error', function(e) {
       console.error('Global Error Captured:', e.error || e.message);
-      const banner = document.getElementById('globalAppErrorBanner');
-      const msgEl = document.getElementById('globalAppErrorMessage');
-      if (banner && msgEl) {
-        banner.classList.remove('hidden');
-        const file = e.filename ? e.filename.split('/').pop().split('\\').pop() : 'script';
-        msgEl.textContent = 'App Error: ' + (e.message || 'Script error') + ' (' + file + ':' + (e.lineno || '?') + ')';
+      // Suppress cross-origin / Safari share sheet synthetic error events
+      if (!e || !e.message || e.message === 'Script error.' || !e.filename) {
+        return;
+      }
+      // Only show banner for local, identifiable app errors in app.js
+      if (e.filename && e.filename.includes('app.js')) {
+        const banner = document.getElementById('globalAppErrorBanner');
+        const msgEl = document.getElementById('globalAppErrorMessage');
+        if (banner && msgEl) {
+          banner.classList.remove('hidden');
+          const file = e.filename.split('/').pop().split('\\').pop();
+          msgEl.textContent = 'App Notice: ' + e.message + ' (' + file + ':' + (e.lineno || '?') + ')';
+        }
       }
     });
   </script>
@@ -3663,6 +3668,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.9.7"></script>
+  <script src="app.js?v=2.9.8"></script>
 </body>
 </html>

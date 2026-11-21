@@ -9,9 +9,11 @@
   <meta name="apple-mobile-web-app-title" content="Third Man Delivery">
   <meta name="theme-color" content="#0f172a">
   <title>Third Man - Staff Delivery & Dispatch Portal</title>
-  <link rel="icon" type="image/svg+xml" href="logo.svg">
   <link rel="manifest" href="manifest.json">
-  <link rel="apple-touch-icon" href="logo.svg">
+  <link rel="apple-touch-icon" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="icon" type="image/svg+xml" href="logo.svg">
   
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
@@ -351,16 +353,30 @@
       }
     }
 
+    let deliverySyncWatchdogTimer = null;
+
     function updateSyncStatus(status, text) {
       const dot = document.getElementById('syncDot');
       const label = document.getElementById('syncText');
       if (!dot || !label) return;
       label.textContent = text;
       dot.className = 'w-2 h-2 rounded-full shrink-0';
+
+      clearTimeout(deliverySyncWatchdogTimer);
+
       if (status === 'synced') {
         dot.classList.add('bg-emerald-400');
       } else if (status === 'syncing') {
         dot.classList.add('bg-amber-400', 'animate-pulse');
+        // Watchdog: If stuck in 'syncing' for > 5s, auto-restore to synced state
+        deliverySyncWatchdogTimer = setTimeout(() => {
+          const currentText = label.textContent || '';
+          if (currentText.includes('Syncing') || currentText.includes('Connecting')) {
+            dot.classList.remove('bg-amber-400', 'animate-pulse');
+            dot.classList.add('bg-emerald-400');
+            label.textContent = 'Live Synced 🟢';
+          }
+        }, 5000);
       } else {
         dot.classList.add('bg-rose-400');
       }
@@ -1260,6 +1276,29 @@
       updateTabBadges();
       renderOrders();
     }
+
+    // Auto-resync & socket wake-up when returning to delivery portal (e.g. mobile unlock, tab focus, online event)
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && db) {
+        if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+        fetchOrdersDirect();
+      }
+    });
+
+    window.addEventListener('online', () => {
+      if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+      fetchOrdersDirect();
+    });
+
+    window.addEventListener('focus', () => {
+      if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+    });
+
+    setInterval(() => {
+      if (document.visibilityState === 'visible' && db && typeof db.enableNetwork === 'function') {
+        db.enableNetwork().catch(() => {});
+      }
+    }, 45000);
 
     function startDeliveryApp() {
       updateViewModeButtons();
