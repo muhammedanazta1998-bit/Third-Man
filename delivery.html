@@ -225,8 +225,11 @@
       projectId: "third-man-1998",
       storageBucket: "third-man-1998.firebasestorage.app",
       messagingSenderId: "928547046358",
-      appAppId: "1:928547046358:web:723643e5a083a81f66da77"
+      appId: "1:928547046358:web:723643e5a083a81f66da77"
     };
+
+    const STORAGE_ORDERS = 'biriyani_rice_orders_fresh_v2';
+    const STORAGE_DELIVERY_CACHE = 'third_man_delivery_orders_cache';
 
     let db = null;
     let allOrders = [];
@@ -237,6 +240,37 @@
     let activeActionOrderId = null;
     let activeActionType = 'delivered'; // 'delivered' or 'note_only'
     let currentViewMode = localStorage.getItem('deliveryViewMode') || (window.innerWidth >= 1024 ? 'table' : 'cards');
+
+    function sortOrders(arr) {
+      if (!Array.isArray(arr)) return;
+      arr.sort((a, b) => {
+        const aUrg = (a.deliveryStatus === 'Urgent') ? 1 : 0;
+        const bUrg = (b.deliveryStatus === 'Urgent') ? 1 : 0;
+        if (bUrg !== aUrg) return bUrg - aUrg;
+        return (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '');
+      });
+    }
+
+    function loadInitialOrdersFromCache() {
+      try {
+        const raw = localStorage.getItem(STORAGE_DELIVERY_CACHE) || localStorage.getItem(STORAGE_ORDERS);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            allOrders = parsed;
+            sortOrders(allOrders);
+            populateTownDropdown();
+            updateTabBadges();
+            renderOrders();
+            updateSyncStatus('syncing', 'Syncing cloud...');
+            return true;
+          }
+        }
+      } catch (e) {
+        console.warn('Cache load notice:', e);
+      }
+      return false;
+    }
 
     function setViewMode(mode) {
       currentViewMode = mode;
@@ -288,52 +322,140 @@
     }
 
     function initFirebase() {
+      // 1. Instantly display orders from local cache if available (0ms load time!)
+      const hasCached = loadInitialOrdersFromCache();
+
       if (typeof firebase === 'undefined') {
-        updateSyncStatus('error', 'Offline Mode');
+        console.warn('Firebase SDK not defined.');
+        updateSyncStatus('error', 'Offline');
+        if (!hasCached) {
+          showEmptyOrErrorState('Firebase library could not be loaded from CDN. Please check internet connection.');
+        }
         return;
       }
+
       try {
         if (!firebase.apps || !firebase.apps.length) {
           firebase.initializeApp(FIREBASE_CONFIG);
         }
         db = firebase.firestore();
-        db.enablePersistence({ synchronizeTabs: true }).catch(() => {});
-        updateSyncStatus('syncing', 'Connecting...');
+
+        db.enablePersistence({ synchronizeTabs: true }).catch(err => {
+          console.warn('Persistence mode notice:', err ? err.code : 'disabled');
+        });
+
+        updateSyncStatus('syncing', 'Connecting Cloud...');
+
+        // 2. Start realtime listener
         listenToOrders();
+
+        // 3. Concurrently trigger direct get() fetch so we don't depend solely on onSnapshot stream
+        fetchOrdersDirect();
+
+        // 4. Timeout watchdog: If after 6 seconds still 0 orders, show retry UI
+        setTimeout(() => {
+          if (allOrders.length === 0) {
+            showEmptyOrErrorState('Connecting to cloud is taking longer than usual.');
+          }
+        }, 6000);
+
       } catch (e) {
         console.error('Firebase init error in delivery portal:', e);
         updateSyncStatus('error', 'Connection Error');
+        if (allOrders.length === 0) {
+          showEmptyOrErrorState('Connection Error: ' + e.message);
+        }
       }
+    }
+
+    function processIncomingOrdersSnapshot(snapshot) {
+      if (!snapshot) return;
+      const loaded = [];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d && d.id) {
+          loaded.push(d);
+        }
+      });
+
+      sortOrders(loaded);
+      allOrders = loaded;
+
+      try {
+        localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(loaded));
+      } catch (e) {}
+
+      updateSyncStatus('synced', 'Live Synced 🟢');
+      populateTownDropdown();
+      updateTabBadges();
+      renderOrders();
     }
 
     function listenToOrders() {
       if (!db) return;
       db.collection('orders').onSnapshot(snapshot => {
-        const loaded = [];
-        snapshot.forEach(doc => {
-          const d = doc.data();
-          if (d && d.id) {
-            loaded.push(d);
-          }
-        });
-
-        // Sort: Urgent first, then newest date/id
-        loaded.sort((a, b) => {
-          const aUrg = (a.deliveryStatus === 'Urgent') ? 1 : 0;
-          const bUrg = (b.deliveryStatus === 'Urgent') ? 1 : 0;
-          if (bUrg !== aUrg) return bUrg - aUrg;
-          return (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '');
-        });
-
-        allOrders = loaded;
-        updateSyncStatus('synced', 'Live Synced 🟢');
-        populateTownDropdown();
-        updateTabBadges();
-        renderOrders();
+        processIncomingOrdersSnapshot(snapshot);
       }, err => {
-        console.warn('Orders listener error:', err);
+        console.warn('Orders onSnapshot error:', err);
         updateSyncStatus('error', 'Offline');
+        if (allOrders.length === 0) {
+          showEmptyOrErrorState('Could not load orders: ' + (err.message || 'Network error'));
+        }
       });
+    }
+
+    function fetchOrdersDirect() {
+      if (!db) return;
+      db.collection('orders').get().then(snapshot => {
+        if (!snapshot.empty) {
+          processIncomingOrdersSnapshot(snapshot);
+        } else if (allOrders.length === 0) {
+          allOrders = [];
+          updateSyncStatus('synced', 'Live Synced (0 Orders)');
+          populateTownDropdown();
+          updateTabBadges();
+          renderOrders();
+        }
+      }).catch(err => {
+        console.warn('Direct get orders notice:', err);
+      });
+    }
+
+    function showEmptyOrErrorState(msg) {
+      const container = document.getElementById('ordersListContainer');
+      if (!container) return;
+      if (allOrders.length > 0) return; // Cached orders already visible
+
+      container.className = 'space-y-3';
+      container.innerHTML = `
+        <div class="bg-white p-6 sm:p-8 rounded-3xl border border-slate-200 text-center space-y-3 shadow-xs">
+          <div class="w-12 h-12 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200">
+            <i data-lucide="cloud-off" class="w-6 h-6"></i>
+          </div>
+          <h3 class="font-extrabold text-sm sm:text-base text-slate-800">Connecting to Cloud...</h3>
+          <p class="text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">${escapeHtml(msg || 'ഓർഡറുകൾ ലഭിക്കാൻ വൈകുന്നു. ഇന്റർനെറ്റ് ഉണ്ടെന്ന് ഉറപ്പുവരുത്തുക.')}</p>
+          <div class="pt-2 flex items-center justify-center gap-2">
+            <button type="button" onclick="retryConnect()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs transition shadow-sm flex items-center gap-1.5 active:scale-95">
+              <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+              <span>Retry Connection (വീണ്ടും ശ്രമിക്കുക)</span>
+            </button>
+          </div>
+        </div>
+      `;
+      if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function retryConnect() {
+      const container = document.getElementById('ordersListContainer');
+      if (container) {
+        container.innerHTML = `
+          <div class="bg-white p-6 rounded-2xl border border-slate-200 text-center space-y-3">
+            <div class="w-8 h-8 rounded-full border-2 border-blue-600 border-t-transparent animate-spin mx-auto"></div>
+            <p class="text-xs text-slate-500 font-bold">Retrying connection to cloud...</p>
+          </div>
+        `;
+      }
+      initFirebase();
     }
 
     function populateTownDropdown() {
