@@ -5713,6 +5713,21 @@ ${portalUrl}
   window.open(whatsappUrl, '_blank');
 }
 
+// ==================== VIEWS & PORTALS HUB ====================
+
+function openViewsModal() {
+  const modal = document.getElementById('viewsModal');
+  if (modal) modal.classList.remove('hidden');
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function closeViewsModal() {
+  const modal = document.getElementById('viewsModal');
+  if (modal) modal.classList.add('hidden');
+}
+
 // ==================== INVOICE MODAL & PRINT ====================
 
 function openInvoiceModal(orderId) {
@@ -10842,3 +10857,7 @@ window.closeShareDeliveryModal = closeShareDeliveryModal;
 window.copyDeliveryPortalLink = copyDeliveryPortalLink;
 window.shareDeliveryPortalWhatsApp = shareDeliveryPortalWhatsApp;
 window.getDeliveryPortalUrl = getDeliveryPortalUrl;
+
+// Views & Portals Hub Exports
+window.openViewsModal = openViewsModal;
+window.closeViewsModal = closeViewsModal;

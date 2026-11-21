@@ -297,15 +297,6 @@
           <span>Customers Directory</span>
         </button>
 
-        <!-- Staff Delivery Portal Nav Button -->
-        <button type="button" onclick="openShareDeliveryModal()" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group">
-          <div class="flex items-center gap-3">
-            <i data-lucide="truck" class="w-4 h-4 text-emerald-400 group-hover:text-emerald-300 transition"></i>
-            <span>Staff Delivery Link</span>
-          </div>
-          <span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">PORTAL</span>
-        </button>
-
         <button onclick="openLeaderboardModal()" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition">
           <i data-lucide="trophy" class="w-4 h-4 text-amber-400"></i>
           <span>Sales Leaderboards 🏆</span>
@@ -325,6 +316,30 @@
           <i data-lucide="award" class="w-4 h-4 text-yellow-400"></i>
           <span>Incentive Scheme</span>
         </button>
+
+        <!-- ==================== VIEWS SECTION ==================== -->
+        <div class="pt-2 pb-1 border-t border-slate-800/80">
+          <div class="px-3.5 py-1.5 flex items-center justify-between">
+            <span class="text-[10px] font-black uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+              <i data-lucide="layers" class="w-3.5 h-3.5"></i>
+              <span>VIEWS</span>
+            </span>
+            <button type="button" onclick="openViewsModal()" class="text-[10px] text-slate-400 hover:text-cyan-300 font-bold hover:underline" title="Manage all Views & Links">
+              All Views
+            </button>
+          </div>
+
+          <div class="space-y-1 mt-0.5">
+            <!-- 1. Staff Delivery View -->
+            <button type="button" onclick="openShareDeliveryModal()" class="w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/70 border border-slate-800/60 hover:border-slate-700 transition group">
+              <div class="flex items-center gap-2.5 min-w-0">
+                <i data-lucide="truck" class="w-4 h-4 text-emerald-400 group-hover:text-emerald-300 transition shrink-0"></i>
+                <span class="truncate">Staff Delivery</span>
+              </div>
+              <span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">PORTAL</span>
+            </button>
+          </div>
+        </div>
 
         <!-- Settings Nav Button (Consolidated administration hub) -->
         <button onclick="openSettingsModal()" class="w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group">
@@ -388,12 +403,6 @@
 
         <!-- Action Buttons: Monthly History Modal, Custom Range Toggle, Print -->
         <div class="flex flex-wrap items-center gap-2">
-          <!-- Staff Delivery Portal Button -->
-          <button type="button" onclick="openShareDeliveryModal()" title="Share Staff Delivery Portal" class="px-3 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 font-bold text-xs border border-emerald-200 shadow-2xs flex items-center gap-1.5 transition active:scale-95">
-            <i data-lucide="truck" class="w-3.5 h-3.5 text-emerald-600"></i>
-            <span class="hidden sm:inline">Delivery Portal</span>
-          </button>
-
           <!-- Monthly History & Incentives Button -->
           <button type="button" onclick="openMonthlyHistoryModal()" class="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-700 hover:to-blue-700 text-white font-bold text-xs shadow-sm flex items-center gap-2 transition active:scale-95">
             <i data-lucide="history" class="w-4 h-4"></i>
@@ -814,10 +823,6 @@
               <div id="registerTotalSaleText" class="text-xs font-black text-amber-300">₹0</div>
             </div>
           </div>
-          <button onclick="openShareDeliveryModal()" class="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-md shadow-emerald-600/30 flex items-center gap-1.5 transition active:scale-95 shrink-0" title="Share live delivery portal with delivery boy / shop staff">
-            <i data-lucide="truck" class="w-4 h-4"></i>
-            <span>Staff Delivery Link</span>
-          </button>
           <button onclick="openNewOrderModal()" class="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-md shadow-blue-600/30 flex items-center gap-2 transition active:scale-95 shrink-0">
             <i data-lucide="plus" class="w-4 h-4"></i>
             <span>Add New Order</span>
@@ -3408,6 +3413,81 @@
     </div>
   </div>
 
+  <!-- 11. VIEWS & PORTALS HUB MODAL -->
+  <div id="viewsModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      
+      <!-- Modal Header -->
+      <div class="bg-gradient-to-r from-slate-900 via-blue-950 to-slate-900 text-white p-4 sm:p-5 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-2xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center border border-cyan-400/30 shrink-0">
+            <i data-lucide="layers" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h3 class="font-black text-sm sm:text-base text-white tracking-tight">Views &amp; Portals Hub</h3>
+            <p class="text-[11px] text-slate-300">വിവിധ ആവശ്യങ്ങൾക്കുള്ള പോർട്ടലുകളും ലിങ്കുകളും (Views Hub)</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeViewsModal()" class="w-8 h-8 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-4 sm:p-6 space-y-4 text-xs">
+        
+        <!-- Active View 1: Staff Delivery Portal -->
+        <div class="bg-slate-50 border border-slate-200/90 hover:border-blue-400/50 rounded-2xl p-4 transition shadow-xs space-y-3">
+          <div class="flex items-start justify-between gap-3">
+            <div class="flex items-start gap-3">
+              <div class="w-9 h-9 rounded-xl bg-emerald-500/10 text-emerald-600 flex items-center justify-center shrink-0 border border-emerald-300">
+                <i data-lucide="truck" class="w-5 h-5"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h4 class="font-black text-sm text-slate-900">Staff Delivery &amp; Dispatch View</h4>
+                  <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">ACTIVE</span>
+                </div>
+                <p class="text-[11px] text-slate-500 mt-0.5">ഡെലിവറി സ്റ്റാഫിന് ഓർഡറുകൾ കാണാനും, KG റേറ്റ് &amp; ടോട്ടൽ കിലോ നോക്കി ബില്ല് ചെയ്യാനും, ഡെലിവറി മാർക്ക് ചെയ്യാനുമുള്ള ലിങ്ക്.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-2 pt-2 border-t border-slate-200/70">
+            <button type="button" onclick="closeViewsModal(); openShareDeliveryModal();" class="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition flex items-center justify-center gap-1.5 shadow-sm active:scale-95">
+              <i data-lucide="share-2" class="w-3.5 h-3.5"></i>
+              <span>Share Link (WhatsApp)</span>
+            </button>
+            <a href="delivery.html" target="_blank" class="py-2 px-3 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-xl text-xs border border-blue-200 transition flex items-center justify-center gap-1.5 active:scale-95">
+              <i data-lucide="external-link" class="w-3.5 h-3.5"></i>
+              <span>Open View</span>
+            </a>
+          </div>
+        </div>
+
+        <!-- Upcoming Future Views Placeholder -->
+        <div class="bg-slate-50/60 border border-dashed border-slate-300 rounded-2xl p-4 space-y-1.5 text-slate-400">
+          <div class="flex items-center gap-2">
+            <i data-lucide="plus-circle" class="w-4 h-4 text-slate-400"></i>
+            <span class="font-bold text-xs text-slate-600">Future Views &amp; Portals</span>
+          </div>
+          <p class="text-[11px] text-slate-400 leading-relaxed">
+            ഭാവിയിൽ വെയർഹൗസ് / ഗോഡൗൺ സ്റ്റോക്ക് വ്യൂ, കസ്റ്റമർ ലൈവ് ഓർഡർ ട്രാക്കിംഗ് വ്യൂ മുതലായ കൂടുതൽ ലിങ്കുകൾ ഇതിലേക്ക് കൂട്ടിച്ചേർക്കാവുന്നതാണ്.
+          </p>
+        </div>
+
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-3.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+        <button type="button" onclick="closeViewsModal()" class="px-5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition active:scale-95">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+
   <!-- SHARED DATALISTS: KERALA TOWNS & AREAS -->
   <datalist id="custTownsDatalist"></datalist>
   <datalist id="orderTownsDatalist"></datalist>
@@ -3418,6 +3498,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.9.2"></script>
+  <script src="app.js?v=2.9.3"></script>
 </body>
 </html>
