@@ -1925,9 +1925,9 @@
                 <div class="flex items-center gap-2 flex-wrap">
                   <h4 class="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Products Catalog</h4>
                   <span id="productsCountBadge" class="text-[10px] bg-blue-100 text-blue-800 font-bold px-2.5 py-0.5 rounded-full">0 Varieties</span>
-                  <button onclick="cleanAllDemoProductsPrompt()" title="Remove all default sample products, keeping only your added products" class="text-[10px] font-bold text-rose-600 hover:text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded-lg transition inline-flex items-center gap-1 active:scale-95 cursor-pointer">
-                    <i data-lucide="sparkles" class="w-3 h-3 text-rose-500"></i>
-                    <span>Clean Demo Products</span>
+                  <button onclick="resetToOfficialProductsPrompt()" title="Lock catalog strictly to your 6 confirmed official rice varieties" class="text-[10px] font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-300 px-2 py-0.5 rounded-lg transition inline-flex items-center gap-1 active:scale-95 cursor-pointer">
+                    <i data-lucide="shield-check" class="w-3 h-3 text-emerald-600"></i>
+                    <span>Lock to Official Products</span>
                   </button>
                 </div>
 
@@ -3396,13 +3396,6 @@
             Click <strong class="text-indigo-600 font-bold">"View on Dashboard"</strong> on any month to filter the main app to that exact period.
           </span>
         </div>
-
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="seedSampleMultiMonthDataPrompt()" class="px-3 py-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl transition flex items-center gap-1.5 shadow-2xs" title="Load realistic sample data across multiple months to preview history">
-            <i data-lucide="sparkles" class="w-3.5 h-3.5"></i>
-            <span>Load Sample Multi-Month Sales</span>
-          </button>
-        </div>
       </div>
 
       <!-- Modal Body (Scrollable) -->
@@ -3525,7 +3518,7 @@
           </div>
           <div>
             <h3 class="font-black text-sm sm:text-base text-white tracking-tight">Staff Delivery Portal</h3>
-            <p class="text-[11px] text-slate-300">ഷോപ്പ് / വണ്ടി സ്റ്റാഫിന് ഓർഡർ കാണാനും മാർക്ക് ചെയ്യാനും</p>
+            <p class="text-[11px] text-slate-300">Allow delivery and driver staff to view and mark orders</p>
           </div>
         </div>
         <button type="button" onclick="closeShareDeliveryModal()" class="w-8 h-8 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">
@@ -3540,24 +3533,24 @@
         <div class="bg-slate-50 border border-slate-200/90 rounded-2xl p-3.5 space-y-2">
           <div class="flex items-center gap-2 font-bold text-slate-800 text-[11px] uppercase tracking-wider">
             <i data-lucide="shield-check" class="w-4 h-4 text-emerald-600"></i>
-            <span>സ്റ്റാഫ് പോർട്ടൽ സുരക്ഷിതത (Zero Financials):</span>
+            <span>Staff Portal Security (Zero Financials):</span>
           </div>
           <ul class="space-y-1.5 text-slate-600 text-[11px] pl-1">
             <li class="flex items-center gap-2">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-              <span><strong>പണമിടപാട് വിവരങ്ങളില്ല:</strong> റേറ്റ് (₹/kg), മൊത്തം രൂപ, പ്രോഫിറ്റ്, ഇൻസെന്റീവ് എന്നിവ സ്റ്റാഫ് കാണില്ല.</span>
+              <span><strong>Zero Financial Data:</strong> Rate (₹/kg), total amount, profit, and incentives are completely hidden from staff.</span>
             </li>
             <li class="flex items-center gap-2">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-              <span><strong>പിൻ ആവശ്യമില്ല:</strong> നിങ്ങളുടെ മാസ്റ്റർ പിൻ അടിക്കാതെ സ്റ്റാഫിന് ഈ ലിങ്ക് നേരിട്ട് ഉപയോഗിക്കാം.</span>
+              <span><strong>No PIN Required:</strong> Staff can directly access this portal without your master administrative PIN.</span>
             </li>
             <li class="flex items-center gap-2">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-              <span><strong>ഓട്ടോമാറ്റിക് ഫിൽട്ടർ:</strong> ഡെലിവറി ചെയ്ത ഓർഡറുകൾ മാറി, ഇനി എത്തിക്കാനുള്ളവ (Pending) മാത്രം കാണാം.</span>
+              <span><strong>Automatic Filter:</strong> Delivered orders clear automatically, leaving only pending deliveries in focus.</span>
             </li>
             <li class="flex items-center gap-2">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0"></span>
-              <span><strong>തത്സമയ സിങ്ക് (Live):</strong> സ്റ്റാഫ് ഡെലിവറി മാർക്ക് ചെയ്യുമ്പോൾ ഉടൻ നിങ്ങളുടെ ഡാഷ്‌ബോർഡിൽ അപ്‌ഡേറ്റ് ആകും.</span>
+              <span><strong>Real-time Cloud Sync:</strong> Deliveries marked by staff update your live dashboard instantly.</span>
             </li>
           </ul>
         </div>
@@ -3613,7 +3606,7 @@
           </div>
           <div>
             <h3 class="font-black text-sm sm:text-base text-white tracking-tight">Views &amp; Portals Hub</h3>
-            <p class="text-[11px] text-slate-300">വിവിധ ആവശ്യങ്ങൾക്കുള്ള പോർട്ടലുകളും ലിങ്കുകളും (Views Hub)</p>
+            <p class="text-[11px] text-slate-300">Central access for external view links and staff portals</p>
           </div>
         </div>
         <button type="button" onclick="closeViewsModal()" class="w-8 h-8 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">
@@ -3636,7 +3629,7 @@
                   <h4 class="font-black text-sm text-slate-900">Staff Delivery &amp; Dispatch View</h4>
                   <span class="px-2 py-0.5 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">ACTIVE</span>
                 </div>
-                <p class="text-[11px] text-slate-500 mt-0.5">ഡെലിവറി സ്റ്റാഫിന് ഓർഡറുകൾ കാണാനും, KG റേറ്റ് &amp; ടോട്ടൽ കിലോ നോക്കി ബില്ല് ചെയ്യാനും, ഡെലിവറി മാർക്ക് ചെയ്യാനുമുള്ള ലിങ്ക്.</p>
+                <p class="text-[11px] text-slate-500 mt-0.5">Link for delivery staff to check item quantities, calculate weight bills, and mark delivery status.</p>
               </div>
             </div>
           </div>
@@ -3655,7 +3648,7 @@
           <div class="pt-1">
             <button type="button" onclick="markAllCurrentOrdersDelivered(true)" class="w-full py-2 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-xl text-xs border border-emerald-200 transition flex items-center justify-center gap-1.5 active:scale-95">
               <i data-lucide="check-check" class="w-4 h-4 text-emerald-600"></i>
-              <span>Mark All Existing Orders as Delivered (ഇതുവരെയുള്ള എല്ലാ ഓർഡറുകളും 'Delivered' ആക്കുക)</span>
+              <span>Mark All Existing Orders as Delivered</span>
             </button>
           </div>
         </div>
@@ -3667,7 +3660,7 @@
             <span class="font-bold text-xs text-slate-600">Future Views &amp; Portals</span>
           </div>
           <p class="text-[11px] text-slate-400 leading-relaxed">
-            ഭാവിയിൽ വെയർഹൗസ് / ഗോഡൗൺ സ്റ്റോക്ക് വ്യൂ, കസ്റ്റമർ ലൈവ് ഓർഡർ ട്രാക്കിംഗ് വ്യൂ മുതലായ കൂടുതൽ ലിങ്കുകൾ ഇതിലേക്ക് കൂട്ടിച്ചേർക്കാവുന്നതാണ്.
+            Future extensions like warehouse stock inventory, customer real-time tracking portals, and partner views can be integrated here.
           </p>
         </div>
 

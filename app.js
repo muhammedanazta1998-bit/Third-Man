@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Third Man - Sales & Incentive Dashboard
  * Robust, production-grade client application logic
  */
@@ -1031,11 +1031,11 @@ function purgeUnwantedDummyProducts(syncToCloud = true) {
   return deduplicateProductsList(products, syncToCloud);
 }
 
-// 1-Click Action to Clean Demo Products
-function cleanAllDemoProductsPrompt() {
+// Lock catalog to user's 6 confirmed official products
+function resetToOfficialProductsPrompt() {
   showConfirmModal({
-    title: 'Reset to My 6 Confirmed Products?',
-    message: `This will clear all unwanted/sample varieties and lock the catalog to your 6 official rice products:
+    title: 'Lock to My 6 Official Products?',
+    message: `This will lock the catalog strictly to your 6 official confirmed rice varieties:
       <ul class="list-disc pl-5 mt-2 space-y-1 text-slate-700 font-bold">
         <li>Mohabbath Green [Kaima • 26kg]</li>
         <li>Mohabbath Gold [Kaima • 26kg]</li>
@@ -1045,7 +1045,7 @@ function cleanAllDemoProductsPrompt() {
         <li>JMT Rose 2nd [Other • 26kg]</li>
       </ul>`,
     hint: '🛡️ Any custom rates or images you set for these products will be preserved.',
-    confirmText: 'Keep Only My Products',
+    confirmText: 'Keep Only Official Products',
     confirmClass: 'bg-blue-600 hover:bg-blue-700 text-white',
     onConfirm: () => {
       products = deduplicateProductsList(USER_CONFIRMED_PRODUCTS, true);
@@ -1053,7 +1053,8 @@ function cleanAllDemoProductsPrompt() {
     }
   });
 }
-window.cleanAllDemoProductsPrompt = cleanAllDemoProductsPrompt;
+window.resetToOfficialProductsPrompt = resetToOfficialProductsPrompt;
+window.cleanAllDemoProductsPrompt = resetToOfficialProductsPrompt;
 
 // ==================== GOOGLE FIREBASE CLOUD REALTIME SYNC ====================
 let db = null;
@@ -1526,8 +1527,8 @@ function markAllCurrentOrdersDelivered(interactive = false) {
   if (interactive) {
     const pendingCount = (orders || []).filter(o => o.dispatchStatus !== 'Delivered').length;
     const msg = pendingCount > 0 
-      ? `നിലവിലുള്ള ${pendingCount} പെൻഡിങ് ഓർഡറുകളും 'Delivered' ആയി മാർക്ക് ചെയ്യണമോ?\n(Mark all ${pendingCount} pending orders as Delivered?)`
-      : `ഇതുവരെയുള്ള എല്ലാ ഓർഡറുകളും 'Delivered' ആയി മാർക്ക് ചെയ്യണമോ?\n(Mark all existing orders as Delivered?)`;
+      ? `Mark all ${pendingCount} pending orders as Delivered?`
+      : `Mark all existing orders as Delivered?`;
     if (!confirm(msg)) return;
   }
 
@@ -5193,24 +5194,6 @@ if (typeof window !== 'undefined') {
   });
 }
 
-function seedSampleMultiMonthDataPrompt() {
-  showSafeConfirmModal({
-    title: 'Load Multi-Month Sample Sales Data?',
-    message: 'This will add realistic sample orders across multiple months (October 2026, September 2026, January 2026, etc.) so you can test all month/year filters, date ranges, and incentive achievements. Any existing real orders will be safely preserved.',
-    confirmText: 'Load Multi-Month Data',
-    cancelText: 'Cancel',
-    isDanger: false,
-    icon: 'sparkles',
-    onConfirm: () => {
-      seedInitialDemoData();
-      populateFilterYearSelect();
-      const histYear = document.getElementById('historyYearSelect')?.value || 2026;
-      renderMonthlyHistoryList(histYear);
-      updateDashboard();
-      showNotification('Multi-month sample sales data loaded successfully!');
-    }
-  });
-}
 
 function updateDashboard() {
   try {
@@ -6021,10 +6004,10 @@ function shareDeliveryPortalWhatsApp() {
   const text =
 `🚚 *THIRD MAN - DELIVERY & DISPATCH PORTAL*
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-ഷോപ്പിലെയും വണ്ടിയിലെയും സ്റ്റാഫിനുള്ള ഓർഡർ ഡെലിവറി പോർട്ടൽ ലിങ്ക്:
+Delivery portal link for shop and delivery vehicle staff:
 ${portalUrl}
 
-✅ ഓർഡറുകൾ കാണാനും ഡെലിവറി മാർക്ക് ചെയ്യാനും ഈ ലിങ്ക് ഉപയോഗിക്കാം.`;
+✅ Open link to view assigned orders and update delivery status.`;
 
   const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
   window.open(whatsappUrl, '_blank');
@@ -8736,7 +8719,7 @@ function renderCustomerMembersList() {
   }
 }
 
-// ==================== DATA BACKUP & DEMO DATA ====================
+// ==================== DATA BACKUP & RESTORE ====================
 
 function exportDataJSON() {
   const exportPayload = {
@@ -8877,672 +8860,13 @@ function handleImportDataJSON(event) {
   reader.readAsText(file);
 }
 
+// Sample and demo data generation is permanently disabled to safeguard official business data.
 function seedInitialDemoData() {
-  const today = new Date();
-
-  function getDateStr(daysAgo) {
-    const d = new Date(today);
-    d.setDate(today.getDate() - daysAgo);
-    return d.toISOString().split('T')[0];
-  }
-
-  const sampleOrders = [
-    // Current Month (November 2026)
-    {
-      id: 'ORD-1001',
-      date: getDateStr(0),
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        staffName: 'Ustad Shafi',
-        staffRole: 'Chef / Cook',
-        staffPhone: '9847111222',
-        phone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 15, totalKg: 390, perKgRate: 96, totalAmount: 37440 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 15,
-      totalKg: 390,
-      perKgRate: 96,
-      totalAmount: 37440,
-      notes: 'Delivered via KL-11 Pick-up. Driver: Rafeeq.'
-    },
-    {
-      id: 'ORD-1002',
-      date: getDateStr(1),
-      customer: {
-        name: 'Malabar Catering Unit',
-        category: 'Caterer',
-        ownerName: 'Rashid K.',
-        ownerPhone: '9744112233',
-        staffName: 'Musthafa',
-        staffRole: 'Manager',
-        staffPhone: '9744223344',
-        phone: '9744112233',
-        location: 'Kannur'
-      },
-      deliveryStatus: 'Urgent',
-      items: [
-        { productId: 'p2', productName: 'Jeerakasala Rice', bagSize: 50, bagQty: 8, totalKg: 400, perKgRate: 92, totalAmount: 36800 }
-      ],
-      product: { id: 'p2', name: 'Jeerakasala Rice' },
-      bagSize: 50,
-      bagQty: 8,
-      totalKg: 400,
-      perKgRate: 92,
-      totalAmount: 36800,
-      notes: 'Urgent dispatch for wedding banquet.'
-    },
-    {
-      id: 'ORD-1003',
-      date: getDateStr(2),
-      customer: {
-        name: 'Rahmath Hotel & Restaurant',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Ali Akbar',
-        ownerPhone: '9895223344',
-        staffName: 'Chef Hameed',
-        staffRole: 'Chef / Cook',
-        staffPhone: '9895334455',
-        phone: '9895223344',
-        location: 'Calicut Town'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p3', productName: 'Royal 1121 Sella Basmati', bagSize: 26, bagQty: 8, totalKg: 208, perKgRate: 105, totalAmount: 21840 },
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 30, bagQty: 4, totalKg: 120, perKgRate: 96, totalAmount: 11520 }
-      ],
-      product: { id: 'p3', name: 'Royal 1121 Sella Basmati (+1 more)' },
-      bagSize: 26,
-      bagQty: 12,
-      totalKg: 328,
-      perKgRate: 101.7,
-      totalAmount: 33360,
-      notes: 'Weekly recurring supply.'
-    },
-    {
-      id: 'ORD-1004',
-      date: getDateStr(4),
-      customer: {
-        name: 'Zuhra Wedding Caterers',
-        category: 'Caterer',
-        ownerName: 'K.P. Ummer',
-        ownerPhone: '9447556677',
-        staffName: 'Jabir',
-        staffRole: 'Purchase In-charge',
-        staffPhone: '9447889900',
-        phone: '9447556677',
-        location: 'Manjeri'
-      },
-      deliveryStatus: 'Urgent',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 50, bagQty: 6, totalKg: 300, perKgRate: 96, totalAmount: 28800 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 50,
-      bagQty: 6,
-      totalKg: 300,
-      perKgRate: 96,
-      totalAmount: 28800,
-      notes: 'Delivery arranged to catering site. Function on Saturday.'
-    },
-    {
-      id: 'ORD-1005',
-      date: '2026-11-06',
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'sp_mg', productName: 'Mohabbath Green Kaima Rice', bagSize: 26, bagQty: 50, totalKg: 1300, perKgRate: 98, totalAmount: 127400 }
-      ],
-      product: { id: 'sp_mg', name: 'Mohabbath Green Kaima Rice' },
-      bagSize: 26,
-      bagQty: 50,
-      totalKg: 1300,
-      perKgRate: 98,
-      totalAmount: 127400,
-      notes: 'Bulk weekend mandi stock.'
-    },
-
-    // October 2026 (Last Month) - Target 10T Achieved + Special Brands Turnover Bonus (> ₹15L)
-    {
-      id: 'ORD-2001',
-      date: '2026-10-04',
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'sp_mg', productName: 'Mohabbath Green Kaima Rice', bagSize: 26, bagQty: 120, totalKg: 3120, perKgRate: 98, totalAmount: 305760 }
-      ],
-      product: { id: 'sp_mg', name: 'Mohabbath Green Kaima Rice' },
-      bagSize: 26,
-      bagQty: 120,
-      totalKg: 3120,
-      perKgRate: 98,
-      totalAmount: 305760,
-      notes: 'Monthly bulk dispatch.'
-    },
-    {
-      id: 'ORD-2002',
-      date: '2026-10-10',
-      customer: {
-        name: 'Malabar Catering Unit',
-        category: 'Caterer',
-        ownerName: 'Rashid K.',
-        ownerPhone: '9744112233',
-        location: 'Kannur'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'sp_jas', productName: 'Jasmine Premium Basmati Rice', bagSize: 30, bagQty: 100, totalKg: 3000, perKgRate: 112, totalAmount: 336000 }
-      ],
-      product: { id: 'sp_jas', name: 'Jasmine Premium Basmati Rice' },
-      bagSize: 30,
-      bagQty: 100,
-      totalKg: 3000,
-      perKgRate: 112,
-      totalAmount: 336000,
-      notes: 'Grand wedding reception bulk stock.'
-    },
-    {
-      id: 'ORD-2003',
-      date: '2026-10-16',
-      customer: {
-        name: 'Zuhra Wedding Caterers',
-        category: 'Caterer',
-        ownerName: 'K.P. Ummer',
-        ownerPhone: '9447556677',
-        location: 'Manjeri'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'sp_mgold', productName: 'Mohabbath Gold Biriyani Rice', bagSize: 26, bagQty: 110, totalKg: 2860, perKgRate: 104, totalAmount: 297440 }
-      ],
-      product: { id: 'sp_mgold', name: 'Mohabbath Gold Biriyani Rice' },
-      bagSize: 26,
-      bagQty: 110,
-      totalKg: 2860,
-      perKgRate: 104,
-      totalAmount: 297440,
-      notes: 'Convention centre catering supply.'
-    },
-    {
-      id: 'ORD-2004',
-      date: '2026-10-22',
-      customer: {
-        name: 'Rahmath Hotel & Restaurant',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Ali Akbar',
-        ownerPhone: '9895223344',
-        location: 'Calicut Town'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'sp_mg', productName: 'Mohabbath Green Kaima Rice', bagSize: 26, bagQty: 90, totalKg: 2340, perKgRate: 98, totalAmount: 229320 }
-      ],
-      product: { id: 'sp_mg', name: 'Mohabbath Green Kaima Rice' },
-      bagSize: 26,
-      bagQty: 90,
-      totalKg: 2340,
-      perKgRate: 98,
-      totalAmount: 229320,
-      notes: 'Calicut branch recurring delivery.'
-    },
-    {
-      id: 'ORD-2005',
-      date: '2026-10-28',
-      customer: {
-        name: 'Malabar Catering Unit',
-        category: 'Caterer',
-        ownerName: 'Rashid K.',
-        ownerPhone: '9744112233',
-        location: 'Kannur'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'sp_jas', productName: 'Jasmine Premium Basmati Rice', bagSize: 30, bagQty: 120, totalKg: 3600, perKgRate: 112, totalAmount: 403200 }
-      ],
-      product: { id: 'sp_jas', name: 'Jasmine Premium Basmati Rice' },
-      bagSize: 30,
-      bagQty: 120,
-      totalKg: 3600,
-      perKgRate: 112,
-      totalAmount: 403200,
-      notes: 'Festival banquet special supply.'
-    },
-
-    // September 2026 (Under 10T - Progress 84%)
-    {
-      id: 'ORD-2101',
-      date: '2026-09-08',
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 100, totalKg: 2600, perKgRate: 96, totalAmount: 249600 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 100,
-      totalKg: 2600,
-      perKgRate: 96,
-      totalAmount: 249600
-    },
-    {
-      id: 'ORD-2102',
-      date: '2026-09-17',
-      customer: {
-        name: 'Rahmath Hotel & Restaurant',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Ali Akbar',
-        ownerPhone: '9895223344',
-        location: 'Calicut Town'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p2', productName: 'Jeerakasala Rice', bagSize: 50, bagQty: 50, totalKg: 2500, perKgRate: 92, totalAmount: 230000 }
-      ],
-      product: { id: 'p2', name: 'Jeerakasala Rice' },
-      bagSize: 50,
-      bagQty: 50,
-      totalKg: 2500,
-      perKgRate: 92,
-      totalAmount: 230000
-    },
-    {
-      id: 'ORD-2103',
-      date: '2026-09-25',
-      customer: {
-        name: 'Zuhra Wedding Caterers',
-        category: 'Caterer',
-        ownerName: 'K.P. Ummer',
-        ownerPhone: '9447556677',
-        location: 'Manjeri'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 130, totalKg: 3380, perKgRate: 96, totalAmount: 324480 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 130,
-      totalKg: 3380,
-      perKgRate: 96,
-      totalAmount: 324480
-    },
-
-    // August 2026 (Target 10T Unlocked - 10,800 kg)
-    {
-      id: 'ORD-2201',
-      date: '2026-08-10',
-      customer: {
-        name: 'Malabar Catering Unit',
-        category: 'Caterer',
-        ownerName: 'Rashid K.',
-        ownerPhone: '9744112233',
-        location: 'Kannur'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 150, totalKg: 3900, perKgRate: 96, totalAmount: 374400 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 150,
-      totalKg: 3900,
-      perKgRate: 96,
-      totalAmount: 374400
-    },
-    {
-      id: 'ORD-2202',
-      date: '2026-08-20',
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p2', productName: 'Jeerakasala Rice', bagSize: 50, bagQty: 70, totalKg: 3500, perKgRate: 92, totalAmount: 322000 }
-      ],
-      product: { id: 'p2', name: 'Jeerakasala Rice' },
-      bagSize: 50,
-      bagQty: 70,
-      totalKg: 3500,
-      perKgRate: 92,
-      totalAmount: 322000
-    },
-    {
-      id: 'ORD-2203',
-      date: '2026-08-28',
-      customer: {
-        name: 'Rahmath Hotel & Restaurant',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Ali Akbar',
-        ownerPhone: '9895223344',
-        location: 'Calicut Town'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p3', productName: 'Royal 1121 Sella Basmati', bagSize: 26, bagQty: 130, totalKg: 3380, perKgRate: 105, totalAmount: 354900 }
-      ],
-      product: { id: 'p3', name: 'Royal 1121 Sella Basmati' },
-      bagSize: 26,
-      bagQty: 130,
-      totalKg: 3380,
-      perKgRate: 105,
-      totalAmount: 354900
-    },
-
-    // January to March 2026 (For testing Jan 1 to Jan 20 & Jan 1 to Mar 29 filters)
-    {
-      id: 'ORD-3001',
-      date: '2026-01-04',
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 40, totalKg: 1040, perKgRate: 96, totalAmount: 99840 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 40,
-      totalKg: 1040,
-      perKgRate: 96,
-      totalAmount: 99840
-    },
-    {
-      id: 'ORD-3002',
-      date: '2026-01-11',
-      customer: {
-        name: 'Malabar Catering Unit',
-        category: 'Caterer',
-        ownerName: 'Rashid K.',
-        ownerPhone: '9744112233',
-        location: 'Kannur'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p2', productName: 'Jeerakasala Rice', bagSize: 50, bagQty: 24, totalKg: 1200, perKgRate: 92, totalAmount: 110400 }
-      ],
-      product: { id: 'p2', name: 'Jeerakasala Rice' },
-      bagSize: 50,
-      bagQty: 24,
-      totalKg: 1200,
-      perKgRate: 92,
-      totalAmount: 110400
-    },
-    {
-      id: 'ORD-3003',
-      date: '2026-01-18',
-      customer: {
-        name: 'Rahmath Hotel & Restaurant',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Ali Akbar',
-        ownerPhone: '9895223344',
-        location: 'Calicut Town'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 50, totalKg: 1300, perKgRate: 96, totalAmount: 127400 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 50,
-      totalKg: 1300,
-      perKgRate: 96,
-      totalAmount: 127400
-    },
-    {
-      id: 'ORD-3004',
-      date: '2026-01-26',
-      customer: {
-        name: 'Zuhra Wedding Caterers',
-        category: 'Caterer',
-        ownerName: 'K.P. Ummer',
-        ownerPhone: '9447556677',
-        location: 'Manjeri'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p3', productName: 'Royal 1121 Sella Basmati', bagSize: 30, bagQty: 60, totalKg: 1800, perKgRate: 105, totalAmount: 189000 }
-      ],
-      product: { id: 'p3', name: 'Royal 1121 Sella Basmati' },
-      bagSize: 30,
-      bagQty: 60,
-      totalKg: 1800,
-      perKgRate: 105,
-      totalAmount: 189000
-    },
-    {
-      id: 'ORD-3005',
-      date: '2026-02-12',
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 80, totalKg: 2080, perKgRate: 96, totalAmount: 199680 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 80,
-      totalKg: 2080,
-      perKgRate: 96,
-      totalAmount: 199680
-    },
-    {
-      id: 'ORD-3006',
-      date: '2026-02-24',
-      customer: {
-        name: 'Malabar Catering Unit',
-        category: 'Caterer',
-        ownerName: 'Rashid K.',
-        ownerPhone: '9744112233',
-        location: 'Kannur'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p2', productName: 'Jeerakasala Rice', bagSize: 50, bagQty: 30, totalKg: 1500, perKgRate: 92, totalAmount: 138000 }
-      ],
-      product: { id: 'p2', name: 'Jeerakasala Rice' },
-      bagSize: 50,
-      bagQty: 30,
-      totalKg: 1500,
-      perKgRate: 92,
-      totalAmount: 138000
-    },
-    {
-      id: 'ORD-3007',
-      date: '2026-03-08',
-      customer: {
-        name: 'Rahmath Hotel & Restaurant',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Ali Akbar',
-        ownerPhone: '9895223344',
-        location: 'Calicut Town'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 90, totalKg: 2340, perKgRate: 96, totalAmount: 224640 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 90,
-      totalKg: 2340,
-      perKgRate: 96,
-      totalAmount: 224640
-    },
-    {
-      id: 'ORD-3008',
-      date: '2026-03-22',
-      customer: {
-        name: 'Zuhra Wedding Caterers',
-        category: 'Caterer',
-        ownerName: 'K.P. Ummer',
-        ownerPhone: '9447556677',
-        location: 'Manjeri'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'sp_jas', productName: 'Jasmine Premium Basmati Rice', bagSize: 30, bagQty: 70, totalKg: 2100, perKgRate: 112, totalAmount: 235200 }
-      ],
-      product: { id: 'sp_jas', name: 'Jasmine Premium Basmati Rice' },
-      bagSize: 30,
-      bagQty: 70,
-      totalKg: 2100,
-      perKgRate: 112,
-      totalAmount: 235200
-    },
-    {
-      id: 'ORD-3009',
-      date: '2026-03-28',
-      customer: {
-        name: 'Al-Reem Mandi & Biriyani',
-        category: 'Hotel / Restaurant',
-        ownerName: 'Moideen Haji',
-        ownerPhone: '9847123456',
-        location: 'Kozhikode'
-      },
-      deliveryStatus: 'Normal',
-      items: [
-        { productId: 'p1', productName: 'Wayanadan Kaima Rice', bagSize: 26, bagQty: 55, totalKg: 1430, perKgRate: 96, totalAmount: 137280 }
-      ],
-      product: { id: 'p1', name: 'Wayanadan Kaima Rice' },
-      bagSize: 26,
-      bagQty: 55,
-      totalKg: 1430,
-      perKgRate: 96,
-      totalAmount: 137280
-    }
-  ];
-
-  // Merge sample orders safely without duplicating existing IDs
-  if (!orders || orders.length === 0) {
-    orders = sampleOrders;
-  } else {
-    const existingIds = new Set(orders.map(o => o.id));
-    sampleOrders.forEach(so => {
-      if (!existingIds.has(so.id)) {
-        orders.push(so);
-      }
-    });
-  }
-
-  customers = [
-    {
-      id: 'c1',
-      name: 'Al-Reem Mandi & Biriyani',
-      category: 'Hotel / Restaurant',
-      location: 'Kozhikode',
-      notes: 'Daily biriyani rice buyer',
-      members: [
-        { id: 'm1_1', name: 'Moideen Haji', role: 'Owner', phone: '9847123456', isPrimary: true },
-        { id: 'm1_2', name: 'Ustad Shafi', role: 'Head Chef / Usthad', phone: '9847111222', isPrimary: false },
-        { id: 'm1_3', name: 'Suhail', role: 'Purchase In-charge', phone: '9847333444', isPrimary: false }
-      ],
-      ownerName: 'Moideen Haji',
-      ownerPhone: '9847123456',
-      staffName: 'Ustad Shafi',
-      staffRole: 'Head Chef / Usthad',
-      staffPhone: '9847111222',
-      phone: '9847123456'
-    },
-    {
-      id: 'c2',
-      name: 'Malabar Catering Unit',
-      category: 'Caterer',
-      location: 'Kannur',
-      notes: 'Bulk wedding orders',
-      members: [
-        { id: 'm2_1', name: 'Rashid K.', role: 'Owner', phone: '9744112233', isPrimary: true },
-        { id: 'm2_2', name: 'Musthafa', role: 'Manager', phone: '9744223344', isPrimary: false },
-        { id: 'm2_3', name: 'Chef Ashraf', role: 'Chef / Cook', phone: '9744556677', isPrimary: false }
-      ],
-      ownerName: 'Rashid K.',
-      ownerPhone: '9744112233',
-      staffName: 'Musthafa',
-      staffRole: 'Manager',
-      staffPhone: '9744223344',
-      phone: '9744112233'
-    },
-    {
-      id: 'c3',
-      name: 'Rahmath Hotel & Restaurant',
-      category: 'Hotel / Restaurant',
-      location: 'Calicut Town',
-      notes: 'Weekly recurring supply',
-      members: [
-        { id: 'm3_1', name: 'Ali Akbar', role: 'Managing Partner', phone: '9895223344', isPrimary: true },
-        { id: 'm3_2', name: 'Chef Hameed', role: 'Head Chef / Usthad', phone: '9895334455', isPrimary: false }
-      ],
-      ownerName: 'Ali Akbar',
-      ownerPhone: '9895223344',
-      staffName: 'Chef Hameed',
-      staffRole: 'Head Chef / Usthad',
-      staffPhone: '9895334455',
-      phone: '9895223344'
-    },
-    {
-      id: 'c4',
-      name: 'Zuhra Wedding Caterers',
-      category: 'Caterer',
-      location: 'Manjeri',
-      notes: 'Function caterer',
-      members: [
-        { id: 'm4_1', name: 'K.P. Ummer', role: 'Owner', phone: '9447556677', isPrimary: true },
-        { id: 'm4_2', name: 'Jabir', role: 'Purchase In-charge', phone: '9447889900', isPrimary: false },
-        { id: 'm4_3', name: 'Majeed Usthad', role: 'Head Chef / Usthad', phone: '9447221100', isPrimary: false }
-      ],
-      ownerName: 'K.P. Ummer',
-      ownerPhone: '9447556677',
-      staffName: 'Jabir',
-      staffRole: 'Purchase In-charge',
-      staffPhone: '9447889900',
-      phone: '9447556677'
-    }
-  ];
-
-  saveDataToStorage();
+  console.warn("Sample data generation is permanently disabled. Only official records are permitted.");
 }
 
 function loadSampleDemoData() {
-  seedInitialDemoData();
-  updateDashboard();
-  showNotification('Demo sample data loaded successfully!');
+  console.warn("Sample data generation is permanently disabled. Only official records are permitted.");
 }
 
 // ==================== ACCIDENTAL DELETION SHIELD & RECYCLE BIN ====================
@@ -10142,7 +9466,6 @@ window.syncCloudOrder = syncCloudOrder;
 window.deleteCloudOrder = deleteCloudOrder;
 window.syncCloudCustomer = syncCloudCustomer;
 window.deleteCloudCustomer = deleteCloudCustomer;
-window.loadSampleDemoData = loadSampleDemoData;
 window.setFilterPeriod = setFilterPeriod;
 window.purgeUnwantedDummyProducts = purgeUnwantedDummyProducts;
 window.restoreProductsFromOrdersHistory = restoreProductsFromOrdersHistory;
@@ -11180,7 +10503,6 @@ window.viewMonthOnDashboard = viewMonthOnDashboard;
 window.printMonthlyHistory = printMonthlyHistory;
 window.printInvoice = printInvoice;
 window.printDashboardReport = printDashboardReport;
-window.seedSampleMultiMonthDataPrompt = seedSampleMultiMonthDataPrompt;
 
 // Customer Deduplication Exports
 window.deduplicateCustomersList = deduplicateCustomersList;
