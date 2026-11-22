@@ -19,6 +19,44 @@
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <script>
+    window.EMBEDDED_DEFAULT_LOGO_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
+      <defs>
+        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#1e3a8a"/>
+          <stop offset="100%" stop-color="#09111e"/>
+        </linearGradient>
+        <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#fbbf24"/>
+          <stop offset="100%" stop-color="#d97706"/>
+        </linearGradient>
+        <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+          <stop offset="0%" stop-color="#38bdf8"/>
+          <stop offset="100%" stop-color="#0284c7"/>
+        </linearGradient>
+        <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+          <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.4"/>
+        </filter>
+      </defs>
+      <rect x="10" y="10" width="180" height="180" rx="42" fill="url(#bgGrad)" stroke="url(#goldGrad)" stroke-width="4" filter="url(#shadow)"/>
+      <g fill="url(#goldGrad)" opacity="0.95">
+        <ellipse cx="44" cy="70" rx="7" ry="13" transform="rotate(-35 44 70)"/>
+        <ellipse cx="36" cy="95" rx="7" ry="13" transform="rotate(-20 36 95)"/>
+        <ellipse cx="38" cy="122" rx="7" ry="13" transform="rotate(10 38 122)"/>
+        <ellipse cx="50" cy="146" rx="7" ry="12" transform="rotate(35 50 146)"/>
+      </g>
+      <g fill="url(#goldGrad)" opacity="0.95">
+        <ellipse cx="156" cy="70" rx="7" ry="13" transform="rotate(35 156 70)"/>
+        <ellipse cx="164" cy="95" rx="7" ry="13" transform="rotate(20 164 95)"/>
+        <ellipse cx="162" cy="122" rx="7" ry="13" transform="rotate(-10 162 122)"/>
+        <ellipse cx="150" cy="146" rx="7" ry="12" transform="rotate(-35 150 146)"/>
+      </g>
+      <circle cx="100" cy="95" r="45" fill="#0b1324" stroke="url(#cyanGrad)" stroke-width="2.5"/>
+      <path d="M86 58 L100 44 L114 58 L107 63 L100 56 L93 63 Z" fill="url(#goldGrad)"/>
+      <text x="100" y="107" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="1">TM</text>
+      <rect x="28" y="152" width="144" height="26" rx="13" fill="url(#goldGrad)"/>
+      <text x="100" y="169" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="11" font-weight="900" fill="#09111e" text-anchor="middle" letter-spacing="1.5">THIRD MAN</text>
+    </svg>`);
+
     (function() {
       try {
         var customLogo = localStorage.getItem('thirdman_app_logo');
@@ -64,7 +102,18 @@
   <header class="bg-slate-900 text-white sticky top-0 z-40 shadow-lg border-b border-slate-800">
     <div class="max-w-7xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between">
       <div class="flex items-center gap-3 min-w-0">
-        <img src="logo.svg" alt="Third Man Logo" class="w-10 h-10 rounded-xl shrink-0 shadow-md">
+        <img id="deliveryHeaderLogo" src="uploaded-logo.png" onerror="if(this.src.indexOf('uploaded-logo.png')!==-1){this.src='logo.svg';}else if(window.EMBEDDED_DEFAULT_LOGO_SVG){this.src=window.EMBEDDED_DEFAULT_LOGO_SVG;}" alt="Third Man Logo" class="w-10 h-10 rounded-xl shrink-0 shadow-md object-contain bg-slate-900 p-0.5">
+        <script>
+          (function() {
+            try {
+              var customLogo = localStorage.getItem('thirdman_app_logo');
+              var img = document.getElementById('deliveryHeaderLogo');
+              if (img && customLogo) {
+                img.src = customLogo;
+              }
+            } catch(e) {}
+          })();
+        </script>
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
             <h1 class="font-black text-sm sm:text-base tracking-tight text-white truncate">THIRD MAN</h1>
@@ -512,6 +561,7 @@
         // 3. Concurrently trigger direct get() fetch so we don't depend solely on onSnapshot stream
         fetchOrdersDirect();
         syncQuickRemarksFromCloud();
+        syncLogoFromCloud();
 
         // 4. REST fallback after 2.5 seconds if cloud connection is lagging
         setTimeout(() => {
@@ -800,9 +850,10 @@
         if (searchQuery) {
           const custName = getCustName(o).toLowerCase();
           const town = getCustTown(o).toLowerCase();
+          const landmark = getCustLandmark(o).toLowerCase();
           const oid = (o.id || '').toLowerCase();
           const itemsText = (o.items || []).map(i => i.productName || '').join(' ').toLowerCase();
-          if (!custName.includes(searchQuery) && !town.includes(searchQuery) && !oid.includes(searchQuery) && !itemsText.includes(searchQuery)) {
+          if (!custName.includes(searchQuery) && !town.includes(searchQuery) && !landmark.includes(searchQuery) && !oid.includes(searchQuery) && !itemsText.includes(searchQuery)) {
             return false;
           }
         }
@@ -873,7 +924,7 @@
                 <thead>
                   <tr class="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
                     <th class="py-3 px-3">Order ID</th>
-                    <th class="py-3 px-3">Customer &amp; Town</th>
+                    <th class="py-3 px-3">Customer &amp; Landmark</th>
                     <th class="py-3 px-3">Items, Weight &amp; KG Rate</th>
                     <th class="py-3 px-3 text-right">Total Bags &amp; KG</th>
                     <th class="py-3 px-3 text-right">Bill Amount</th>
@@ -920,8 +971,10 @@
 
       const custName = getCustName(o);
       const custTown = getCustTown(o);
+      const custLandmark = getCustLandmark(o);
       const custPhone = getCustPhone(o);
       const cleanPhone = custPhone.replace(/\D/g, '');
+      const displayLocation = custLandmark || custTown;
 
       // Priority pill
       const urgencyPill = isUrgent
@@ -946,7 +999,7 @@
           <td class="py-2.5 px-3">
             <div class="font-black text-slate-900 text-xs sm:text-sm tracking-tight">${escapeHtml(custName)}</div>
             <div class="flex items-center gap-1.5 mt-0.5 flex-wrap">
-              ${custTown ? `<span class="text-[10px] font-bold text-blue-800 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200">📍 ${escapeHtml(custTown)}</span>` : ''}
+              ${displayLocation ? `<span class="text-[10px] font-bold text-blue-800 bg-blue-50 px-1.5 py-0.2 rounded border border-blue-200" title="Landmark: ${escapeHtml(custLandmark || 'None')} • Town: ${escapeHtml(custTown || 'None')}">📍 ${escapeHtml(displayLocation)}</span>` : ''}
               ${cleanPhone ? `<a href="tel:${cleanPhone}" class="text-[10px] font-bold text-emerald-700 hover:underline inline-flex items-center gap-0.5">📞 ${escapeHtml(cleanPhone)}</a>` : ''}
             </div>
           </td>
@@ -1038,8 +1091,10 @@
 
       const custName = getCustName(o);
       const custTown = getCustTown(o);
+      const custLandmark = getCustLandmark(o);
       const custPhone = getCustPhone(o);
       const cleanPhone = custPhone.replace(/\D/g, '');
+      const displayLocation = custLandmark || custTown;
 
       // Priority pill
       const urgencyPill = isUrgent
@@ -1073,11 +1128,11 @@
             </div>
           </div>
 
-          <!-- Customer Shop Name & Location -->
+          <!-- Customer Shop Name & Landmark / Location -->
           <div class="space-y-1">
             <h2 class="font-black text-base sm:text-lg text-slate-900 tracking-tight leading-tight">${escapeHtml(custName)}</h2>
             <div class="flex items-center gap-1.5 flex-wrap text-xs text-slate-600">
-              ${custTown ? `<span class="inline-flex items-center gap-1 font-bold bg-blue-50 text-blue-800 px-2 py-0.5 rounded-lg border border-blue-200/60">📍 ${escapeHtml(custTown)}</span>` : ''}
+              ${displayLocation ? `<span class="inline-flex items-center gap-1 font-bold bg-blue-50 text-blue-800 px-2 py-0.5 rounded-lg border border-blue-200/60" title="Landmark: ${escapeHtml(custLandmark || 'None')} • Town: ${escapeHtml(custTown || 'None')}">📍 ${escapeHtml(displayLocation)}</span>` : ''}
               ${cleanPhone ? `
                 <a href="tel:${cleanPhone}" class="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-lg transition active:scale-95">
                   <i data-lucide="phone" class="w-3 h-3 text-emerald-600"></i>
@@ -1232,6 +1287,39 @@
       return '';
     }
 
+    function getCustLandmark(o) {
+      if (!o || !o.customer) return '';
+      let lm = '';
+      if (typeof o.customer === 'object') {
+        if (o.customer.landmark && typeof o.customer.landmark === 'string' && o.customer.landmark.trim()) {
+          lm = o.customer.landmark.trim();
+        } else if (o.customer.place && typeof o.customer.place === 'string' && o.customer.place.trim() && o.customer.place !== o.customer.town && o.customer.place !== o.customer.area) {
+          lm = o.customer.place.trim();
+        }
+      }
+      if (!lm) {
+        try {
+          const rawCusts = localStorage.getItem('biriyani_rice_customers');
+          if (rawCusts) {
+            const custs = JSON.parse(rawCusts);
+            if (Array.isArray(custs)) {
+              const cName = getCustName(o).toLowerCase();
+              const cId = (typeof o.customer === 'object' && o.customer.id) ? o.customer.id : null;
+              const found = custs.find(c => (cId && c.id === cId) || (c.name && c.name.toLowerCase() === cName));
+              if (found) {
+                if (found.landmark && typeof found.landmark === 'string' && found.landmark.trim()) {
+                  lm = found.landmark.trim();
+                } else if (found.place && typeof found.place === 'string' && found.place.trim() && found.place !== found.town && found.place !== found.area) {
+                  lm = found.place.trim();
+                }
+              }
+            }
+          }
+        } catch (e) {}
+      }
+      return lm || '';
+    }
+
     function getCustPhone(o) {
       if (!o.customer) return '';
       if (typeof o.customer === 'object') {
@@ -1336,6 +1424,24 @@
             }
           }
         }).catch(() => {});
+      } catch (e) {}
+    }
+
+    function syncLogoFromCloud() {
+      if (!db) return;
+      try {
+        db.collection('settings').doc('app_config').onSnapshot(doc => {
+          if (doc && doc.exists) {
+            const cfg = doc.data();
+            if (cfg && cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
+              try {
+                localStorage.setItem('thirdman_app_logo', cfg.appLogo);
+              } catch (e) {}
+              const logoEl = document.getElementById('deliveryHeaderLogo');
+              if (logoEl) logoEl.src = cfg.appLogo;
+            }
+          }
+        }, err => console.warn('Could not sync logo in delivery portal:', err));
       } catch (e) {}
     }
 
@@ -1556,6 +1662,14 @@
     function startDeliveryApp() {
       updateViewModeButtons();
       renderQuickRemarkChips();
+      try {
+        const customLogo = localStorage.getItem('thirdman_app_logo');
+        const logoEl = document.getElementById('deliveryHeaderLogo');
+        if (logoEl) {
+          if (customLogo) logoEl.src = customLogo;
+          else logoEl.src = 'uploaded-logo.png';
+        }
+      } catch (e) {}
       initFirebase();
     }
 

@@ -10910,8 +10910,8 @@ function loadAppLogo() {
     if (customLogo) {
       applyAppLogo(customLogo, true);
     } else {
-      // Default logo SVG
-      applyAppLogo(DEFAULT_LOGO_URL, false);
+      // Use uploaded-logo.png if present, fallback to logo.svg
+      applyAppLogo('uploaded-logo.png', false);
     }
   } catch (err) {
     console.error('Error loading app logo:', err);
@@ -10932,8 +10932,12 @@ function applyAppLogo(logoUrl, isCustom = false) {
   const bindImgFallback = (img) => {
     if (!img) return;
     img.onerror = function() {
-      this.onerror = null;
-      this.src = EMBEDDED_DEFAULT_LOGO_SVG;
+      if (this.src && this.src.indexOf('uploaded-logo.png') !== -1) {
+        this.src = DEFAULT_LOGO_URL;
+      } else {
+        this.onerror = null;
+        this.src = EMBEDDED_DEFAULT_LOGO_SVG;
+      }
     };
   };
   bindImgFallback(sidebarImg);
