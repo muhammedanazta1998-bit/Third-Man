@@ -96,16 +96,22 @@
           <input type="text" id="deliverySearchInput" oninput="onSearchChange()" placeholder="Search customer, shop name, town, order ID..." class="w-full text-xs sm:text-sm pl-10 pr-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
         </div>
 
-        <!-- View Mode Switcher (Cards vs Compact Table) -->
-        <div class="flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0">
-          <button type="button" id="btnViewCards" onclick="setViewMode('cards')" title="Cards Grid View" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-white text-slate-900 shadow-2xs">
-            <i data-lucide="layout-grid" class="w-3.5 h-3.5 text-blue-600"></i>
-            <span class="hidden sm:inline">Cards</span>
+        <!-- View Mode Switcher & Edit Remarks Button -->
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button type="button" onclick="openManageRemarksModal()" title="Edit Selection Remarks" class="px-2.5 py-1.5 rounded-xl text-xs font-bold bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition flex items-center gap-1.5 active:scale-95 shadow-2xs">
+            <i data-lucide="edit-3" class="w-3.5 h-3.5 text-blue-600"></i>
+            <span class="hidden sm:inline">Edit Remarks</span>
           </button>
-          <button type="button" id="btnViewTable" onclick="setViewMode('table')" title="Compact Desktop Table View" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
-            <i data-lucide="table" class="w-3.5 h-3.5 text-indigo-600"></i>
-            <span class="hidden sm:inline">Compact Table</span>
-          </button>
+          <div class="flex items-center gap-0.5 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button type="button" id="btnViewCards" onclick="setViewMode('cards')" title="Cards Grid View" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 bg-white text-slate-900 shadow-2xs">
+              <i data-lucide="layout-grid" class="w-3.5 h-3.5 text-blue-600"></i>
+              <span class="hidden sm:inline">Cards</span>
+            </button>
+            <button type="button" id="btnViewTable" onclick="setViewMode('table')" title="Compact Desktop Table View" class="px-2.5 py-1.5 rounded-lg text-xs font-bold transition flex items-center gap-1.5 text-slate-600 hover:text-slate-900">
+              <i data-lucide="table" class="w-3.5 h-3.5 text-indigo-600"></i>
+              <span class="hidden sm:inline">Compact Table</span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -204,19 +210,21 @@
       <div class="p-4 sm:p-5 space-y-4">
         <!-- Quick Remark Chips -->
         <div>
-          <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1.5">Quick Delivery Remarks:</label>
-          <div class="flex flex-wrap gap-1.5">
-            <button type="button" onclick="appendQuickRemark('Handed over to Chef / Cook')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">👨‍🍳 Handed to Chef</button>
-            <button type="button" onclick="appendQuickRemark('Delivered at Shop / Hotel')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">🏪 Delivered at Shop</button>
-            <button type="button" onclick="appendQuickRemark('Received by Owner / Manager')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">👑 Received by Owner</button>
-            <button type="button" onclick="appendQuickRemark('Cash payment collected')" class="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">💵 Cash Collected</button>
-            <button type="button" onclick="appendQuickRemark('Gave to Kitchen staff')" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95">🥘 Kitchen Staff</button>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">Quick Delivery Remarks:</label>
+            <button type="button" onclick="openManageRemarksModal()" class="text-[11px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 hover:underline active:scale-95 transition">
+              <i data-lucide="edit-3" class="w-3 h-3 text-blue-600"></i>
+              <span>Edit Remarks</span>
+            </button>
+          </div>
+          <div id="quickRemarksContainer" class="flex flex-wrap gap-1.5">
+            <!-- Rendered dynamically -->
           </div>
         </div>
 
         <!-- Custom Notes Textarea -->
         <div>
-          <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">Staff Delivery Note / Vehicle Details:</label>
+          <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-1">Staff Delivery Remarks / Vehicle Details:</label>
           <textarea id="modalDeliveryNoteInput" rows="3" placeholder="e.g. Delivered 35 bags to Chef Moideen, driver Ramesh vehicle KL-07-CB-4560..." class="w-full text-xs sm:text-sm p-3 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"></textarea>
         </div>
 
@@ -230,6 +238,69 @@
             <span id="btnConfirmSubmitText">Mark as Delivered</span>
           </button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MANAGE SELECTION REMARKS MODAL -->
+  <div id="manageRemarksModal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-5 hidden">
+    <div class="bg-white rounded-3xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
+      <!-- Modal Header -->
+      <div class="bg-slate-900 text-white p-4 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-2.5">
+          <div class="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center">
+            <i data-lucide="edit-3" class="w-4 h-4"></i>
+          </div>
+          <div>
+            <h3 class="font-extrabold text-sm text-white">Edit Selection Remarks</h3>
+            <p class="text-[11px] text-slate-400">Manage Quick Delivery Remarks Presets</p>
+          </div>
+        </div>
+        <button type="button" onclick="closeManageRemarksModal()" class="w-7 h-7 rounded-lg text-slate-400 hover:text-white flex items-center justify-center">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+
+      <!-- Modal Body -->
+      <div class="p-4 sm:p-5 space-y-4 overflow-y-auto flex-1">
+        <!-- Add New Remark Form -->
+        <div class="p-3 bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
+          <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider">Add New Quick Remark:</label>
+          <div class="flex gap-2">
+            <input type="text" id="newRemarkTextInput" placeholder="e.g. 📦 Left at Security / Gate" class="flex-1 text-xs p-2.5 bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition" onkeydown="if(event.key==='Enter'){event.preventDefault();addNewQuickRemark();}">
+            <button type="button" onclick="addNewQuickRemark()" class="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl transition shadow-xs active:scale-95 shrink-0 flex items-center gap-1">
+              <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+              <span>Add</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Remarks List -->
+        <div>
+          <label class="block text-[11px] font-bold text-slate-700 uppercase tracking-wider mb-2">Current Selection Remarks (<span id="manageRemarksCount">0</span>):</label>
+          <div id="manageRemarksList" class="space-y-2">
+            <!-- Dynamically populated list of remark inputs with delete buttons -->
+          </div>
+        </div>
+
+        <!-- Reset Button -->
+        <div class="pt-2 flex justify-between items-center border-t border-slate-100">
+          <button type="button" onclick="resetQuickRemarksToDefault()" class="text-xs text-rose-600 hover:text-rose-700 font-bold flex items-center gap-1 hover:underline">
+            <i data-lucide="rotate-ccw" class="w-3.5 h-3.5"></i>
+            <span>Reset to Defaults</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Modal Footer -->
+      <div class="p-4 bg-slate-50 border-t border-slate-200 flex items-center gap-2 shrink-0">
+        <button type="button" onclick="closeManageRemarksModal()" class="flex-1 py-2.5 bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs transition">
+          Cancel
+        </button>
+        <button type="button" onclick="saveQuickRemarksFromManageModal()" class="flex-2 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs transition shadow-sm active:scale-95 flex items-center justify-center gap-1.5">
+          <i data-lucide="check" class="w-4 h-4"></i>
+          <span>Save Changes</span>
+        </button>
       </div>
     </div>
   </div>
@@ -440,6 +511,7 @@
 
         // 3. Concurrently trigger direct get() fetch so we don't depend solely on onSnapshot stream
         fetchOrdersDirect();
+        syncQuickRemarksFromCloud();
 
         // 4. REST fallback after 2.5 seconds if cloud connection is lagging
         setTimeout(() => {
@@ -907,8 +979,9 @@
           <td class="py-2.5 px-3">
             <div class="mb-1">${statusPill}</div>
             ${o.deliveryNote ? `
-              <div class="text-[10px] text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 max-w-[200px] truncate" title="${escapeHtml(o.deliveryNote)}">
-                🚚 ${escapeHtml(o.deliveryNote)}
+              <div class="text-[11px] font-medium text-emerald-950 bg-emerald-50/95 px-2 py-1 rounded-lg border border-emerald-200 max-w-[260px] break-words mt-1 leading-snug shadow-2xs" title="${escapeHtml(o.deliveryNote)}">
+                <span class="font-extrabold text-emerald-800">🚚 Remarks:</span> ${escapeHtml(o.deliveryNote)}
+                ${o.deliveredAt ? `<div class="text-[9px] text-emerald-700 font-semibold mt-0.5">⏰ ${formatTime(o.deliveredAt)}</div>` : ''}
               </div>
             ` : ''}
             ${o.notes ? `
@@ -1087,13 +1160,18 @@
 
           <!-- Delivery Note / Remarks (if previously added) -->
           ${o.deliveryNote ? `
-            <div class="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex items-start justify-between gap-2">
-              <div>
-                <span class="font-bold">🚚 Delivery Note:</span>
-                <span class="ml-1">${escapeHtml(o.deliveryNote)}</span>
-                ${o.deliveredAt ? `<div class="text-[10px] text-emerald-700 mt-0.5">⏰ ${formatTime(o.deliveredAt)}</div>` : ''}
+            <div class="p-3 rounded-2xl bg-emerald-50/90 border border-emerald-200 text-xs text-emerald-950 flex items-start justify-between gap-2 shadow-2xs">
+              <div class="space-y-0.5 flex-1">
+                <div class="font-black text-emerald-900 flex items-center gap-1.5">
+                  <i data-lucide="message-square" class="w-3.5 h-3.5 text-emerald-600"></i>
+                  <span>Delivery Remarks:</span>
+                </div>
+                <div class="font-semibold text-emerald-950 leading-relaxed text-xs sm:text-[13px] pl-5">
+                  ${escapeHtml(o.deliveryNote)}
+                </div>
+                ${o.deliveredAt ? `<div class="text-[10px] text-emerald-700 font-bold pl-5 mt-1">⏰ Delivered: ${formatTime(o.deliveredAt)}</div>` : ''}
               </div>
-              <button type="button" onclick="openDeliveryActionModal('${o.id}', 'note_only')" class="text-[11px] text-blue-700 font-bold hover:underline shrink-0">Edit</button>
+              <button type="button" onclick="openDeliveryActionModal('${o.id}', 'note_only')" class="px-2.5 py-1 bg-white hover:bg-emerald-100 border border-emerald-200 text-[11px] text-emerald-800 font-bold rounded-lg hover:underline shrink-0 transition active:scale-95 shadow-2xs">Edit Remark</button>
             </div>
           ` : ''}
 
@@ -1207,11 +1285,179 @@
       }).catch(err => alert(err.message));
     }
 
+    // ==================== QUICK DELIVERY REMARKS MANAGEMENT ====================
+    const STORAGE_QUICK_REMARKS = 'thirdman_delivery_quick_remarks';
+    const DEFAULT_QUICK_REMARKS = [
+      '👨‍🍳 Handed over to Chef / Cook',
+      '🏪 Delivered at Shop / Hotel',
+      '👑 Received by Owner / Manager',
+      '💵 Cash payment collected',
+      '🥘 Gave to Kitchen staff'
+    ];
+
+    function getQuickRemarks() {
+      try {
+        const raw = localStorage.getItem(STORAGE_QUICK_REMARKS);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.filter(s => typeof s === 'string' && s.trim().length > 0);
+          }
+        }
+      } catch (e) {}
+      return [...DEFAULT_QUICK_REMARKS];
+    }
+
+    function saveQuickRemarks(arr) {
+      const cleanArr = Array.isArray(arr) ? arr.map(s => String(s || '').trim()).filter(Boolean) : [...DEFAULT_QUICK_REMARKS];
+      try {
+        localStorage.setItem(STORAGE_QUICK_REMARKS, JSON.stringify(cleanArr));
+      } catch (e) {}
+      if (db) {
+        try {
+          db.collection('settings').doc('delivery_config').set({
+            quickRemarks: cleanArr,
+            updatedAt: new Date().toISOString()
+          }, { merge: true }).catch(err => console.warn('Could not sync quickRemarks to Firestore:', err));
+        } catch (err) {}
+      }
+      renderQuickRemarkChips();
+    }
+
+    function syncQuickRemarksFromCloud() {
+      if (!db) return;
+      try {
+        db.collection('settings').doc('delivery_config').get().then(doc => {
+          if (doc && doc.exists) {
+            const data = doc.data();
+            if (data && Array.isArray(data.quickRemarks) && data.quickRemarks.length > 0) {
+              localStorage.setItem(STORAGE_QUICK_REMARKS, JSON.stringify(data.quickRemarks));
+              renderQuickRemarkChips();
+            }
+          }
+        }).catch(() => {});
+      } catch (e) {}
+    }
+
+    function renderQuickRemarkChips() {
+      const container = document.getElementById('quickRemarksContainer');
+      if (!container) return;
+      const remarks = getQuickRemarks();
+      if (remarks.length === 0) {
+        container.innerHTML = `<span class="text-xs text-slate-400 italic">No quick remarks saved. Click 'Edit Remarks' to add.</span>`;
+        return;
+      }
+      container.innerHTML = remarks.map(rem => {
+        return `<button type="button" onclick="appendQuickRemark(${JSON.stringify(rem)})" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95 flex items-center gap-1 shadow-2xs"><span>${escapeHtml(rem)}</span></button>`;
+      }).join('');
+      if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function openManageRemarksModal() {
+      const modal = document.getElementById('manageRemarksModal');
+      if (!modal) return;
+      const listEl = document.getElementById('manageRemarksList');
+      const remarks = getQuickRemarks();
+      if (listEl) {
+        listEl.innerHTML = remarks.map(rem => `
+          <div class="manage-remark-row flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200">
+            <input type="text" class="manage-remark-input flex-1 text-xs p-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 font-medium text-slate-800" value="${escapeHtml(rem)}">
+            <button type="button" onclick="this.closest('.manage-remark-row').remove(); updateManageRemarksCount();" class="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition" title="Delete">
+              <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        `).join('');
+      }
+      const newInp = document.getElementById('newRemarkTextInput');
+      if (newInp) newInp.value = '';
+      updateManageRemarksCount();
+      modal.classList.remove('hidden');
+      if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function closeManageRemarksModal() {
+      const modal = document.getElementById('manageRemarksModal');
+      if (modal) modal.classList.add('hidden');
+    }
+
+    function updateManageRemarksCount() {
+      const listEl = document.getElementById('manageRemarksList');
+      const countEl = document.getElementById('manageRemarksCount');
+      if (countEl && listEl) {
+        countEl.textContent = listEl.querySelectorAll('.manage-remark-row').length;
+      }
+    }
+
+    function addNewQuickRemark() {
+      const newInp = document.getElementById('newRemarkTextInput');
+      const val = (newInp?.value || '').trim();
+      if (!val) return;
+      const listEl = document.getElementById('manageRemarksList');
+      if (!listEl) return;
+      const row = document.createElement('div');
+      row.className = 'manage-remark-row flex items-center gap-2 bg-slate-50 p-2 rounded-xl border border-slate-200';
+      row.innerHTML = `
+        <input type="text" class="manage-remark-input flex-1 text-xs p-2 bg-white border border-slate-200 rounded-lg focus:ring-2 focus:ring-blue-500/20 font-medium text-slate-800" value="${escapeHtml(val)}">
+        <button type="button" onclick="this.closest('.manage-remark-row').remove(); updateManageRemarksCount();" class="p-1.5 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition" title="Delete">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      `;
+      listEl.appendChild(row);
+      newInp.value = '';
+      newInp.focus();
+      updateManageRemarksCount();
+      if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function saveQuickRemarksFromManageModal() {
+      const listEl = document.getElementById('manageRemarksList');
+      if (!listEl) return;
+      const inputs = listEl.querySelectorAll('.manage-remark-input');
+      const newRemarks = [];
+      inputs.forEach(inp => {
+        const v = inp.value.trim();
+        if (v) newRemarks.push(v);
+      });
+      if (newRemarks.length === 0) {
+        alert('കുറഞ്ഞത് ഒരു റിമാർക്ക് എങ്കിലും ഉണ്ടായിരിക്കണം! (Please keep at least one remark)');
+        return;
+      }
+      saveQuickRemarks(newRemarks);
+      closeManageRemarksModal();
+      showToast('✅ Selection remarks updated!');
+    }
+
+    function resetQuickRemarksToDefault() {
+      if (!confirm('എല്ലാ റിമാർക്സുകളും ഡിഫോൾട്ട് ആക്കി റീസെറ്റ് ചെയ്യണമോ? (Reset all quick remarks to default?)')) {
+        return;
+      }
+      saveQuickRemarks([...DEFAULT_QUICK_REMARKS]);
+      openManageRemarksModal();
+      showToast('↺ Quick remarks reset to default!');
+    }
+
+    function appendQuickRemark(text) {
+      const input = document.getElementById('modalDeliveryNoteInput');
+      if (!input) return;
+      const cleanText = String(text || '').trim();
+      if (!cleanText) return;
+      if (input.value && input.value.trim().length > 0) {
+        if (!input.value.includes(cleanText)) {
+          input.value = input.value.trim() + ' • ' + cleanText;
+        }
+      } else {
+        input.value = cleanText;
+      }
+      input.focus();
+    }
+
     function openDeliveryActionModal(orderId, type = 'delivered') {
       activeActionOrderId = orderId;
       activeActionType = type;
       const order = allOrders.find(o => o.id === orderId);
       if (!order) return;
+
+      renderQuickRemarkChips();
 
       const modal = document.getElementById('deliveryActionModal');
       const title = document.getElementById('modalActionTitle');
@@ -1219,10 +1465,10 @@
       const noteInput = document.getElementById('modalDeliveryNoteInput');
       const submitBtnText = document.getElementById('btnConfirmSubmitText');
 
-      if (title) title.textContent = (type === 'delivered') ? 'Confirm Delivery' : 'Update Delivery Note';
+      if (title) title.textContent = (type === 'delivered') ? 'Confirm Delivery' : 'Update Delivery Remarks';
       if (subtitle) subtitle.textContent = `${getCustName(order)} • ${order.id}`;
       if (noteInput) noteInput.value = order.deliveryNote || '';
-      if (submitBtnText) submitBtnText.textContent = (type === 'delivered') ? 'Mark as Delivered' : 'Save Note';
+      if (submitBtnText) submitBtnText.textContent = (type === 'delivered') ? 'Mark as Delivered' : 'Save Remarks';
 
       if (modal) modal.classList.remove('hidden');
       noteInput?.focus();
@@ -1234,16 +1480,6 @@
       const modal = document.getElementById('deliveryActionModal');
       if (modal) modal.classList.add('hidden');
       activeActionOrderId = null;
-    }
-
-    function appendQuickRemark(text) {
-      const input = document.getElementById('modalDeliveryNoteInput');
-      if (!input) return;
-      if (input.value && !input.value.endsWith(' ')) {
-        input.value += ' • ' + text;
-      } else {
-        input.value = text;
-      }
     }
 
     function submitDeliveryAction() {
@@ -1319,6 +1555,7 @@
 
     function startDeliveryApp() {
       updateViewModeButtons();
+      renderQuickRemarkChips();
       initFirebase();
     }
 
