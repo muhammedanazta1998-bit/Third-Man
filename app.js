@@ -10963,13 +10963,17 @@ function applyAppLogo(logoUrl, isCustom = false) {
       favicon.href = logoUrl;
     }
 
-    // Sync user's custom logo to Apple Touch Icon for iOS 'Add to Home Screen'
-    // iOS Safari SpringBoard requires a valid HTTP(S) URL and fails/omits icon on data: URIs.
-    // Static apple-touch-icon.png in root provides the actual high-res brand photo.
-    if (logoUrl && !logoUrl.startsWith('data:')) {
-      const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+    // Apple Touch Icon for iOS 'Add to Home Screen'
+    // iOS Safari SpringBoard strictly requires a PNG/JPEG URL and completely fails on SVG or data: URIs.
+    // Static apple-touch-icon.png in root provides the actual high-res solid brand photo.
+    const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
+    if (isCustom && logoUrl && !logoUrl.startsWith('data:') && !logoUrl.endsWith('.svg') && !logoUrl.includes('image/svg+xml')) {
       appleTouchIcons.forEach(link => {
         link.href = logoUrl;
+      });
+    } else {
+      appleTouchIcons.forEach(link => {
+        link.href = 'apple-touch-icon.png';
       });
     }
   } else {
@@ -10982,7 +10986,7 @@ function applyAppLogo(logoUrl, isCustom = false) {
     if (settingsImg) settingsImg.classList.add('hidden');
     if (settingsFallback) settingsFallback.classList.remove('hidden');
 
-    const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"]');
+    const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
     appleTouchIcons.forEach(link => {
       link.href = 'apple-touch-icon.png';
     });

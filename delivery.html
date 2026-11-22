@@ -12,17 +12,21 @@
   <link rel="manifest" href="manifest.json">
   <link id="deliveryAppleTouchIcon" rel="apple-touch-icon" href="apple-touch-icon.png">
   <link id="deliveryAppleTouchIcon180" rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon" sizes="167x167" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png">
   <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
   <link rel="icon" type="image/svg+xml" href="logo.svg">
   <script>
     (function() {
       try {
         var customLogo = localStorage.getItem('thirdman_app_logo');
-        if (customLogo && !customLogo.startsWith('data:')) {
-          var at1 = document.getElementById('deliveryAppleTouchIcon');
-          var at2 = document.getElementById('deliveryAppleTouchIcon180');
-          if (at1) at1.href = customLogo;
-          if (at2) at2.href = customLogo;
+        if (customLogo && !customLogo.startsWith('data:') && !customLogo.endsWith('.svg') && !customLogo.includes('.svg') && !customLogo.includes('image/svg+xml')) {
+          var atIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
+          atIcons.forEach(function(link) {
+            link.href = customLogo;
+          });
         }
       } catch (e) {}
     })();
