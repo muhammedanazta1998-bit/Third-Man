@@ -5238,9 +5238,15 @@ function updateDashboard() {
     // 5. Orders Register Table
     renderOrdersTable();
 
-    // 5.1 Update Sidebar Order Count Badge
+    // 5.1 Update Sidebar & Mobile Order Count Badge
     const sideBadge = document.getElementById('sidebarOrderCountBadge');
     if (sideBadge) sideBadge.textContent = orders.length;
+    const mobileBadge = document.getElementById('mobileOrderCountBadge');
+    if (mobileBadge) {
+      mobileBadge.textContent = orders.length;
+      if (orders.length > 0) mobileBadge.classList.remove('hidden');
+      else mobileBadge.classList.add('hidden');
+    }
 
     // 6. Update Leaderboards if modal is open
     const lbModal = document.getElementById('leaderboardModal');
@@ -5461,6 +5467,142 @@ function updateCharts(filteredOrders) {
   }
 }
 
+// ==================== RESPONSIVE MOBILE NAVIGATION (BOTTOM BAR & MORE DRAWER) ====================
+
+let activeMobileTab = 'home'; // 'home', 'orders', 'customers', 'incentives', 'more'
+
+function updateBottomNavActiveTab(tabName) {
+  activeMobileTab = tabName || 'home';
+  const tabIds = ['home', 'orders', 'customers', 'incentives', 'more'];
+
+  tabIds.forEach(t => {
+    const btn = document.getElementById(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
+    if (!btn) return;
+
+    if (t === activeMobileTab) {
+      // Active tab: vibrant indigo accent for icon, label and soft pill background
+      btn.className = 'bottom-nav-tab flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all duration-150 text-indigo-600 bg-indigo-50/70 font-bold active:scale-95';
+    } else {
+      // Inactive tab: subtle muted gray
+      btn.className = 'bottom-nav-tab flex-1 flex flex-col items-center justify-center py-1.5 px-1 rounded-xl transition-all duration-150 text-slate-400 hover:text-slate-600 font-medium active:scale-95';
+    }
+  });
+
+  // Sync mobile orders count badge with total orders
+  const mobileBadge = document.getElementById('mobileOrderCountBadge');
+  const desktopBadge = document.getElementById('sidebarOrderCountBadge');
+  if (mobileBadge) {
+    const count = orders ? orders.length : 0;
+    mobileBadge.textContent = count;
+    if (count > 0) {
+      mobileBadge.classList.remove('hidden');
+    } else {
+      mobileBadge.classList.add('hidden');
+    }
+  }
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function handleBottomNavClick(tabName) {
+  if (tabName === 'home') {
+    closeMobileMoreDrawer();
+    closeAllOpenModals();
+    switchMainView('overview');
+    updateBottomNavActiveTab('home');
+  } else if (tabName === 'orders') {
+    closeMobileMoreDrawer();
+    closeAllOpenModals();
+    switchMainView('sales-register');
+    updateBottomNavActiveTab('orders');
+  } else if (tabName === 'customers') {
+    closeMobileMoreDrawer();
+    openCustomersModal();
+    updateBottomNavActiveTab('customers');
+  } else if (tabName === 'incentives') {
+    closeMobileMoreDrawer();
+    showIncentiveDetails();
+    updateBottomNavActiveTab('incentives');
+  } else if (tabName === 'more') {
+    toggleMobileMoreDrawer();
+  }
+}
+
+function openMobileMoreDrawer() {
+  const overlay = document.getElementById('mobileMoreDrawerOverlay');
+  const drawer = document.getElementById('mobileMoreDrawer');
+  if (!drawer || !overlay) return;
+
+  overlay.classList.remove('hidden');
+  drawer.classList.remove('hidden');
+
+  requestAnimationFrame(() => {
+    overlay.classList.remove('opacity-0');
+    overlay.classList.add('opacity-100');
+    drawer.classList.remove('translate-y-full');
+    drawer.classList.add('translate-y-0');
+  });
+
+  updateBottomNavActiveTab('more');
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function closeMobileMoreDrawer() {
+  const overlay = document.getElementById('mobileMoreDrawerOverlay');
+  const drawer = document.getElementById('mobileMoreDrawer');
+  if (!drawer || !overlay) return;
+
+  overlay.classList.remove('opacity-100');
+  overlay.classList.add('opacity-0');
+  drawer.classList.remove('translate-y-0');
+  drawer.classList.add('translate-y-full');
+
+  setTimeout(() => {
+    overlay.classList.add('hidden');
+    drawer.classList.add('hidden');
+  }, 300);
+
+  // Restore active tab to current main view
+  if (currentMainView === 'sales-register') {
+    updateBottomNavActiveTab('orders');
+  } else {
+    updateBottomNavActiveTab('home');
+  }
+}
+
+function toggleMobileMoreDrawer() {
+  const drawer = document.getElementById('mobileMoreDrawer');
+  if (drawer && !drawer.classList.contains('hidden') && !drawer.classList.contains('translate-y-full')) {
+    closeMobileMoreDrawer();
+  } else {
+    openMobileMoreDrawer();
+  }
+}
+
+function closeAllOpenModals() {
+  const modalIds = [
+    'customersModal',
+    'incentiveDetailModal',
+    'monthlyHistoryModal',
+    'leaderboardModal',
+    'settingsModal',
+    'viewsModal',
+    'shareDeliveryModal',
+    'orderModal'
+  ];
+  modalIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el && !el.classList.contains('hidden')) {
+      el.classList.add('hidden');
+    }
+  });
+}
+
 // ==================== MAIN VIEW SWITCHING (OVERVIEW vs SALES REGISTER) ====================
 
 let currentMainView = 'overview'; // 'overview' or 'sales-register'
@@ -5509,6 +5651,9 @@ function switchMainView(viewName) {
   try {
     localStorage.setItem('biriyani_rice_active_view', currentMainView);
   } catch (e) {}
+
+  // Keep mobile bottom navigation tab synchronized
+  updateBottomNavActiveTab(currentMainView === 'sales-register' ? 'orders' : 'home');
 
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
@@ -5644,6 +5789,12 @@ function renderOrdersTable() {
 
   const sideBadge = document.getElementById('sidebarOrderCountBadge');
   if (sideBadge) sideBadge.textContent = orders.length;
+  const mobileBadge = document.getElementById('mobileOrderCountBadge');
+  if (mobileBadge) {
+    mobileBadge.textContent = orders.length;
+    if (orders.length > 0) mobileBadge.classList.remove('hidden');
+    else mobileBadge.classList.add('hidden');
+  }
 
   if (displayOrders.length === 0) {
     if (emptyState) emptyState.classList.remove('hidden');
@@ -6162,6 +6313,7 @@ function showIncentiveDetails() {
 function closeIncentiveDetails() {
   const modal = document.getElementById('incentiveDetailModal');
   if (modal) modal.classList.add('hidden');
+  updateBottomNavActiveTab(currentMainView === 'sales-register' ? 'orders' : 'home');
 }
 
 // ==================== SETTINGS (MASTER DATA, TOWNS & PRODUCTS) MODAL ====================
@@ -7540,6 +7692,7 @@ function closeCustomersModal() {
   const modal = document.getElementById('customersModal');
   if (modal) modal.classList.add('hidden');
   cancelEditCustomer();
+  updateBottomNavActiveTab(currentMainView === 'sales-register' ? 'orders' : 'home');
 }
 
 function handleCustomerFormSubmit(event) {
@@ -10548,3 +10701,11 @@ window.openViewsModal = openViewsModal;
 window.closeViewsModal = closeViewsModal;
 window.markAllCurrentOrdersDelivered = markAllCurrentOrdersDelivered;
 window.batchSyncOrdersDispatchStatus = batchSyncOrdersDispatchStatus;
+
+// Responsive Mobile Navigation Exports
+window.handleBottomNavClick = handleBottomNavClick;
+window.updateBottomNavActiveTab = updateBottomNavActiveTab;
+window.openMobileMoreDrawer = openMobileMoreDrawer;
+window.closeMobileMoreDrawer = closeMobileMoreDrawer;
+window.toggleMobileMoreDrawer = toggleMobileMoreDrawer;
+window.closeAllOpenModals = closeAllOpenModals;
