@@ -4915,25 +4915,11 @@ function getFilteredOrders() {
 // ==================== MONTHLY SALES & INCENTIVES HISTORY ====================
 
 function openMonthlyHistoryModal() {
-  const modal = document.getElementById('monthlyHistoryModal');
-  if (!modal) return;
-
-  populateFilterYearSelect();
-  modal.classList.remove('hidden');
-
-  const historyYearSelect = document.getElementById('historyYearSelect');
-  const targetYear = historyYearSelect ? parseInt(historyYearSelect.value, 10) || filterSelectedYear : filterSelectedYear;
-
-  renderMonthlyHistoryList(targetYear);
-
-  if (window.lucide && typeof lucide.createIcons === 'function') {
-    lucide.createIcons();
-  }
+  switchMainView('monthly-history');
 }
 
 function closeMonthlyHistoryModal() {
-  const modal = document.getElementById('monthlyHistoryModal');
-  if (modal) modal.classList.add('hidden');
+  switchMainView('overview');
 }
 
 function onHistoryYearChange(event) {
@@ -5117,7 +5103,7 @@ function renderMonthlyHistoryList(targetYear) {
 }
 
 function viewMonthOnDashboard(year, monthIndex) {
-  closeMonthlyHistoryModal();
+  switchMainView('overview');
   setFilterSpecificMonth(year, monthIndex);
   showNotification(`Viewing ${MONTH_NAMES_FULL[monthIndex]} ${year} sales & incentives`);
   window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -5175,12 +5161,12 @@ function printDashboardReport() {
 if (typeof window !== 'undefined') {
   window.addEventListener('beforeprint', () => {
     const invoiceModal = document.getElementById('invoiceModal');
-    const monthlyModal = document.getElementById('monthlyHistoryModal');
+    const monthlyView = document.getElementById('viewMonthlyHistory') || document.getElementById('monthlyHistoryModal');
 
     if (invoiceModal && !invoiceModal.classList.contains('hidden')) {
       document.body.classList.add('printing-invoice');
       document.body.classList.remove('printing-history', 'printing-dashboard');
-    } else if (monthlyModal && !monthlyModal.classList.contains('hidden')) {
+    } else if (monthlyView && !monthlyView.classList.contains('hidden')) {
       document.body.classList.add('printing-history');
       document.body.classList.remove('printing-invoice', 'printing-dashboard');
     } else {
@@ -5248,9 +5234,9 @@ function updateDashboard() {
       else mobileBadge.classList.add('hidden');
     }
 
-    // 6. Update Leaderboards if modal is open
-    const lbModal = document.getElementById('leaderboardModal');
-    if (lbModal && !lbModal.classList.contains('hidden')) {
+    // 6. Update Leaderboards if view is open
+    const lbView = document.getElementById('viewLeaderboard') || document.getElementById('leaderboardModal');
+    if (lbView && !lbView.classList.contains('hidden')) {
       renderLeaderboard();
     }
 
@@ -5506,31 +5492,30 @@ function updateBottomNavActiveTab(tabName) {
   }
 }
 
+let drawerCloseTimeout = null;
+
 function handleBottomNavClick(tabName) {
-  if (tabName === 'home') {
-    closeMobileMoreDrawer();
-    closeAllOpenModals();
-    switchMainView('overview');
-    updateBottomNavActiveTab('home');
-  } else if (tabName === 'orders') {
-    closeMobileMoreDrawer();
-    closeAllOpenModals();
-    switchMainView('sales-register');
-    updateBottomNavActiveTab('orders');
-  } else if (tabName === 'customers') {
-    closeMobileMoreDrawer();
-    openCustomersModal();
-    updateBottomNavActiveTab('customers');
-  } else if (tabName === 'incentives') {
-    closeMobileMoreDrawer();
-    showIncentiveDetails();
-    updateBottomNavActiveTab('incentives');
-  } else if (tabName === 'more') {
+  if (tabName === 'more') {
     toggleMobileMoreDrawer();
+    return;
+  }
+  closeMobileMoreDrawer();
+  if (tabName === 'home') {
+    switchMainView('overview');
+  } else if (tabName === 'orders') {
+    switchMainView('sales-register');
+  } else if (tabName === 'customers') {
+    switchMainView('customers');
+  } else if (tabName === 'incentives') {
+    switchMainView('incentives');
   }
 }
 
 function openMobileMoreDrawer() {
+  if (drawerCloseTimeout) {
+    clearTimeout(drawerCloseTimeout);
+    drawerCloseTimeout = null;
+  }
   const overlay = document.getElementById('mobileMoreDrawerOverlay');
   const drawer = document.getElementById('mobileMoreDrawer');
   if (!drawer || !overlay) return;
@@ -5553,6 +5538,10 @@ function openMobileMoreDrawer() {
 }
 
 function closeMobileMoreDrawer() {
+  if (drawerCloseTimeout) {
+    clearTimeout(drawerCloseTimeout);
+    drawerCloseTimeout = null;
+  }
   const overlay = document.getElementById('mobileMoreDrawerOverlay');
   const drawer = document.getElementById('mobileMoreDrawer');
   if (!drawer || !overlay) return;
@@ -5562,16 +5551,23 @@ function closeMobileMoreDrawer() {
   drawer.classList.remove('translate-y-0');
   drawer.classList.add('translate-y-full');
 
-  setTimeout(() => {
+  drawerCloseTimeout = setTimeout(() => {
     overlay.classList.add('hidden');
     drawer.classList.add('hidden');
+    drawerCloseTimeout = null;
   }, 300);
 
   // Restore active tab to current main view
-  if (currentMainView === 'sales-register') {
-    updateBottomNavActiveTab('orders');
-  } else {
+  if (currentMainView === 'overview') {
     updateBottomNavActiveTab('home');
+  } else if (currentMainView === 'sales-register') {
+    updateBottomNavActiveTab('orders');
+  } else if (currentMainView === 'customers') {
+    updateBottomNavActiveTab('customers');
+  } else if (currentMainView === 'incentives') {
+    updateBottomNavActiveTab('incentives');
+  } else {
+    updateBottomNavActiveTab('more');
   }
 }
 
@@ -5586,14 +5582,13 @@ function toggleMobileMoreDrawer() {
 
 function closeAllOpenModals() {
   const modalIds = [
-    'customersModal',
-    'incentiveDetailModal',
-    'monthlyHistoryModal',
-    'leaderboardModal',
-    'settingsModal',
-    'viewsModal',
+    'customerDetailModal',
+    'editTownModal',
+    'trashModal',
+    'safeConfirmModal',
     'shareDeliveryModal',
-    'orderModal'
+    'orderModal',
+    'invoiceModal'
   ];
   modalIds.forEach(id => {
     const el = document.getElementById(id);
@@ -5607,53 +5602,180 @@ function closeAllOpenModals() {
 
 let currentMainView = 'overview'; // 'overview' or 'sales-register'
 
-function switchMainView(viewName) {
+function switchMainView(viewName, subTab) {
   currentMainView = viewName || 'overview';
 
-  const overviewView = document.getElementById('viewOverview');
-  const salesRegisterView = document.getElementById('viewSalesRegister');
-  const navBtnOverview = document.getElementById('navBtnOverview');
-  const navBtnSalesRegister = document.getElementById('navBtnSalesRegister');
+  const viewIds = [
+    'viewOverview',
+    'viewSalesRegister',
+    'viewCustomers',
+    'viewIncentives',
+    'viewMonthlyHistory',
+    'viewLeaderboard',
+    'viewSettings',
+    'viewViews'
+  ];
+
+  viewIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+
+  const targetViewMap = {
+    'overview': 'viewOverview',
+    'sales-register': 'viewSalesRegister',
+    'customers': 'viewCustomers',
+    'incentives': 'viewIncentives',
+    'monthly-history': 'viewMonthlyHistory',
+    'leaderboard': 'viewLeaderboard',
+    'settings': 'viewSettings',
+    'views': 'viewViews'
+  };
+
+  const targetViewId = targetViewMap[currentMainView] || 'viewOverview';
+  const targetViewEl = document.getElementById(targetViewId);
+  if (targetViewEl) {
+    targetViewEl.classList.remove('hidden');
+  }
+
+  // Header Title & Subtitle
   const mainTitle = document.getElementById('mainViewHeaderTitle');
   const mainSubtitle = document.getElementById('mainViewHeaderSubtitle');
+  const titlesMap = {
+    'overview': { title: 'OVERVIEW', subtitle: 'Performance at a Glance' },
+    'sales-register': { title: 'SALES REGISTER', subtitle: 'Order Entries & Dispatch Ledger' },
+    'customers': { title: 'CUSTOMERS DIRECTORY', subtitle: 'Wholesale Buyers & Contact Management' },
+    'incentives': { title: 'INCENTIVE SCHEME', subtitle: 'Slab Unlocks & Turnover Calculations' },
+    'monthly-history': { title: 'MONTHLY SALES & INCENTIVES', subtitle: 'Multi-Month Performance & Annual Ledger' },
+    'leaderboard': { title: 'SALES LEADERBOARDS', subtitle: 'Live Rankings & Category Champions' },
+    'settings': { title: 'SETTINGS & ADMINISTRATION', subtitle: 'System Configuration, Products & Backups' },
+    'views': { title: 'VIEWS & PORTALS', subtitle: 'Staff Delivery Portals & External Access' }
+  };
+  const info = titlesMap[currentMainView] || titlesMap['overview'];
+  if (mainTitle) mainTitle.textContent = info.title;
+  if (mainSubtitle) mainSubtitle.textContent = info.subtitle;
 
+  // Toggle Date / Period Filter Controls in Top Bar
+  const isDateView = (currentMainView === 'overview' || currentMainView === 'sales-register');
+  const mainPeriodControls = document.getElementById('mainPeriodFilterControls');
+  const periodIndicator = document.getElementById('activePeriodIndicator');
+  const topMonthlyBtn = document.getElementById('topBtnMonthlyHistory');
+  const customRangeBtn = document.getElementById('btnToggleCustomRange');
+  const printBtn = document.getElementById('topBtnPrintDashboard');
+
+  if (mainPeriodControls) {
+    if (isDateView) mainPeriodControls.classList.remove('hidden');
+    else mainPeriodControls.classList.add('hidden');
+  }
+  if (periodIndicator) {
+    if (isDateView) periodIndicator.classList.remove('hidden');
+    else periodIndicator.classList.add('hidden');
+  }
+  if (topMonthlyBtn) {
+    if (isDateView) topMonthlyBtn.classList.remove('hidden');
+    else topMonthlyBtn.classList.add('hidden');
+  }
+  if (customRangeBtn) {
+    if (isDateView) customRangeBtn.classList.remove('hidden');
+    else customRangeBtn.classList.add('hidden');
+  }
+  if (printBtn) {
+    if (isDateView) printBtn.classList.remove('hidden');
+    else printBtn.classList.add('hidden');
+  }
+
+  // Update Desktop Left Sidebar Nav Buttons
+  const sidebarButtons = [
+    { id: 'navBtnOverview', view: 'overview' },
+    { id: 'navBtnSalesRegister', view: 'sales-register' },
+    { id: 'navBtnCustomers', view: 'customers' },
+    { id: 'navBtnLeaderboard', view: 'leaderboard' },
+    { id: 'navBtnMonthlyHistory', view: 'monthly-history' },
+    { id: 'navBtnProducts', view: 'settings', subTab: 'products' },
+    { id: 'navBtnIncentives', view: 'incentives' },
+    { id: 'navBtnViews', view: 'views' },
+    { id: 'navBtnSettings', view: 'settings' }
+  ];
+
+  sidebarButtons.forEach(btnObj => {
+    const btn = document.getElementById(btnObj.id);
+    if (!btn) return;
+    let isActive = false;
+    if (btnObj.id === 'navBtnProducts') {
+      isActive = (currentMainView === 'settings' && subTab === 'products');
+    } else if (btnObj.id === 'navBtnSettings') {
+      isActive = (currentMainView === 'settings' && subTab !== 'products');
+    } else {
+      isActive = (currentMainView === btnObj.view);
+    }
+
+    if (btnObj.id === 'navBtnViews') {
+      if (isActive) {
+        btn.className = 'text-[10px] text-cyan-300 font-bold underline';
+      } else {
+        btn.className = 'text-[10px] text-slate-400 hover:text-cyan-300 font-bold hover:underline';
+      }
+      return;
+    }
+
+    if (btnObj.id === 'navBtnOverview') {
+      if (isActive) {
+        btn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition';
+      } else {
+        btn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition';
+      }
+      return;
+    }
+
+    if (isActive) {
+      btn.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition group';
+    } else {
+      btn.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group';
+    }
+  });
+
+  // Close Mobile More Drawer if open
+  closeMobileMoreDrawer();
+
+  // Mobile Bottom Navigation Sync
+  let mobileTab = 'more';
+  if (currentMainView === 'overview') mobileTab = 'home';
+  else if (currentMainView === 'sales-register') mobileTab = 'orders';
+  else if (currentMainView === 'customers') mobileTab = 'customers';
+  else if (currentMainView === 'incentives') mobileTab = 'incentives';
+  updateBottomNavActiveTab(mobileTab);
+
+  // Trigger View-Specific Renderers
   if (currentMainView === 'sales-register') {
-    if (overviewView) overviewView.classList.add('hidden');
-    if (salesRegisterView) salesRegisterView.classList.remove('hidden');
-
-    if (mainTitle) mainTitle.textContent = 'SALES REGISTER';
-    if (mainSubtitle) mainSubtitle.textContent = 'Order Entries & Dispatch Ledger';
-
-    if (navBtnOverview) {
-      navBtnOverview.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition';
-    }
-    if (navBtnSalesRegister) {
-      navBtnSalesRegister.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition group';
-    }
-
     renderOrdersTable();
-  } else {
-    // 'overview'
-    if (overviewView) overviewView.classList.remove('hidden');
-    if (salesRegisterView) salesRegisterView.classList.add('hidden');
-
-    if (mainTitle) mainTitle.textContent = 'OVERVIEW';
-    if (mainSubtitle) mainSubtitle.textContent = 'Performance at a Glance';
-
-    if (navBtnOverview) {
-      navBtnOverview.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition';
+  } else if (currentMainView === 'customers') {
+    cancelEditCustomer();
+    renderCustomersList();
+  } else if (currentMainView === 'monthly-history') {
+    populateFilterYearSelect();
+    const historyYearSelect = document.getElementById('historyYearSelect');
+    const targetYear = historyYearSelect ? parseInt(historyYearSelect.value, 10) || filterSelectedYear : filterSelectedYear;
+    renderMonthlyHistoryList(targetYear);
+  } else if (currentMainView === 'leaderboard') {
+    renderLeaderboard();
+  } else if (currentMainView === 'settings') {
+    cancelProductEdit();
+    setSettingsTab(subTab || 'towns');
+  } else if (currentMainView === 'incentives') {
+    const dateInput = document.getElementById('schemeEffectiveDateInput');
+    if (dateInput && !dateInput.value) {
+      dateInput.value = incentiveSchemeEffectiveDate || '2026-05-01';
     }
-    if (navBtnSalesRegister) {
-      navBtnSalesRegister.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group';
-    }
+    const filteredOrders = getFilteredOrders();
+    const totalKg = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.totalKg) || 0), 0);
+    updateIncentiveCard(filteredOrders, totalKg);
   }
 
   try {
     localStorage.setItem('biriyani_rice_active_view', currentMainView);
   } catch (e) {}
 
-  // Keep mobile bottom navigation tab synchronized
-  updateBottomNavActiveTab(currentMainView === 'sales-register' ? 'orders' : 'home');
+  window.scrollTo({ top: 0, behavior: 'smooth' });
 
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
@@ -6167,16 +6289,11 @@ ${portalUrl}
 // ==================== VIEWS & PORTALS HUB ====================
 
 function openViewsModal() {
-  const modal = document.getElementById('viewsModal');
-  if (modal) modal.classList.remove('hidden');
-  if (window.lucide && typeof lucide.createIcons === 'function') {
-    lucide.createIcons();
-  }
+  switchMainView('views');
 }
 
 function closeViewsModal() {
-  const modal = document.getElementById('viewsModal');
-  if (modal) modal.classList.add('hidden');
+  switchMainView('overview');
 }
 
 // ==================== INVOICE MODAL & PRINT ====================
@@ -6297,23 +6414,11 @@ function closeInvoiceModal() {
 // ==================== INCENTIVE DETAILS MODAL ====================
 
 function showIncentiveDetails() {
-  const modal = document.getElementById('incentiveDetailModal');
-  if (modal) {
-    modal.classList.remove('hidden');
-    const dateInput = document.getElementById('schemeEffectiveDateInput');
-    if (dateInput) {
-      dateInput.value = incentiveSchemeEffectiveDate || '2026-05-01';
-    }
-  }
-  if (window.lucide && typeof lucide.createIcons === 'function') {
-    lucide.createIcons();
-  }
+  switchMainView('incentives');
 }
 
 function closeIncentiveDetails() {
-  const modal = document.getElementById('incentiveDetailModal');
-  if (modal) modal.classList.add('hidden');
-  updateBottomNavActiveTab(currentMainView === 'sales-register' ? 'orders' : 'home');
+  switchMainView('overview');
 }
 
 // ==================== SETTINGS (MASTER DATA, TOWNS & PRODUCTS) MODAL ====================
@@ -6679,19 +6784,12 @@ function setSettingsTab(tabName) {
 }
 
 function openSettingsModal(initialTab = 'towns') {
-  const modal = document.getElementById('settingsModal');
-  if (modal) modal.classList.remove('hidden');
-  cancelProductEdit();
-  setSettingsTab(initialTab || 'towns');
-  if (window.lucide && typeof lucide.createIcons === 'function') {
-    lucide.createIcons();
-  }
+  switchMainView('settings', initialTab);
 }
 
 function closeSettingsModal() {
-  const modal = document.getElementById('settingsModal');
-  if (modal) modal.classList.add('hidden');
   cancelProductEdit();
+  switchMainView('overview');
 }
 
 function renderSettingsTownsList() {
@@ -7679,20 +7777,12 @@ function setCustomerCategoryFilter(cat) {
 }
 
 function openCustomersModal() {
-  const modal = document.getElementById('customersModal');
-  if (modal) modal.classList.remove('hidden');
-  cancelEditCustomer(); // Ensure form is hidden by default and fields are clean
-  renderCustomersList();
-  if (window.lucide && typeof lucide.createIcons === 'function') {
-    lucide.createIcons();
-  }
+  switchMainView('customers');
 }
 
 function closeCustomersModal() {
-  const modal = document.getElementById('customersModal');
-  if (modal) modal.classList.add('hidden');
   cancelEditCustomer();
-  updateBottomNavActiveTab(currentMainView === 'sales-register' ? 'orders' : 'home');
+  switchMainView('overview');
 }
 
 function handleCustomerFormSubmit(event) {
@@ -7999,10 +8089,9 @@ function editCustomer(customerId) {
       formCard.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
     }
 
-    // Scroll to form inside modal
-    const modalScrollContainer = document.querySelector('#customersModal > div');
-    if (modalScrollContainer) {
-      modalScrollContainer.scrollTo({ top: 0, behavior: 'smooth' });
+    const custFormCard = document.getElementById('customerFormCard');
+    if (custFormCard) {
+      custFormCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
     }
     nameInput?.focus();
   } catch (err) {
@@ -9629,17 +9718,11 @@ let leaderboardActiveTab = 'customers'; // 'customers', 'products', 'champions',
 let leaderboardCustomerMetric = 'kg'; // 'kg', 'revenue', 'orders'
 
 function openLeaderboardModal() {
-  const modal = document.getElementById('leaderboardModal');
-  if (modal) modal.classList.remove('hidden');
-  renderLeaderboard();
-  if (window.lucide && typeof lucide.createIcons === 'function') {
-    lucide.createIcons();
-  }
+  switchMainView('leaderboard');
 }
 
 function closeLeaderboardModal() {
-  const modal = document.getElementById('leaderboardModal');
-  if (modal) modal.classList.add('hidden');
+  switchMainView('overview');
 }
 
 function setLeaderboardPeriod(period) {
