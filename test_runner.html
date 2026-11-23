@@ -1,0 +1,442 @@
+﻿<!DOCTYPE html>
+<html>
+<head><title>Antigravity Deduplication & Canonical Mapping Tests</title></head>
+<body>
+<h2>Antigravity Product & Customer Test Suite</h2>
+<pre id="output">Running tests...</pre>
+
+<div id="testFixtures" style="display:none;">
+  <div id="mainViewHeaderTitle"></div>
+  <div id="mainViewHeaderSubtitle"></div>
+  <div id="customersDirectoryContainer"></div>
+  <div id="customerProfileContainer" class="hidden">
+    <div id="cpAvatar"></div>
+    <div id="cpCustomerName"></div>
+    <div id="cpCategoryBadge"></div>
+    <div id="cpMilestoneBadge"></div>
+    <div id="cpLocationText"></div>
+    <div id="cpQuickContactActions"></div>
+    <div id="cpOwnerName"></div>
+    <div id="cpOwnerPhoneLink"></div>
+    <div id="cpStaffName"></div>
+    <div id="cpStaffRoleLabel"></div>
+    <div id="cpStaffPhoneLink"></div>
+    <div id="cpNotesText"></div>
+    <div id="cpTotalOrders"></div>
+    <div id="cpTotalBags"></div>
+    <div id="cpTotalSpend"></div>
+    <div id="cpAvgOrderValue"></div>
+    <div id="cpTotalKg"></div>
+    <div id="cpTotalTonnes"></div>
+    <div id="cpLastOrderDate"></div>
+    <div id="cpActiveStatus"></div>
+    <div id="cpMembersContainer"></div>
+    <div id="cpMembersCountBadge"></div>
+    <input id="cpOrderSearchInput" type="text" />
+    <span id="cpOrderHistoryCountBadge"></span>
+    <table><tbody id="cpOrderHistoryTableBody"></tbody></table>
+    <div id="cpOrderHistoryMobileList"></div>
+    <div id="cpOrderHistoryEmpty" class="hidden"></div>
+  </div>
+</div>
+
+<script>
+window.onerror = function(msg, url, line, col, err) {
+  document.getElementById('output').innerHTML += "\nUNHANDLED ERROR: " + msg + " at " + line + ":" + col;
+};
+</script>
+<script src="app.js"></script>
+<script>
+(function runTests() {
+  const log = (msg) => {
+    document.getElementById('output').innerHTML += "\n" + msg;
+    console.log(msg);
+  };
+
+  document.getElementById('output').innerHTML = "=== RUNNING TESTS ===";
+
+  let passed = 0;
+  let failed = 0;
+
+  function assert(condition, message) {
+    if (condition) {
+      log("✓ PASS: " + message);
+      passed++;
+    } else {
+      log("✗ FAIL: " + message);
+      failed++;
+    }
+  }
+
+  // TEST 1: Canonical product resolution for all aliases
+  const testCases = [
+    { in: 'MOHABBATH', expectedId: 'prod_mg', expectedName: 'Mohabbath Green' },
+    { in: 'mohabbath green', expectedId: 'prod_mg', expectedName: 'Mohabbath Green' },
+    { in: 'DOUBLE CHABI WHITE SELLA', expectedId: 'prod_dcw', expectedName: 'White Chabi' },
+    { in: 'DC White', expectedId: 'prod_dcw', expectedName: 'White Chabi' },
+    { in: 'White Chabi', expectedId: 'prod_dcw', expectedName: 'White Chabi' },
+    { in: 'DOUBLE CHABI GOLD SELLA', expectedId: 'prod_dcg', expectedName: 'Golden Chabi' },
+    { in: 'DC Gold', expectedId: 'prod_dcg', expectedName: 'Golden Chabi' },
+    { in: 'Golden Chabi', expectedId: 'prod_dcg', expectedName: 'Golden Chabi' },
+    { in: 'SM 3ROSE 2ND', expectedId: 'prod_jmt', expectedName: 'JMT Rose 2nd' },
+    { in: 'JMT Rose 2nd', expectedId: 'prod_jmt', expectedName: 'JMT Rose 2nd' },
+    { in: 'JASMINE', expectedId: 'prod_jas', expectedName: 'Jasmine' },
+    { in: 'JOKER', expectedId: 'prod_joker', expectedName: 'Joker' },
+    { in: 'DAAWAT XXXL GOLD SELLA', expectedId: 'prod_daawat', expectedName: 'Daawat XXXL Gold Sella' },
+    { in: 'ROYAL GOLD', expectedId: 'prod_royalgold', expectedName: 'Royal Gold' },
+    { in: 'ROYAL WHITE', expectedId: 'prod_royalwhite', expectedName: 'Royal White' }
+  ];
+
+  testCases.forEach(tc => {
+    const res = getCanonicalProduct(tc.in);
+    assert(res && res.id === tc.expectedId && res.name === tc.expectedName,
+      `getCanonicalProduct('${tc.in}') => id: ${tc.expectedId}, name: '${tc.expectedName}'`);
+  });
+
+  // TEST 2: Deduplication with noisy input containing all duplicate variants
+  const noisyProducts = [
+    { id: 'p_1', name: 'MOHABBATH', category: 'Kaima', bagSize: 26, defaultRateKg: 98 },
+    { id: 'prod_mg', name: 'Mohabbath Green', category: 'Kaima', bagSize: 26, defaultRateKg: 98, imageUrl: 'data:image/svg+xml;base64,AAA' },
+    { id: 'p_2', name: 'DOUBLE CHABI WHITE SELLA', category: 'Basmati', bagSize: 30, defaultRateKg: 90 },
+    { id: 'prod_dcw', name: 'DC White', category: 'Basmati', bagSize: 30, defaultRateKg: 90 },
+    { id: 'p_3', name: 'White Chabi', category: 'Basmati', bagSize: 30, defaultRateKg: 90 },
+    { id: 'p_4', name: 'DOUBLE CHABI GOLD SELLA', category: 'Basmati', bagSize: 30, defaultRateKg: 92 },
+    { id: 'prod_dcg', name: 'DC Gold', category: 'Basmati', bagSize: 30, defaultRateKg: 92 },
+    { id: 'p_5', name: 'SM 3ROSE 2ND', category: 'Other', bagSize: 26, defaultRateKg: 88 },
+    { id: 'prod_jmt', name: 'JMT Rose 2nd', category: 'Other', bagSize: 26, defaultRateKg: 88 },
+    { id: 'p_demo', name: 'Wayanadan Kaima Rice', category: 'Kaima', bagSize: 26 }, // Demo sample
+    { id: 'p_agg', name: 'Mohabbath Green (+2 more)', category: 'Kaima' } // Aggregate order text
+  ];
+
+  const cleaned = deduplicateProductsList(noisyProducts, false);
+
+  assert(cleaned.length >= 6, `Cleaned products count is at least 6 (actual: ${cleaned.length})`);
+  
+  // Verify no duplicate names exist
+  const namesSet = new Set();
+  let hasDuplicateName = false;
+  cleaned.forEach(p => {
+    const low = p.name.toLowerCase();
+    if (namesSet.has(low)) hasDuplicateName = true;
+    namesSet.add(low);
+  });
+  assert(!hasDuplicateName, "Zero duplicate product names in cleaned catalog");
+
+  // Verify demo sample and aggregate text were purged
+  const hasDemo = cleaned.some(p => p.name.includes('Wayanadan') || p.name.includes('more)'));
+  assert(!hasDemo, "Demo sample and aggregate text purged from catalog");
+
+  // Verify image was preserved during merge
+  const mgProd = cleaned.find(p => p.id === 'prod_mg');
+  assert(mgProd && mgProd.imageUrl === 'data:image/svg+xml;base64,AAA', "Custom product image preserved during deduplication merge");
+
+  // TEST 3: Customer alias mapping
+  const testCustomers = [
+    { id: 'c1', name: 'MAJ', town: 'Angamaly' },
+    { id: 'c2', name: 'MAJ Angamaly', town: 'Ernakulam' },
+    { id: 'c3', name: 'PKBR ELAMAKKARA', town: 'Ernakulam' },
+    { id: 'c4', name: 'Al-Safi Food Court, Pukkattupady', town: 'Ernakulam' },
+    { id: 'c5', name: 'EDAKKATTU BAZAAR', town: 'Ernakulam' },
+    { id: 'c6', name: 'Edakkat Basmati', town: 'Ernakulam' },
+    { id: 'c7', name: 'Edakkat Enterprises Bypass', town: 'Ernakulam' },
+    { id: 'c8', name: 'MAK Aluva', town: 'Aluva' },
+    { id: 'c9', name: 'MK Aluva', town: 'Aluva' },
+    { id: 'c10', name: 'Marwa Aluva', town: 'Aluva' },
+    { id: 'c11', name: 'Southern Aluva', town: 'Aluva' },
+    { id: 'c12', name: 'ALUVA TRADING COMPANY', town: 'Aluva' }
+  ];
+
+  const dedupedCust = deduplicateCustomersList(testCustomers, false);
+
+  // MAJ Angamaly should merge into MAJ
+  const majMatches = dedupedCust.filter(c => c.name.toLowerCase().includes('maj'));
+  assert(majMatches.length === 1 && majMatches[0].name === 'MAJ', `MAJ Angamaly merged into single 'MAJ' (actual: ${majMatches.map(c=>c.name).join(', ')})`);
+
+  // PKBR ELAMAKKARA should be normalized to PKBR
+  const pkbrMatches = dedupedCust.filter(c => c.name.toLowerCase().includes('pkbr'));
+  assert(pkbrMatches.length === 1 && pkbrMatches[0].name === 'PKBR', `PKBR ELAMAKKARA normalized to 'PKBR' (actual: ${pkbrMatches.map(c=>c.name).join(', ')})`);
+
+  // Al-Safi Food Court, Pukkattupady should be normalized to Al-Safi Food Court
+  const safiMatches = dedupedCust.filter(c => c.name.toLowerCase().includes('safi'));
+  assert(safiMatches.length === 1 && safiMatches[0].name === 'Al-Safi Food Court', `Al-Safi Food Court, Pukkattupady normalized to 'Al-Safi Food Court'`);
+
+  // TEST 4: Riyas and Riyas Traders deduplication
+  const riyasTestCustomers = [
+    { id: 'c_manual', name: 'Riyas', phone: '9847111222', town: 'Ernakulam' },
+    { id: 'c_hist_062', name: 'Riyas Traders', town: 'Ernakulam', category: 'Wholesaler' }
+  ];
+  const dedupedRiyas = deduplicateCustomersList(riyasTestCustomers, false);
+  const riyasMatches = dedupedRiyas.filter(c => c.name.toLowerCase().includes('riyas'));
+  assert(riyasMatches.length === 1 && riyasMatches[0].name === 'Riyas Traders', `'Riyas' merged into single 'Riyas Traders' (actual: ${riyasMatches.map(c=>c.name).join(', ')})`);
+  assert(riyasMatches[0].phone === '9847111222', "Phone number preserved on merged Riyas Traders");
+
+  // TEST 5: Pre-November customer catalog integrity
+  assert(typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined', "PRE_NOVEMBER_CANONICAL_CUSTOMERS is defined");
+  assert(PRE_NOVEMBER_CANONICAL_CUSTOMERS.length === 69, `PRE_NOVEMBER_CANONICAL_CUSTOMERS has exactly 69 customers (actual: ${PRE_NOVEMBER_CANONICAL_CUSTOMERS.length})`);
+  assert(PRE_NOVEMBER_CANONICAL_CUSTOMERS.some(c => c.name === 'Riyas Traders'), "'Riyas Traders' is present in pre-November customers");
+  assert(!PRE_NOVEMBER_CANONICAL_CUSTOMERS.some(c => c.name === 'Riyas'), "'Riyas' alone is NOT present in pre-November customers");
+
+  // Edakkat group: all 3 must remain separate
+  assert(dedupedCust.some(c => c.name === 'EDAKKATTU BAZAAR'), "EDAKKATTU BAZAAR preserved as separate customer");
+  assert(dedupedCust.some(c => c.name === 'Edakkat Basmati'), "Edakkat Basmati preserved as separate customer");
+  assert(dedupedCust.some(c => c.name === 'Edakkat Enterprises Bypass'), "Edakkat Enterprises Bypass preserved as separate customer");
+
+  // Aluva group: all 5 must remain separate
+  assert(dedupedCust.some(c => c.name === 'MAK Aluva'), "MAK Aluva preserved as separate customer");
+  assert(dedupedCust.some(c => c.name === 'MK Aluva'), "MK Aluva preserved as separate customer");
+  assert(dedupedCust.some(c => c.name === 'Marwa Aluva'), "Marwa Aluva preserved as separate customer");
+  assert(dedupedCust.some(c => c.name === 'Southern Aluva'), "Southern Aluva preserved as separate customer");
+  assert(dedupedCust.some(c => c.name === 'ALUVA TRADING COMPANY'), "ALUVA TRADING COMPANY preserved as separate customer");
+
+  // TEST 6: Product update persistence (bag size and rate customization)
+  const testProdCatalog = [
+    { id: 'prod_mg', name: 'Mohabbath Green', category: 'Kaima', bagSize: 26, defaultRateKg: 98, active: true },
+    { id: 'prod_jas', name: 'Jasmine', category: 'Basmati', bagSize: 30, defaultRateKg: 112, active: true }
+  ];
+  // User customizes bagSize to 50 and rate to 115
+  testProdCatalog[0].bagSize = 50;
+  testProdCatalog[0].defaultRateKg = 115;
+  testProdCatalog[0].isCustomized = true;
+  testProdCatalog[0].updatedAt = Date.now();
+
+  const dedupedUpdated = deduplicateProductsList(testProdCatalog, false);
+  const mgAfterDedup = dedupedUpdated.find(p => p.id === 'prod_mg');
+  assert(mgAfterDedup && mgAfterDedup.bagSize === 50, "Product bagSize 50kg strictly preserved after deduplication (no revert to 26)");
+  assert(mgAfterDedup && mgAfterDedup.defaultRateKg === 115, "Product defaultRateKg 115 strictly preserved after deduplication");
+
+  // Also test merging with stale cloud copy (simulating Firestore snapshot)
+  const staleCloud = [
+    { id: 'prod_mg', name: 'Mohabbath Green', category: 'Kaima', bagSize: 26, defaultRateKg: 98, active: true }
+  ];
+  const cloudMerged = deduplicateProductsList([...dedupedUpdated, ...staleCloud], false);
+  const mgAfterCloud = cloudMerged.find(p => p.id === 'prod_mg');
+  assert(mgAfterCloud && mgAfterCloud.bagSize === 50, "Product bagSize 50kg preserved after cloud snapshot merge");
+  assert(mgAfterCloud && mgAfterCloud.defaultRateKg === 115, "Product defaultRateKg 115 preserved after cloud snapshot merge");
+
+  // TEST 7: Previous orders protection (changing product bagSize/rate NEVER affects past orders)
+  const pastOrders = [
+    {
+      id: 'TM-HIST-101',
+      date: '2026-07-10',
+      customer: { id: 'c_001', name: 'Riyas Traders' },
+      items: [
+        {
+          productId: 'prod_mg',
+          productName: 'Mohabbath Green',
+          bagSize: 26,
+          bagQty: 10,
+          perKgRate: 98,
+          totalKg: 260,
+          totalAmount: 25480
+        }
+      ],
+      product: { id: 'prod_mg', name: 'Mohabbath Green' },
+      bagSize: 26,
+      bagQty: 10,
+      totalKg: 260,
+      perKgRate: 98,
+      totalAmount: 25480
+    }
+  ];
+  orders = pastOrders;
+
+  // Run cascadeProductUpdateToOrders with the updated product (bagSize: 50, rate: 115)
+  cascadeProductUpdateToOrders('prod_mg', 'Mohabbath Green', mgAfterCloud);
+
+  assert(orders[0].items[0].bagSize === 26, "Past order item bagSize remains frozen at 26kg");
+  assert(orders[0].items[0].perKgRate === 98, "Past order item perKgRate remains frozen at ₹98/kg");
+  assert(orders[0].items[0].totalKg === 260, "Past order item totalKg remains frozen at 260kg");
+  assert(orders[0].items[0].totalAmount === 25480, "Past order item totalAmount remains frozen at ₹25,480");
+  assert(orders[0].bagSize === 26, "Past order level bagSize remains frozen at 26kg");
+  assert(orders[0].totalKg === 260, "Past order level totalKg remains frozen at 260kg");
+  assert(orders[0].totalAmount === 25480, "Past order level totalAmount remains frozen at ₹25,480");
+
+  // Also run cascadeCanonicalProductsToOrders
+  cascadeCanonicalProductsToOrders();
+  assert(orders[0].items[0].bagSize === 26, "After cascadeCanonicalProductsToOrders, past bagSize still 26kg");
+  assert(orders[0].items[0].totalAmount === 25480, "After cascadeCanonicalProductsToOrders, past totalAmount still ₹25,480");
+
+  // TEST 8: Customer Team Member Cross-Device Cloud Sync
+  const baseCust = {
+    id: 'c_hist_025',
+    name: 'Riyas Traders',
+    category: 'Wholesaler',
+    town: 'Ernakulam',
+    district: 'Ernakulam',
+    members: [
+      { id: 'm_owner_1', name: 'Riyas', role: 'Owner', phone: '9847111222', isPrimary: true }
+    ]
+  };
+  customers = [baseCust];
+
+  // 1. Simulate adding a member locally (computer)
+  const newMember = {
+    id: 'm_staff_cook_99',
+    name: 'Usthad Shafi',
+    role: 'Chef / Cook',
+    phone: '9847333444',
+    isPrimary: false
+  };
+  baseCust.members.push(newMember);
+  syncCustomerMemberLegacyFields(baseCust);
+
+  assert(baseCust.members.length === 2, "Local customer has 2 members after adding Usthad Shafi");
+  assert(baseCust.staffName === 'Usthad Shafi', "syncCustomerMemberLegacyFields updated staffName to 'Usthad Shafi'");
+
+  // 2. Simulate mobile receiving cloud snapshot containing baseCust with the new member
+  const incomingRemote = [
+    {
+      id: 'c_hist_025',
+      name: 'Riyas Traders',
+      category: 'Wholesaler',
+      town: 'Ernakulam',
+      district: 'Ernakulam',
+      members: [
+        { id: 'm_owner_1', name: 'Riyas', role: 'Owner', phone: '9847111222', isPrimary: true },
+        { id: 'm_staff_cook_99', name: 'Usthad Shafi', role: 'Chef / Cook', phone: '9847333444', isPrimary: false }
+      ]
+    }
+  ];
+
+  // Mobile state before receiving snapshot (only had 1 member or empty members)
+  customers = [
+    {
+      id: 'c_hist_025',
+      name: 'Riyas Traders',
+      category: 'Wholesaler',
+      town: 'Ernakulam',
+      district: 'Ernakulam',
+      members: [
+        { id: 'm_owner_1', name: 'Riyas', role: 'Owner', phone: '9847111222', isPrimary: true }
+      ]
+    }
+  ];
+
+  processIncomingCloudCustomers(incomingRemote);
+
+  const syncedOnMobile = customers.find(c => c.id === 'c_hist_025');
+  assert(syncedOnMobile && syncedOnMobile.members.length === 2, `Mobile correctly received both members (actual count: ${syncedOnMobile ? syncedOnMobile.members.length : 0})`);
+  assert(syncedOnMobile && syncedOnMobile.members.some(m => m.name === 'Usthad Shafi'), "Mobile has 'Usthad Shafi' present in members");
+
+  // 3. Verify deduplication does not duplicate members on repeated syncs
+  processIncomingCloudCustomers(incomingRemote);
+  const reSyncedOnMobile = customers.find(c => c.id === 'c_hist_025');
+  assert(reSyncedOnMobile && reSyncedOnMobile.members.length === 2, `Repeated sync does not duplicate members (count: ${reSyncedOnMobile ? reSyncedOnMobile.members.length : 0})`);
+
+  // TEST 9: Leaderboard Calculations & Discrepancy Prevention
+  const sampleLeaderboardOrders = [
+    { id: 'ORD-LB-1', date: '2026-11-20', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 300, totalAmount: 20400, dispatchStatus: 'Delivered' },
+    { id: 'ORD-LB-2', date: '2026-11-21', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 500, totalAmount: 34000, dispatchStatus: 'Delivered' },
+    { id: 'ORD-LB-3', date: '2026-11-22', customer: { name: 'Thanima' }, totalKg: 200, totalAmount: 13600, dispatchStatus: 'Delivered' }, // Alias order
+    { id: 'ORD-LB-DUP', date: '2026-11-21', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 500, totalAmount: 34000, dispatchStatus: 'Delivered' },
+    { id: 'ORD-LB-DUP', date: '2026-11-21', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 500, totalAmount: 34000, dispatchStatus: 'Delivered' }, // Duplicate ID
+    { id: 'ORD-LB-CANCELLED', date: '2026-11-22', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 1000, totalAmount: 68000, dispatchStatus: 'Cancelled' }, // Cancelled
+    { id: 'ORD-LB-INVALID', date: '2026-11-22', customer: null, totalKg: 1000, totalAmount: 68000, isCancelled: true } // Invalid cancelled
+  ];
+
+  orders = sampleLeaderboardOrders;
+  leaderboardPeriod = 'all';
+
+  const validLbOrders = getLeaderboardOrders();
+  assert(validLbOrders.length === 4, `getLeaderboardOrders filtered out duplicates & cancelled (expected: 4, actual: ${validLbOrders.length})`);
+  assert(!validLbOrders.some(o => o.dispatchStatus === 'Cancelled'), "Cancelled order strictly excluded from Leaderboard");
+  assert(!validLbOrders.some(o => o.isCancelled), "isCancelled order strictly excluded from Leaderboard");
+  
+  const idCounts = {};
+  validLbOrders.forEach(o => { idCounts[o.id] = (idCounts[o.id] || 0) + 1; });
+  assert(idCounts['ORD-LB-DUP'] === 1, "Duplicate order ID counted exactly once in Leaderboard");
+
+  // TEST 10: String-vs-Number arithmetic safety
+  const stringValOrders = [
+    { id: 'ORD-STR-1', date: '2026-11-20', customer: { id: 'c_str_1', name: 'String Buyer' }, totalKg: "150", totalAmount: "15000", dispatchStatus: 'Delivered' },
+    { id: 'ORD-STR-2', date: '2026-11-21', customer: { id: 'c_str_1', name: 'String Buyer' }, totalKg: "250", totalAmount: "25000", dispatchStatus: 'Delivered' }
+  ];
+  orders = stringValOrders;
+  const strLbOrders = getLeaderboardOrders();
+  let testSumKg = 0;
+  let testSumAmt = 0;
+  strLbOrders.forEach(o => {
+    testSumKg += (parseFloat(o.totalKg) || 0);
+    testSumAmt += (parseFloat(o.totalAmount) || 0);
+  });
+  assert(testSumKg === 400, `String kg summed correctly as numbers (expected: 400, actual: ${testSumKg})`);
+  assert(testSumAmt === 40000, `String amount summed correctly as numbers (expected: 40000, actual: ${testSumAmt})`);
+
+  // TEST 11: Canonical Customer & Alias Resolution in getCanonicalCustomerInfo
+  const canonThanima = getCanonicalCustomerInfo('Thanima');
+  assert(canonThanima && canonThanima.name === 'Thanima Hotel', `Alias 'Thanima' resolved to canonical name 'Thanima Hotel'`);
+  assert(canonThanima && canonThanima.id === 'c_hist_001', `Alias 'Thanima' matched canonical id 'c_hist_001'`);
+
+  const canonMaj = getCanonicalCustomerInfo('MAJ Angamaly');
+  assert(canonMaj && canonMaj.name === 'MAJ', `Alias 'MAJ Angamaly' resolved to canonical name 'MAJ'`);
+  assert(canonMaj && canonMaj.id === 'c_hist_044', `Alias 'MAJ Angamaly' matched canonical id 'c_hist_044'`);
+
+  const canonRiyas = getCanonicalCustomerInfo('Riyas');
+  assert(canonRiyas && canonRiyas.name === 'Riyas Traders', `Alias 'Riyas' resolved to canonical name 'Riyas Traders'`);
+
+  // TEST 12: Customer Profile Complete Order History Feature (getCustomerOrders)
+  const custHistoryOrders = [
+    { id: 'ORD-HIST-01', date: '2026-05-10', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 200, totalAmount: 18000, dispatchStatus: 'Delivered' },
+    { id: 'ORD-HIST-02', date: '2026-06-15', customer: { name: 'Thanima' }, totalKg: 300, totalAmount: 27000, dispatchStatus: 'Delivered' }, // via alias
+    { id: 'ORD-HIST-03', date: '2026-11-20', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 500, totalAmount: 45000, dispatchStatus: 'Pending' },
+    { id: 'ORD-HIST-CANCEL', date: '2026-11-21', customer: { id: 'c_hist_001', name: 'Thanima Hotel' }, totalKg: 500, totalAmount: 45000, dispatchStatus: 'Cancelled' }, // Cancelled
+    { id: 'ORD-OTHER-CUST', date: '2026-11-21', customer: { id: 'c_hist_017', name: 'MAJ' }, totalKg: 600, totalAmount: 54000, dispatchStatus: 'Delivered' } // Different customer
+  ];
+  orders = custHistoryOrders;
+
+  const thanimaProfileOrders = getCustomerOrders('c_hist_001', false);
+  assert(thanimaProfileOrders.length === 3, `getCustomerOrders returned exactly 3 valid orders for Thanima Hotel (actual: ${thanimaProfileOrders.length})`);
+  assert(!thanimaProfileOrders.some(o => o.dispatchStatus === 'Cancelled'), "Cancelled orders excluded from profile history by default");
+  assert(thanimaProfileOrders[0].id === 'ORD-HIST-03', "Profile order history is sorted newest date first (ORD-HIST-03)");
+  assert(thanimaProfileOrders[2].id === 'ORD-HIST-01', "Oldest order is last in list (ORD-HIST-01)");
+
+  // Lifetime totals calculation verification
+  const profileTotalKg = thanimaProfileOrders.reduce((s, o) => s + (parseFloat(o.totalKg) || 0), 0);
+  const profileTotalAmt = thanimaProfileOrders.reduce((s, o) => s + (parseFloat(o.totalAmount) || 0), 0);
+  assert(profileTotalKg === 1000, `Profile lifetime volume correctly calculated as 1000 kg (actual: ${profileTotalKg})`);
+  assert(profileTotalAmt === 90000, `Profile lifetime spend correctly calculated as ₹90,000 (actual: ${profileTotalAmt})`);
+
+  // TEST 13: Customer Profile Inline View DOM Integration & Transitions
+  const thanimaRecord = {
+    id: 'c_hist_001',
+    name: 'Thanima Hotel',
+    category: 'Hotel / Restaurant',
+    town: 'Ernakulam',
+    district: 'Ernakulam',
+    ownerName: 'Chef Sulaiman',
+    ownerPhone: '9847000111',
+    members: []
+  };
+  customers = [thanimaRecord];
+
+  // Invoke openCustomerProfile
+  openCustomerProfile('c_hist_001');
+
+  const dirEl = document.getElementById('customersDirectoryContainer');
+  const profEl = document.getElementById('customerProfileContainer');
+  const nameEl = document.getElementById('cpCustomerName');
+  const spendEl = document.getElementById('cpTotalSpend');
+  const ordersEl = document.getElementById('cpTotalOrders');
+  const tbEl = document.getElementById('cpOrderHistoryTableBody');
+
+  assert(dirEl && dirEl.classList.contains('hidden'), "Directory container hidden when profile opens");
+  assert(profEl && !profEl.classList.contains('hidden'), "Profile container visible when profile opens");
+  assert(nameEl && nameEl.textContent === 'Thanima Hotel', `Customer name header rendered 'Thanima Hotel'`);
+  assert(spendEl && spendEl.textContent.includes('90,000'), `Lifetime spend rendered '₹90,000'`);
+  assert(ordersEl && ordersEl.textContent.includes('3'), `Total orders rendered '3 Orders'`);
+  assert(tbEl && tbEl.children.length === 3, `Order history table has 3 rows (actual: ${tbEl ? tbEl.children.length : 0})`);
+
+  // Test closeCustomerProfile
+  closeCustomerProfile();
+  assert(profEl && profEl.classList.contains('hidden'), "Profile container hidden when Back to Customers clicked");
+  assert(dirEl && !dirEl.classList.contains('hidden'), "Directory container visible after Back to Customers clicked");
+
+  log(`\n================================`);
+  log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
+  if (failed === 0) {
+    log("🎉 ALL TESTS PASSED SUCCESSFULLY!");
+  }
+})();
+</script>
+</body>
+</html>

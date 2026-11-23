@@ -2706,17 +2706,31 @@ function getCanonicalCustomerInfo(rawCustomer) {
   }
 
   const rawId = (typeof rawCustomer === 'object' && rawCustomer.id) ? rawCustomer.id : null;
-  const rawName = (typeof rawCustomer === 'string' ? rawCustomer : (rawCustomer.name || '')).trim().replace(/\s+/g, ' ');
+  let rawName = (typeof rawCustomer === 'string' ? rawCustomer : (rawCustomer.name || '')).trim().replace(/\s+/g, ' ');
   const rawPhone = (typeof rawCustomer === 'object' && rawCustomer.phone) ? rawCustomer.phone : '';
   const cleanP = cleanPhoneNumber(rawPhone);
+
+  // Check alias dictionary first to resolve any historical or variant customer names
+  let effectiveName = rawName;
+  if (rawName && typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined') {
+    const aliasInfo = CANONICAL_CUSTOMER_ALIASES[rawName.toLowerCase()];
+    if (aliasInfo && aliasInfo.canonicalName) {
+      effectiveName = aliasInfo.canonicalName;
+    }
+  }
 
   // 1. Match by customer ID in customers
   let match = rawId ? customers.find(c => c.id === rawId) : null;
 
-  // 2. Match by normalized name
-  if (!match && rawName) {
-    const lower = rawName.toLowerCase();
+  // 2. Match by effective normalized name
+  if (!match && effectiveName) {
+    const lower = effectiveName.toLowerCase();
     match = customers.find(c => c.name && c.name.trim().toLowerCase() === lower);
+  }
+  // Try rawName if different from effectiveName
+  if (!match && rawName && rawName.toLowerCase() !== effectiveName.toLowerCase()) {
+    const lowerRaw = rawName.toLowerCase();
+    match = customers.find(c => c.name && c.name.trim().toLowerCase() === lowerRaw);
   }
 
   // 3. Match by phone
@@ -2724,19 +2738,25 @@ function getCanonicalCustomerInfo(rawCustomer) {
     match = customers.find(c => cleanPhoneNumber(c.phone) === cleanP || cleanPhoneNumber(c.ownerPhone) === cleanP);
   }
 
+  // 4. Fallback search in pre-November canonical customers catalog
+  if (!match && effectiveName && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
+    const lower = effectiveName.toLowerCase();
+    match = PRE_NOVEMBER_CANONICAL_CUSTOMERS.find(c => c.name && c.name.trim().toLowerCase() === lower);
+  }
+
   if (match) {
     return {
       id: match.id,
       name: match.name,
-      category: match.category || 'Caterer',
+      category: match.category || (typeof rawCustomer === 'object' && rawCustomer.category) || 'Caterer',
       location: getCustomerLocation(match) || 'Local',
       phone: match.phone || match.ownerPhone || ''
     };
   }
 
   return {
-    id: rawId || ('anon_' + rawName.toLowerCase().replace(/[^a-z0-9]/g, '_')),
-    name: rawName || 'Customer',
+    id: rawId || ('anon_' + effectiveName.toLowerCase().replace(/[^a-z0-9]/g, '_')),
+    name: effectiveName || 'Customer',
     category: (typeof rawCustomer === 'object' && rawCustomer.category) ? rawCustomer.category : 'Caterer',
     location: (typeof rawCustomer === 'object') ? getCustomerLocation(rawCustomer) : 'Local',
     phone: cleanP || rawPhone || ''
@@ -5253,16 +5273,32 @@ function updateTopCustomersWidget(filteredOrders) {
   if (!container) return;
 
   const customerMap = {};
-  filteredOrders.forEach(o => {
+  const seenOrderIds = new Set();
+
+  (filteredOrders || []).forEach(o => {
+    if (!o || typeof o !== 'object') return;
+    if (o.isCancelled || o.status === 'Cancelled' || o.status === 'cancelled' ||
+        o.dispatchStatus === 'Cancelled' || o.dispatchStatus === 'cancelled' ||
+        o.deliveryStatus === 'Cancelled' || o.deliveryStatus === 'cancelled' ||
+        o.isDeleted || o.deleted) {
+      return;
+    }
+    if (o.id) {
+      if (seenOrderIds.has(o.id)) return;
+      seenOrderIds.add(o.id);
+    }
+
     const info = getCanonicalCustomerInfo(o.customer);
-    const key = info.id || info.name.toLowerCase();
+    const key = (info.id && !info.id.startsWith('anon_')) ? info.id : ('cust_' + info.name.toLowerCase().trim());
     if (!customerMap[key]) {
       customerMap[key] = {
         name: info.name,
+        id: info.id || null,
         kg: 0
       };
     }
-    customerMap[key].kg += (parseFloat(o.totalKg) || 0);
+    const oKg = parseFloat(o.totalKg) || (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0))), 0) : 0);
+    customerMap[key].kg += oKg;
   });
 
   const sorted = Object.values(customerMap).sort((a, b) => b.kg - a.kg).slice(0, 5);
@@ -5604,6 +5640,17 @@ let currentMainView = 'overview'; // 'overview' or 'sales-register'
 
 function switchMainView(viewName, subTab) {
   currentMainView = viewName || 'overview';
+
+  // If navigating away from Customers or if clicking main Customers nav button, reset profile view state
+  if (currentMainView !== 'customers' || subTab !== 'profile') {
+    if (typeof closeCustomerProfile === 'function' && currentMainView !== 'customers') {
+      currentProfileCustomerId = null;
+      const profContainer = document.getElementById('customerProfileContainer');
+      const dirContainer = document.getElementById('customersDirectoryContainer');
+      if (profContainer) profContainer.classList.add('hidden');
+      if (dirContainer) dirContainer.classList.remove('hidden');
+    }
+  }
 
   const viewIds = [
     'viewOverview',
@@ -8357,9 +8404,9 @@ function renderCustomersList() {
     card.innerHTML = `
       <div class="flex-1 min-w-0 w-full sm:w-auto">
         <div class="flex items-center gap-1.5 flex-wrap">
-          <button type="button" onclick="openCustomerDetailModal('${c.id}')" class="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline flex items-center gap-1 text-left" title="Click to view Customer Profile &amp; Team">
+          <button type="button" onclick="openCustomerProfile('${c.id}')" class="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline flex items-center gap-1 text-left" title="Click to view Customer Profile &amp; Complete Order History">
             <span>${escapeHtml(c.name)}</span>
-            <i data-lucide="external-link" class="w-3 h-3 text-slate-400"></i>
+            <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-blue-500"></i>
           </button>
           ${catBadge}
         </div>
@@ -8371,9 +8418,9 @@ function renderCustomersList() {
         </div>
       </div>
       <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-        <button onclick="openCustomerDetailModal('${c.id}')" title="Open Customer Profile &amp; Manage Members" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2.5 py-1.5 rounded-lg transition inline-flex items-center gap-1 border border-indigo-200/70">
-          <i data-lucide="users" class="w-3.5 h-3.5"></i>
-          <span>Members (${members.length})</span>
+        <button type="button" onclick="openCustomerProfile('${c.id}')" title="View Detailed Customer Profile &amp; Complete Order History" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 border border-indigo-200/70 shadow-2xs active:scale-95">
+          <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
+          <span>Profile &amp; Orders</span>
         </button>
         <button onclick="startOrderForCustomer('${c.id}')" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1">
           <i data-lucide="plus" class="w-3.5 h-3.5"></i>
@@ -8593,6 +8640,12 @@ function findDuplicateMemberPhone(phone, currentCustId = null, currentMemberId =
 }
 
 function openCustomerDetailModal(customerId, openAddFormImmediately = false) {
+  // If not explicitly opening the team member form, open the clean inline Customer Profile page view!
+  if (!openAddFormImmediately) {
+    openCustomerProfile(customerId);
+    return;
+  }
+
   const cust = customers.find(c => c.id === customerId);
   if (!cust) return;
 
@@ -9783,23 +9836,50 @@ function setLeaderboardCustomerMetric(metric) {
 
 function getLeaderboardOrders() {
   const now = new Date();
-  const todayStr = now.toISOString().split('T')[0];
+  const currentYear = now.getFullYear();
+  const currentMonth = String(now.getMonth() + 1).padStart(2, '0');
+  const currentDate = String(now.getDate()).padStart(2, '0');
+  const todayStr = `${currentYear}-${currentMonth}-${currentDate}`;
 
-  return orders.filter(order => {
-    if (!order || !order.date) return true;
-    const orderDate = new Date(order.date);
+  const sevenDaysAgo = new Date();
+  sevenDaysAgo.setDate(now.getDate() - 7);
+  sevenDaysAgo.setHours(0, 0, 0, 0);
+
+  const seenOrderIds = new Set();
+
+  return (orders || []).filter(order => {
+    // 1. Must be a valid object
+    if (!order || typeof order !== 'object') return false;
+
+    // 2. Exclude cancelled, deleted or invalid orders
+    if (order.isCancelled === true ||
+        order.status === 'Cancelled' || order.status === 'cancelled' ||
+        order.dispatchStatus === 'Cancelled' || order.dispatchStatus === 'cancelled' ||
+        order.deliveryStatus === 'Cancelled' || order.deliveryStatus === 'cancelled' ||
+        order.isDeleted === true || order.deleted === true) {
+      return false;
+    }
+
+    // 3. Exclude duplicate order IDs so every order is counted exactly once
+    if (order.id) {
+      if (seenOrderIds.has(order.id)) return false;
+      seenOrderIds.add(order.id);
+    }
+
+    // 4. Must have a valid date for period filtering
+    if (!order.date) {
+      return leaderboardPeriod === 'all';
+    }
+
+    const orderDateStr = String(order.date).split('T')[0];
 
     if (leaderboardPeriod === 'today') {
-      return order.date === todayStr;
+      return orderDateStr === todayStr;
     } else if (leaderboardPeriod === 'week') {
-      const sevenDaysAgo = new Date();
-      sevenDaysAgo.setDate(now.getDate() - 7);
-      return orderDate >= sevenDaysAgo;
+      const orderDate = new Date(orderDateStr);
+      return !isNaN(orderDate.getTime()) && orderDate >= sevenDaysAgo;
     } else if (leaderboardPeriod === 'month') {
-      return (
-        orderDate.getFullYear() === now.getFullYear() &&
-        orderDate.getMonth() === now.getMonth()
-      );
+      return orderDateStr.startsWith(`${currentYear}-${currentMonth}`);
     } else {
       return true; // 'all'
     }
@@ -9848,7 +9928,8 @@ function renderCustomersLeaderboard() {
   const map = {};
   lbOrders.forEach(o => {
     const info = getCanonicalCustomerInfo(o.customer);
-    const key = info.id || info.name.toLowerCase();
+    // Group strictly by canonical ID or canonical normalized name
+    const key = (info.id && !info.id.startsWith('anon_')) ? info.id : ('cust_' + info.name.toLowerCase().trim());
     if (!map[key]) {
       map[key] = {
         name: info.name,
@@ -9862,20 +9943,46 @@ function renderCustomersLeaderboard() {
         lastDate: o.date
       };
     }
-    map[key].totalKg += (parseFloat(o.totalKg) || 0);
-    map[key].totalRevenue += (parseFloat(o.totalAmount) || 0);
+
+    // Safely parse numeric kg with fallback to items
+    let oKg = parseFloat(o.totalKg);
+    if (isNaN(oKg) || oKg <= 0) {
+      if (Array.isArray(o.items) && o.items.length > 0) {
+        oKg = o.items.reduce((sum, it) => sum + (parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0))), 0);
+      } else {
+        oKg = 0;
+      }
+    }
+
+    // Safely parse numeric revenue with fallback to items
+    let oAmt = parseFloat(o.totalAmount);
+    if (isNaN(oAmt) || oAmt <= 0) {
+      if (Array.isArray(o.items) && o.items.length > 0) {
+        oAmt = o.items.reduce((sum, it) => {
+          const itKg = parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0));
+          return sum + (parseFloat(it.totalAmount) || (itKg * (parseFloat(it.perKgRate) || 0)));
+        }, 0);
+      } else {
+        oAmt = 0;
+      }
+    }
+
+    map[key].totalKg += oKg;
+    map[key].totalRevenue += oAmt;
     map[key].ordersCount += 1;
-    if (o.date > map[key].lastDate) map[key].lastDate = o.date;
+    if (o.date && (!map[key].lastDate || o.date > map[key].lastDate)) {
+      map[key].lastDate = o.date;
+    }
   });
 
   const list = Object.values(map);
 
   if (leaderboardCustomerMetric === 'revenue') {
-    list.sort((a, b) => b.totalRevenue - a.totalRevenue);
+    list.sort((a, b) => b.totalRevenue - a.totalRevenue || b.totalKg - a.totalKg);
   } else if (leaderboardCustomerMetric === 'orders') {
     list.sort((a, b) => b.ordersCount - a.ordersCount || b.totalKg - a.totalKg);
   } else {
-    list.sort((a, b) => b.totalKg - a.totalKg);
+    list.sort((a, b) => b.totalKg - a.totalKg || b.totalRevenue - a.totalRevenue);
   }
 
   if (list.length === 0) {
@@ -9914,7 +10021,7 @@ function renderCustomersLeaderboard() {
           <div class="w-10 h-10 rounded-full ${rankBg} font-black flex items-center justify-center text-sm shadow-sm mb-2">
             #${rank}
           </div>
-          <div class="font-extrabold text-xs text-slate-900 truncate max-w-full px-1" title="${escapeHtml(cust.name)}">${escapeHtml(cust.name)}</div>
+          <button type="button" onclick="openCustomerProfile('')" class="font-extrabold text-xs text-slate-900 hover:text-blue-600 hover:underline truncate max-w-full px-1 block" title="View Customer Profile">${escapeHtml(cust.name)}</button>
           <div class="mt-1">${getCustomerCategoryBadge(cust.category)}</div>
           <div class="text-[11px] text-slate-500 mt-1">${escapeHtml(cust.location)}</div>
           <div class="mt-2 text-sm font-black text-blue-700">${metricDisplay}</div>
@@ -9953,7 +10060,7 @@ function renderCustomersLeaderboard() {
       <td class="px-3.5 py-3 text-center">${rankBadge}</td>
       <td class="px-3.5 py-3">
         <div class="flex items-center gap-1.5 flex-wrap">
-          <span class="font-bold text-slate-900 text-xs">${escapeHtml(c.name)}</span>
+          <button type="button" onclick="openCustomerProfile('')" class="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline text-left inline-flex items-center gap-1" title="View Detailed Customer Profile &amp; Order History"><span>${escapeHtml(c.name)}</span><i data-lucide="chevron-right" class="w-3 h-3 text-blue-500"></i></button>
           ${getCustomerCategoryBadge(c.category)}
         </div>
         <div class="text-[11px] text-slate-500">${escapeHtml(c.location)} ${c.phone ? '• ' + escapeHtml(c.phone) : ''}</div>
@@ -10005,11 +10112,15 @@ function renderProductsLeaderboard() {
     ];
 
     items.forEach(it => {
-      const pName = it.productName || 'Rice Variety';
-      const size = parseFloat(it.bagSize) || 25;
+      const canon = (typeof getCanonicalProduct === 'function')
+        ? (getCanonicalProduct(it) || getCanonicalProduct(it.productName))
+        : null;
+      const pName = canon ? canon.name : (it.productName || 'Rice Variety');
+      const size = parseFloat(it.bagSize) || (canon?.bagSize) || 25;
       const qty = parseFloat(it.bagQty) || 0;
       const kg = parseFloat(it.totalKg) || (size * qty);
-      const amt = parseFloat(it.totalAmount) || 0;
+      const rate = parseFloat(it.perKgRate) || (canon?.defaultRateKg) || 0;
+      const amt = parseFloat(it.totalAmount) || (kg * rate);
 
       grandTotalKg += kg;
 
@@ -10141,18 +10252,18 @@ function renderChampionsLeaderboard() {
   container.innerHTML = '';
 
   categories.forEach(cat => {
-    const catOrders = lbOrders.filter(o => {
-      const custCat = getCustomerCategory(o.customer);
-      return (custCat || 'Caterer') === cat.key;
-    });
-
     const custMap = {};
-    catOrders.forEach(o => {
+    lbOrders.forEach(o => {
       const info = getCanonicalCustomerInfo(o.customer);
-      const key = info.id || info.name.toLowerCase();
+      const custCat = info.category || 'Caterer';
+      if (custCat !== cat.key) return;
+
+      const key = (info.id && !info.id.startsWith('anon_')) ? info.id : ('cust_' + info.name.toLowerCase().trim());
       if (!custMap[key]) {
         custMap[key] = {
           name: info.name,
+          id: info.id || null,
+          category: custCat,
           location: info.location,
           phone: info.phone,
           kg: 0,
@@ -10160,8 +10271,10 @@ function renderChampionsLeaderboard() {
           orders: 0
         };
       }
-      custMap[key].kg += (parseFloat(o.totalKg) || 0);
-      custMap[key].revenue += (parseFloat(o.totalAmount) || 0);
+      const oKg = parseFloat(o.totalKg) || (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0))), 0) : 0);
+      const oRev = parseFloat(o.totalAmount) || (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (parseFloat(it.totalAmount) || 0), 0) : 0);
+      custMap[key].kg += oKg;
+      custMap[key].revenue += oRev;
       custMap[key].orders += 1;
     });
 
@@ -10183,7 +10296,7 @@ function renderChampionsLeaderboard() {
             <span class="px-2 py-0.5 bg-amber-400 text-amber-950 font-black text-[9px] rounded-full shadow-xs">#1 Champion 🏆</span>
           </div>
           <div class="text-[10px] text-slate-400 mb-2">${cat.sub}</div>
-          <h4 class="font-extrabold text-sm text-slate-900 leading-tight">${escapeHtml(champion.name)}</h4>
+          <h4 class="font-extrabold text-sm text-slate-900 leading-tight"><button type="button" onclick="openCustomerProfile('')" class="hover:text-blue-600 hover:underline text-left leading-tight">${escapeHtml(champion.name)}</button></h4>
           <p class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(champion.location)} • ${escapeHtml(champion.phone)}</p>
           
           <div class="mt-3 p-2 bg-amber-100/50 rounded-xl border border-amber-200/60 flex items-center justify-between">
@@ -10291,13 +10404,15 @@ function renderMilestonesLeaderboard() {
   const container = document.getElementById('lbMilestonesList');
   if (!container) return;
 
+  const lbOrders = getLeaderboardOrders();
   const custMap = {};
-  orders.forEach(o => {
+  lbOrders.forEach(o => {
     const info = getCanonicalCustomerInfo(o.customer);
-    const key = info.id || info.name.toLowerCase();
+    const key = (info.id && !info.id.startsWith('anon_')) ? info.id : ('cust_' + info.name.toLowerCase().trim());
     if (!custMap[key]) {
       custMap[key] = {
         name: info.name,
+        id: info.id || null,
         category: info.category || 'Caterer',
         location: info.location || 'Local',
         kg: 0,
@@ -10305,8 +10420,10 @@ function renderMilestonesLeaderboard() {
         orders: 0
       };
     }
-    custMap[key].kg += (parseFloat(o.totalKg) || 0);
-    custMap[key].revenue += (parseFloat(o.totalAmount) || 0);
+    const oKg = parseFloat(o.totalKg) || (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0))), 0) : 0);
+    const oRev = parseFloat(o.totalAmount) || (Array.isArray(o.items) ? o.items.reduce((s, it) => s + (parseFloat(it.totalAmount) || 0), 0) : 0);
+    custMap[key].kg += oKg;
+    custMap[key].revenue += oRev;
     custMap[key].orders += 1;
   });
 
@@ -10334,7 +10451,7 @@ function renderMilestonesLeaderboard() {
         return `
           <div class="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100 hover:shadow-xs transition text-xs">
             <div class="flex items-center gap-2">
-              <span class="font-extrabold text-slate-900">${escapeHtml(m.name)}</span>
+              <button type="button" onclick="openCustomerProfile('')" class="font-extrabold text-slate-900 hover:text-blue-600 hover:underline text-left">${escapeHtml(m.name)}</button>
               ${getCustomerCategoryBadge(m.category)}
               ${upgradeHint}
             </div>
@@ -10672,7 +10789,612 @@ function downloadAppLogoForHomeIcon() {
 }
 
 // Global Exports
+
+// ==========================================
+// 14. CUSTOMER PROFILE & COMPLETE ORDER HISTORY
+// ==========================================
+
+let currentProfileCustomerId = null;
+let currentProfileOrders = [];
+
+/**
+ * Retrieves every order placed by a specific customer, accurately resolving
+ * customer IDs, canonical names, aliases, and phone numbers.
+ * Excludes cancelled or deleted orders by default.
+ * Returns orders sorted in strict reverse-chronological order (newest first).
+ */
+function getCustomerOrders(customerOrId, includeCancelled = false) {
+  if (!customerOrId) return [];
+  const cust = (typeof customerOrId === 'string')
+    ? (customers.find(c => c.id === customerOrId || (c.name && c.name.trim().toLowerCase() === customerOrId.trim().toLowerCase())) || { id: customerOrId, name: customerOrId })
+    : customerOrId;
+
+  const targetId = cust.id || null;
+  const targetName = (cust.name || '').trim().toLowerCase();
+
+  // Collect aliases
+  const aliasNames = new Set();
+  if (targetName) aliasNames.add(targetName);
+  if (typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined') {
+    for (const [alias, info] of Object.entries(CANONICAL_CUSTOMER_ALIASES)) {
+      if (info && info.canonicalName && info.canonicalName.trim().toLowerCase() === targetName) {
+        aliasNames.add(alias.trim().toLowerCase());
+      }
+    }
+  }
+
+  const cleanPhones = [
+    cleanPhoneNumber(cust.phone),
+    cleanPhoneNumber(cust.ownerPhone),
+    cleanPhoneNumber(cust.staffPhone)
+  ].filter(Boolean);
+
+  const seenOrderIds = new Set();
+  const matched = [];
+
+  (orders || []).forEach(o => {
+    if (!o || typeof o !== 'object') return;
+
+    if (!includeCancelled) {
+      if (o.isCancelled === true ||
+          o.status === 'Cancelled' || o.status === 'cancelled' ||
+          o.dispatchStatus === 'Cancelled' || o.dispatchStatus === 'cancelled' ||
+          o.deliveryStatus === 'Cancelled' || o.deliveryStatus === 'cancelled' ||
+          o.isDeleted === true || o.deleted === true) {
+        return;
+      }
+    }
+
+    // Exclude duplicates
+    if (o.id) {
+      if (seenOrderIds.has(o.id)) return;
+      seenOrderIds.add(o.id);
+    }
+
+    let isMatch = false;
+
+    // Match 1: By Customer ID
+    if (targetId && o.customer && typeof o.customer === 'object' && o.customer.id && o.customer.id === targetId) {
+      isMatch = true;
+    }
+
+    // Match 2: By Canonical customer info
+    if (!isMatch) {
+      const info = getCanonicalCustomerInfo(o.customer);
+      if (info) {
+        if (targetId && info.id && info.id === targetId) isMatch = true;
+        else if (targetName && info.name && info.name.trim().toLowerCase() === targetName) isMatch = true;
+      }
+    }
+
+    // Match 3: By raw order customer name or alias
+    if (!isMatch) {
+      const rawName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim().toLowerCase();
+      if (rawName && (rawName === targetName || aliasNames.has(rawName))) {
+        isMatch = true;
+      }
+    }
+
+    // Match 4: By phone number
+    if (!isMatch && cleanPhones.length > 0) {
+      const oPhone = cleanPhoneNumber(typeof o.customer === 'object' ? (o.customer?.phone || o.customer?.ownerPhone || o.customer?.staffPhone) : '');
+      if (oPhone && cleanPhones.includes(oPhone)) {
+        isMatch = true;
+      }
+    }
+
+    if (isMatch) {
+      matched.push(o);
+    }
+  });
+
+  // Strict reverse-chronological sorting (latest date and highest ID first)
+  matched.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+  return matched;
+}
+
+/**
+ * Opens detailed Customer Profile inline page view
+ */
+function openCustomerProfile(customerId, openAddMemberImmediately = false) {
+  if (!customerId) return;
+
+  // Find customer by ID, or by name / alias
+  let cust = customers.find(c => c.id === customerId);
+  if (!cust && typeof customerId === 'string') {
+    const cleanId = customerId.trim().toLowerCase();
+    cust = customers.find(c => c.name && c.name.trim().toLowerCase() === cleanId);
+    if (!cust && typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[cleanId]) {
+      const canonName = CANONICAL_CUSTOMER_ALIASES[cleanId].canonicalName.toLowerCase();
+      cust = customers.find(c => c.name && c.name.trim().toLowerCase() === canonName);
+    }
+    if (!cust && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
+      cust = PRE_NOVEMBER_CANONICAL_CUSTOMERS.find(c => c.id === customerId || (c.name && c.name.trim().toLowerCase() === cleanId));
+    }
+  }
+
+  if (!cust) {
+    showNotification('Customer record not found.');
+    return;
+  }
+
+  currentProfileCustomerId = cust.id;
+  activeDetailCustomerId = cust.id;
+
+  // Initialize members array if needed
+  if (!Array.isArray(cust.members)) {
+    cust.members = getCustomerMembers(cust);
+  }
+
+  // Switch to Customers view if not already there
+  if (currentMainView !== 'customers') {
+    switchMainView('customers', 'profile');
+  }
+
+  // Toggle containers: hide directory, show inline profile
+  const dirContainer = document.getElementById('customersDirectoryContainer');
+  const profContainer = document.getElementById('customerProfileContainer');
+  if (dirContainer) dirContainer.classList.add('hidden');
+  if (profContainer) profContainer.classList.remove('hidden');
+
+  // Update header title
+  const mainTitle = document.getElementById('mainViewHeaderTitle');
+  const mainSubtitle = document.getElementById('mainViewHeaderSubtitle');
+  if (mainTitle) mainTitle.textContent = 'CUSTOMER PROFILE';
+  if (mainSubtitle) mainSubtitle.textContent = `${cust.name} • Complete Order History & Lifetime Value`;
+
+  // Fetch all orders for this customer (excluding cancelled)
+  currentProfileOrders = getCustomerOrders(cust, false);
+
+  // Calculate lifetime totals
+  const ordersCount = currentProfileOrders.length;
+  let totalBags = 0;
+  let totalKg = 0;
+  let totalSpend = 0;
+
+  currentProfileOrders.forEach(o => {
+    let oKg = parseFloat(o.totalKg);
+    let oBags = parseFloat(o.bagQty);
+    let oAmt = parseFloat(o.totalAmount);
+
+    if (Array.isArray(o.items) && o.items.length > 0) {
+      if (isNaN(oKg) || oKg <= 0) {
+        oKg = o.items.reduce((s, it) => s + (parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0))), 0);
+      }
+      if (isNaN(oBags) || oBags <= 0) {
+        oBags = o.items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+      }
+      if (isNaN(oAmt) || oAmt <= 0) {
+        oAmt = o.items.reduce((s, it) => {
+          const itemKg = parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0));
+          return s + (parseFloat(it.totalAmount) || (itemKg * (parseFloat(it.perKgRate) || 0)));
+        }, 0);
+      }
+    }
+
+    totalBags += (oBags || 0);
+    totalKg += (oKg || 0);
+    totalSpend += (oAmt || 0);
+  });
+
+  const avgOrderValue = ordersCount > 0 ? Math.round(totalSpend / ordersCount) : 0;
+  const lastOrderDate = ordersCount > 0 ? (currentProfileOrders[0].date || 'Recent') : 'No orders yet';
+
+  // 1. Populate Customer Summary Header
+  const nameEl = document.getElementById('cpCustomerName');
+  const avatarEl = document.getElementById('cpAvatar');
+  const catBadgeEl = document.getElementById('cpCategoryBadge');
+  const milestoneBadgeEl = document.getElementById('cpMilestoneBadge');
+  const locEl = document.getElementById('cpLocationText');
+  const quickContactsEl = document.getElementById('cpQuickContactActions');
+
+  if (nameEl) nameEl.textContent = cust.name;
+  if (avatarEl) avatarEl.textContent = (cust.name || 'C').charAt(0).toUpperCase();
+  if (catBadgeEl) catBadgeEl.innerHTML = getCustomerCategoryBadge(cust.category || 'Caterer');
+
+  // Milestone tier badge
+  if (milestoneBadgeEl) {
+    if (totalKg >= 10000) {
+      milestoneBadgeEl.className = 'text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-400 text-amber-950 border border-amber-300 shadow-2xs';
+      milestoneBadgeEl.textContent = '💎 10 Ton Elite Club';
+      milestoneBadgeEl.classList.remove('hidden');
+    } else if (totalKg >= 5000) {
+      milestoneBadgeEl.className = 'text-[10px] font-black px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-800 border border-purple-200';
+      milestoneBadgeEl.textContent = '🥇 5 Ton Champion';
+      milestoneBadgeEl.classList.remove('hidden');
+    } else if (totalKg >= 1000) {
+      milestoneBadgeEl.className = 'text-[10px] font-black px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200';
+      milestoneBadgeEl.textContent = '🥈 1 Ton Wholesaler';
+      milestoneBadgeEl.classList.remove('hidden');
+    } else {
+      milestoneBadgeEl.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200';
+      milestoneBadgeEl.textContent = '🌱 Growing Buyer';
+      milestoneBadgeEl.classList.remove('hidden');
+    }
+  }
+
+  // Location Badges
+  const cDist = getCustomerDistrict(cust);
+  const cTown = getCustomerTown(cust);
+  const cLandmark = getCustomerLandmark(cust);
+  const cPanch = getCustomerPanchayath(cust);
+  if (locEl) {
+    let locHtml = [];
+    if (cLandmark) locHtml.push(`<span class="inline-flex items-center gap-1 font-semibold text-slate-800"><i data-lucide="map-pin" class="w-3.5 h-3.5 text-rose-500"></i><span>${escapeHtml(cLandmark)}</span></span>`);
+    if (cTown) locHtml.push(`<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">🏙️ ${escapeHtml(cTown)}${cDist && cDist.toLowerCase() !== cTown.toLowerCase() ? `, ${escapeHtml(cDist)}` : ''}</span>`);
+    else if (cDist) locHtml.push(`<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">📍 ${escapeHtml(cDist)}</span>`);
+    if (cPanch) locHtml.push(`<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">🏛️ ${escapeHtml(cPanch)}</span>`);
+    locEl.innerHTML = locHtml.length > 0 ? locHtml.join(' ') : `<span class="text-slate-500">📍 ${escapeHtml(getCustomerLocation(cust))}</span>`;
+  }
+
+  // Quick contact links
+  const primaryPhone = cust.ownerPhone || cust.phone || cust.staffPhone || '';
+  if (quickContactsEl) {
+    let btns = '';
+    if (primaryPhone) {
+      const clean = cleanPhoneNumber(primaryPhone);
+      btns += `<a href="tel:${clean}" class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-bold rounded-xl border border-emerald-200 transition inline-flex items-center gap-1.5 shadow-2xs active:scale-95"><i data-lucide="phone" class="w-3.5 h-3.5 text-emerald-600"></i><span>Call</span></a>`;
+      btns += `<a href="https://wa.me/91${clean}" target="_blank" rel="noopener" class="px-3 py-1.5 bg-green-50 hover:bg-green-100 text-green-700 text-xs font-bold rounded-xl border border-green-200 transition inline-flex items-center gap-1.5 shadow-2xs active:scale-95"><i data-lucide="message-circle" class="w-3.5 h-3.5 text-green-600"></i><span>WhatsApp</span></a>`;
+    }
+    quickContactsEl.innerHTML = btns;
+  }
+
+  // Owner box
+  const ownerNameEl = document.getElementById('cpOwnerName');
+  const ownerPhoneLinkEl = document.getElementById('cpOwnerPhoneLink');
+  if (ownerNameEl) ownerNameEl.textContent = cust.ownerName || 'Not specified';
+  if (ownerPhoneLinkEl) {
+    if (cust.ownerPhone) {
+      const clean = cleanPhoneNumber(cust.ownerPhone);
+      ownerPhoneLinkEl.innerHTML = `<a href="tel:${clean}" class="font-mono text-blue-700 font-bold hover:underline inline-flex items-center gap-1"><i data-lucide="phone" class="w-3 h-3"></i><span>${escapeHtml(cust.ownerPhone)}</span></a>`;
+    } else {
+      ownerPhoneLinkEl.innerHTML = '<span class="text-slate-400 font-mono text-[10px]">No phone</span>';
+    }
+  }
+
+  // Staff box
+  const staffNameEl = document.getElementById('cpStaffName');
+  const staffRoleLabelEl = document.getElementById('cpStaffRoleLabel');
+  const staffPhoneLinkEl = document.getElementById('cpStaffPhoneLink');
+  if (staffNameEl) staffNameEl.textContent = cust.staffName || 'Not specified';
+  if (staffRoleLabelEl) staffRoleLabelEl.textContent = cust.staffRole || 'Staff In-Charge';
+  if (staffPhoneLinkEl) {
+    if (cust.staffPhone) {
+      const clean = cleanPhoneNumber(cust.staffPhone);
+      staffPhoneLinkEl.innerHTML = `<a href="tel:${clean}" class="font-mono text-indigo-700 font-bold hover:underline inline-flex items-center gap-1"><i data-lucide="phone" class="w-3 h-3"></i><span>${escapeHtml(cust.staffPhone)}</span></a>`;
+    } else {
+      staffPhoneLinkEl.innerHTML = '<span class="text-slate-400 font-mono text-[10px]">No phone</span>';
+    }
+  }
+
+  // Notes box
+  const notesTextEl = document.getElementById('cpNotesText');
+  if (notesTextEl) notesTextEl.textContent = cust.notes && cust.notes.trim() ? cust.notes : 'No extra notes recorded';
+
+  // 2. Metrics Cards
+  const totalOrdersEl = document.getElementById('cpTotalOrders');
+  const totalBagsEl = document.getElementById('cpTotalBags');
+  const totalSpendEl = document.getElementById('cpTotalSpend');
+  const avgOrderValEl = document.getElementById('cpAvgOrderValue');
+  const totalKgEl = document.getElementById('cpTotalKg');
+  const totalTonnesEl = document.getElementById('cpTotalTonnes');
+  const lastOrderDateEl = document.getElementById('cpLastOrderDate');
+  const activeStatusEl = document.getElementById('cpActiveStatus');
+
+  if (totalOrdersEl) totalOrdersEl.textContent = `${ordersCount} Orders`;
+  if (totalBagsEl) totalBagsEl.textContent = `${totalBags.toLocaleString('en-IN')} Bags`;
+  if (totalSpendEl) totalSpendEl.textContent = `₹${Math.round(totalSpend).toLocaleString('en-IN')}`;
+  if (avgOrderValEl) avgOrderValEl.textContent = ordersCount > 0 ? `₹${avgOrderValue.toLocaleString('en-IN')} / order` : '₹0 / order';
+  if (totalKgEl) totalKgEl.textContent = `${totalKg.toLocaleString('en-IN')} kg`;
+  if (totalTonnesEl) totalTonnesEl.textContent = `${(totalKg / 1000).toFixed(2)} Tonnes`;
+  if (lastOrderDateEl) lastOrderDateEl.textContent = lastOrderDate;
+  if (activeStatusEl) activeStatusEl.textContent = ordersCount > 0 ? 'Active Buyer 🟢' : 'New Account 🌱';
+
+  // 3. Team Members Section
+  renderProfileMembersList(cust);
+
+  // 4. Complete Order History Section
+  const searchInput = document.getElementById('cpOrderSearchInput');
+  if (searchInput) searchInput.value = '';
+  renderCustomerOrderHistory(currentProfileOrders);
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+
+  // Scroll to top
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+/**
+ * Returns from Customer Profile view back to Customers Directory list
+ */
+function closeCustomerProfile() {
+  currentProfileCustomerId = null;
+  activeDetailCustomerId = null;
+
+  const dirContainer = document.getElementById('customersDirectoryContainer');
+  const profContainer = document.getElementById('customerProfileContainer');
+  if (profContainer) profContainer.classList.add('hidden');
+  if (dirContainer) dirContainer.classList.remove('hidden');
+
+  const mainTitle = document.getElementById('mainViewHeaderTitle');
+  const mainSubtitle = document.getElementById('mainViewHeaderSubtitle');
+  if (mainTitle) mainTitle.textContent = 'CUSTOMERS DIRECTORY';
+  if (mainSubtitle) mainSubtitle.textContent = 'Wholesale Buyers & Contact Management';
+
+  renderCustomersList();
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+/**
+ * Renders the complete order history list & table for customer profile
+ */
+function renderCustomerOrderHistory(ordersList) {
+  const tableBody = document.getElementById('cpOrderHistoryTableBody');
+  const mobileList = document.getElementById('cpOrderHistoryMobileList');
+  const emptyNotice = document.getElementById('cpOrderHistoryEmpty');
+  const countBadge = document.getElementById('cpOrderHistoryCountBadge');
+
+  if (countBadge) {
+    countBadge.textContent = `${ordersList.length} Orders`;
+  }
+
+  if (ordersList.length === 0) {
+    if (tableBody) tableBody.innerHTML = '';
+    if (mobileList) mobileList.innerHTML = '';
+    if (emptyNotice) emptyNotice.classList.remove('hidden');
+    return;
+  }
+  if (emptyNotice) emptyNotice.classList.add('hidden');
+
+  // 1. Desktop Table Rows
+  if (tableBody) {
+    tableBody.innerHTML = '';
+    ordersList.forEach(o => {
+      const tr = document.createElement('tr');
+      tr.className = 'hover:bg-slate-50/80 transition border-b border-slate-100';
+
+      // Status pill
+      const isUrgent = (o.deliveryStatus === 'Urgent');
+      const isDelivered = (o.dispatchStatus === 'Delivered');
+      const isOut = (o.dispatchStatus === 'OutForDelivery');
+
+      let statusBadge = '';
+      if (isDelivered) {
+        statusBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs"><span>Delivered</span> 🟢</span>`;
+      } else if (isOut) {
+        statusBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200 shadow-2xs"><span>Out for Delivery</span> 🚚</span>`;
+      } else {
+        statusBadge = `<span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200 shadow-2xs"><span>Pending</span> ⏳</span>`;
+      }
+
+      const urgencyBadge = isUrgent
+        ? `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-200 mt-1">⚡ URGENT</span>`
+        : `<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[9px] font-bold text-slate-400 mt-1">Normal</span>`;
+
+      // Items list
+      const items = (Array.isArray(o.items) && o.items.length > 0) ? o.items : [{
+        productName: o.product?.name || o.productName || 'Biriyani Rice',
+        bagSize: o.bagSize || 25,
+        bagQty: o.bagQty || 1,
+        perKgRate: o.perKgRate || 95,
+        totalKg: o.totalKg || 25,
+        totalAmount: o.totalAmount || 0
+      }];
+
+      const itemsHtml = items.map(it => {
+        const pName = it.productName || 'Rice Variety';
+        const bSize = parseFloat(it.bagSize) || 25;
+        const bQty = parseFloat(it.bagQty) || 0;
+        const rate = parseFloat(it.perKgRate) || 0;
+        return `
+          <div class="flex items-center gap-1.5 flex-wrap py-0.5 text-xs">
+            <span class="font-extrabold text-slate-900">${escapeHtml(pName)}</span>
+            <span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200">${bSize} kg</span>
+            <span class="text-[10px] text-slate-500 font-semibold">${bQty} bags</span>
+            <span class="text-[10px] text-slate-400 font-mono">@ ₹${rate}/kg</span>
+          </div>
+        `;
+      }).join('');
+
+      const oKg = parseFloat(o.totalKg) || items.reduce((s, it) => s + (parseFloat(it.totalKg) || ((parseFloat(it.bagSize) || 25) * (parseFloat(it.bagQty) || 0))), 0);
+      const oBags = parseFloat(o.bagQty) || items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+      const oAmt = parseFloat(o.totalAmount) || items.reduce((s, it) => s + (parseFloat(it.totalAmount) || 0), 0);
+
+      tr.innerHTML = `
+        <td class="px-4 py-3">
+          <div class="font-black text-slate-900 text-xs">${escapeHtml(o.id || 'ORD')}</div>
+          <div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1">
+            <i data-lucide="calendar" class="w-3 h-3 text-slate-400"></i>
+            <span>${escapeHtml(o.date || '')}</span>
+          </div>
+        </td>
+        <td class="px-4 py-3">
+          <div class="space-y-0.5 max-w-md">
+            ${itemsHtml}
+          </div>
+          ${o.notes ? `<div class="text-[10px] text-slate-400 italic mt-1">📝 ${escapeHtml(o.notes)}</div>` : ''}
+        </td>
+        <td class="px-4 py-3 text-right">
+          <div class="font-black text-slate-900 text-xs">${oKg.toLocaleString('en-IN')} kg</div>
+          <div class="text-[10px] text-slate-500 font-semibold mt-0.5">${oBags.toLocaleString('en-IN')} Bags</div>
+        </td>
+        <td class="px-4 py-3 text-right">
+          <div class="font-black text-blue-700 text-xs">₹${Math.round(oAmt).toLocaleString('en-IN')}</div>
+          <div class="text-[10px] text-slate-400">Total Bill</div>
+        </td>
+        <td class="px-4 py-3 text-center">
+          <div class="flex flex-col items-center">
+            ${statusBadge}
+            ${urgencyBadge}
+          </div>
+        </td>
+        <td class="px-4 py-3 text-center">
+          <div class="flex items-center justify-center gap-1.5">
+            <button type="button" onclick="shareOrderToWhatsApp('${escapeHtml(o.id)}')" title="Share Order on WhatsApp" class="p-1.5 text-green-600 hover:text-green-800 hover:bg-green-50 rounded-lg transition active:scale-95">
+              <i data-lucide="message-circle" class="w-4 h-4"></i>
+            </button>
+            <button type="button" onclick="editOrder('${escapeHtml(o.id)}')" title="View / Edit in Sales Register" class="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition active:scale-95">
+              <i data-lucide="edit-3" class="w-4 h-4"></i>
+            </button>
+          </div>
+        </td>
+      `;
+      tableBody.appendChild(tr);
+    });
+  }
+
+  // 2. Mobile Responsive Cards
+  if (mobileList) {
+    mobileList.innerHTML = '';
+    ordersList.forEach(o => {
+      const isUrgent = (o.deliveryStatus === 'Urgent');
+      const isDelivered = (o.dispatchStatus === 'Delivered');
+      const isOut = (o.dispatchStatus === 'OutForDelivery');
+
+      let statusBadge = isDelivered
+        ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200">Delivered 🟢</span>`
+        : (isOut
+          ? `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">Out 🚚</span>`
+          : `<span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-800 border border-amber-200">Pending ⏳</span>`);
+
+      const items = (Array.isArray(o.items) && o.items.length > 0) ? o.items : [{
+        productName: o.product?.name || o.productName || 'Biriyani Rice',
+        bagSize: o.bagSize || 25,
+        bagQty: o.bagQty || 1,
+        perKgRate: o.perKgRate || 95,
+        totalKg: o.totalKg || 25,
+        totalAmount: o.totalAmount || 0
+      }];
+
+      const oKg = parseFloat(o.totalKg) || items.reduce((s, it) => s + (parseFloat(it.totalKg) || 0), 0);
+      const oBags = parseFloat(o.bagQty) || items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+      const oAmt = parseFloat(o.totalAmount) || items.reduce((s, it) => s + (parseFloat(it.totalAmount) || 0), 0);
+
+      const itemsSummary = items.map(it => `${it.productName} (${it.bagQty} × ${it.bagSize}kg)`).join(', ');
+
+      const card = document.createElement('div');
+      card.className = 'p-3.5 bg-slate-50 border border-slate-200 rounded-2xl space-y-2';
+      card.innerHTML = `
+        <div class="flex items-center justify-between text-xs">
+          <div class="flex items-center gap-2">
+            <span class="font-black text-slate-900">${escapeHtml(o.id || 'ORD')}</span>
+            <span class="text-[11px] text-slate-500 font-medium">${escapeHtml(o.date || '')}</span>
+          </div>
+          <div class="flex items-center gap-1.5">
+            ${statusBadge}
+            ${isUrgent ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-rose-100 text-rose-700">⚡</span>' : ''}
+          </div>
+        </div>
+        <div class="text-xs text-slate-800 font-semibold">${escapeHtml(itemsSummary)}</div>
+        <div class="flex items-center justify-between pt-1 border-t border-slate-200/70 text-xs">
+          <span class="font-extrabold text-slate-700">${oBags} Bags • ${oKg.toLocaleString('en-IN')} kg</span>
+          <span class="font-black text-blue-700 text-sm">₹${Math.round(oAmt).toLocaleString('en-IN')}</span>
+        </div>
+        <div class="flex items-center justify-end gap-2 pt-1">
+          <button type="button" onclick="shareOrderToWhatsApp('${escapeHtml(o.id)}')" class="px-2.5 py-1 bg-green-50 hover:bg-green-100 text-green-700 rounded-lg text-xs font-bold transition inline-flex items-center gap-1 border border-green-200">
+            <i data-lucide="message-circle" class="w-3.5 h-3.5"></i>
+            <span>WhatsApp</span>
+          </button>
+          <button type="button" onclick="editOrder('${escapeHtml(o.id)}')" class="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg text-xs font-bold transition inline-flex items-center gap-1 border border-blue-200">
+            <i data-lucide="edit-3" class="w-3.5 h-3.5"></i>
+            <span>Edit</span>
+          </button>
+        </div>
+      `;
+      mobileList.appendChild(card);
+    });
+  }
+}
+
+/**
+ * Live search filter inside the customer order history
+ */
+function filterCustomerOrderHistory() {
+  const input = document.getElementById('cpOrderSearchInput');
+  const query = (input?.value || '').trim().toLowerCase();
+  if (!query) {
+    renderCustomerOrderHistory(currentProfileOrders);
+    return;
+  }
+  const filtered = currentProfileOrders.filter(o => {
+    const idMatch = (o.id || '').toLowerCase().includes(query);
+    const dateMatch = (o.date || '').toLowerCase().includes(query);
+    const statusMatch = (o.dispatchStatus || '').toLowerCase().includes(query) || (o.deliveryStatus || '').toLowerCase().includes(query);
+    const notesMatch = (o.notes || '').toLowerCase().includes(query);
+    const itemsMatch = Array.isArray(o.items) && o.items.some(it => (it.productName || '').toLowerCase().includes(query));
+    return idMatch || dateMatch || statusMatch || notesMatch || itemsMatch;
+  });
+  renderCustomerOrderHistory(filtered);
+}
+
+function startOrderFromCustomerProfile() {
+  if (!currentProfileCustomerId) return;
+  const custId = currentProfileCustomerId;
+  openNewOrderModal(custId);
+}
+
+function editCustomerFromProfile() {
+  if (!currentProfileCustomerId) return;
+  const custId = currentProfileCustomerId;
+  closeCustomerProfile();
+  editCustomer(custId);
+}
+
+function openAddMemberFormForProfile() {
+  if (!currentProfileCustomerId) return;
+  openCustomerDetailModal(currentProfileCustomerId, true);
+}
+
+function renderProfileMembersList(cust) {
+  const container = document.getElementById('cpMembersContainer');
+  const countBadge = document.getElementById('cpMembersCountBadge');
+  if (!container) return;
+
+  const members = getCustomerMembers(cust);
+  if (countBadge) countBadge.textContent = members.length;
+
+  if (members.length === 0) {
+    container.innerHTML = '<span class="text-xs text-slate-400 py-1">No team members added yet. Click "+ Add Member" to add Chef, Manager or Staff.</span>';
+    return;
+  }
+
+  container.innerHTML = members.map(m => {
+    const roleBadge = getDesignationBadge(m.role);
+    const cleanPhone = cleanPhoneNumber(m.phone);
+    const callBtn = cleanPhone ? `<a href="tel:${cleanPhone}" class="p-1 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded" title="Call"><i data-lucide="phone" class="w-3 h-3"></i></a>` : '';
+    const waBtn = cleanPhone ? `<a href="https://wa.me/91${cleanPhone}" target="_blank" rel="noopener" class="p-1 text-green-600 hover:text-green-800 hover:bg-green-50 rounded" title="WhatsApp"><i data-lucide="message-circle" class="w-3 h-3"></i></a>` : '';
+
+    return `
+      <div class="inline-flex items-center gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs hover:border-slate-300 transition">
+        <button type="button" onclick="openCustomerProfile('')" class="font-extrabold text-slate-900 hover:text-blue-600 hover:underline text-left">${escapeHtml(m.name)}</button>
+        ${roleBadge}
+        ${m.isPrimary ? '<span class="text-[9px] font-black text-amber-700 bg-amber-100 px-1 rounded">★ Primary</span>' : ''}
+        ${cleanPhone ? `<span class="font-mono text-slate-500 text-[11px] ml-1">${escapeHtml(m.phone)}</span>` : ''}
+        <div class="flex items-center gap-0.5 ml-1">
+          ${callBtn}
+          ${waBtn}
+          <button type="button" onclick="editCustomerMember('${cust.id}', '${m.id}')" class="p-1 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" title="Edit Member"><i data-lucide="edit-3" class="w-3 h-3"></i></button>
+          <button type="button" onclick="deleteCustomerMember('${cust.id}', '${m.id}')" class="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded" title="Delete Member"><i data-lucide="trash-2" class="w-3 h-3"></i></button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 window.initApp = initApp;
+window.openCustomerProfile = openCustomerProfile;
+window.closeCustomerProfile = closeCustomerProfile;
+window.getCustomerOrders = getCustomerOrders;
+window.filterCustomerOrderHistory = filterCustomerOrderHistory;
+window.startOrderFromCustomerProfile = startOrderFromCustomerProfile;
+window.editCustomerFromProfile = editCustomerFromProfile;
+window.openAddMemberFormForProfile = openAddMemberFormForProfile;
+window.renderProfileMembersList = renderProfileMembersList;
+window.renderCustomerOrderHistory = renderCustomerOrderHistory;
 window.updateDashboard = updateDashboard;
 window.openLeaderboardModal = openLeaderboardModal;
 window.closeLeaderboardModal = closeLeaderboardModal;

@@ -1141,8 +1141,11 @@
     <!-- ==================== VIEW 3: CUSTOMERS DIRECTORY ==================== -->
     <div id="viewCustomers" class="hidden p-4 sm:p-6 space-y-6">
       
-      <!-- View Header Card -->
-      <div class="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <!-- Customers Directory Main List View Container -->
+      <div id="customersDirectoryContainer" class="space-y-6">
+
+        <!-- View Header Card -->
+        <div class="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div class="flex items-center gap-3">
           <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center shrink-0 shadow-inner">
             <i data-lucide="users" class="w-5 h-5"></i>
@@ -1402,6 +1405,202 @@
               <!-- Rendered dynamically -->
             </div>
           </div>
+      </div>
+      <!-- /#customersDirectoryContainer -->
+
+      <!-- ==================== INLINE CUSTOMER PROFILE VIEW ==================== -->
+      <div id="customerProfileContainer" class="hidden space-y-6">
+
+        <!-- Top Navigation & Action Bar -->
+        <div class="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div class="flex items-center gap-3">
+            <button type="button" id="cpBackBtn" onclick="closeCustomerProfile()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold px-3.5 py-2.5 rounded-xl transition inline-flex items-center gap-2 shadow-2xs border border-slate-200 active:scale-95">
+              <i data-lucide="arrow-left" class="w-4 h-4 text-slate-700"></i>
+              <span>Back to Customers</span>
+            </button>
+            <div class="h-6 w-px bg-slate-200 hidden sm:block"></div>
+            <div>
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Customer View</span>
+              <h3 class="font-black text-sm sm:text-base text-slate-900 leading-tight">Detailed Customer Profile</h3>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button type="button" onclick="editCustomerFromProfile()" class="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold px-3 py-2 rounded-xl transition inline-flex items-center gap-1.5 border border-slate-200 active:scale-95" title="Edit Customer Details">
+              <i data-lucide="edit-3" class="w-3.5 h-3.5 text-blue-600"></i>
+              <span>Edit Customer</span>
+            </button>
+            <button type="button" onclick="startOrderFromCustomerProfile()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl transition inline-flex items-center gap-1.5 shadow-sm active:scale-95">
+              <i data-lucide="plus-circle" class="w-4 h-4"></i>
+              <span>+ New Order</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Customer Summary Header Card -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-6 shadow-xs space-y-4">
+          <!-- Top Row: Identity, Category, Location & Quick Contact -->
+          <div class="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+            <div class="flex items-start gap-3.5">
+              <div id="cpAvatar" class="w-12 h-12 sm:w-14 sm:h-14 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-black text-xl sm:text-2xl shadow-md shrink-0">
+                C
+              </div>
+              <div class="min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h2 id="cpCustomerName" class="font-black text-lg sm:text-2xl text-slate-900 leading-tight">Customer Name</h2>
+                  <span id="cpCategoryBadge"></span>
+                  <span id="cpMilestoneBadge" class="hidden text-[10px] font-black px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 border border-amber-200"></span>
+                </div>
+                <div id="cpLocationText" class="text-xs text-slate-600 mt-1 flex items-center gap-1.5 flex-wrap">
+                  <!-- District, Town, Landmark badges rendered here -->
+                </div>
+              </div>
+            </div>
+            <div id="cpQuickContactActions" class="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+              <!-- Direct Call / WhatsApp buttons rendered here -->
+            </div>
+          </div>
+
+          <!-- Contact Details Grid (Owner, Staff, Notes) -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 pt-3 border-t border-slate-100 text-xs">
+            <!-- Owner Info Box -->
+            <div class="p-3 bg-amber-50/60 rounded-xl border border-amber-200/80 space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-amber-900 uppercase flex items-center gap-1">
+                  <i data-lucide="crown" class="w-3.5 h-3.5 text-amber-600"></i>
+                  <span>Owner / Proprietor</span>
+                </span>
+                <span id="cpOwnerPhoneLink"></span>
+              </div>
+              <div id="cpOwnerName" class="font-extrabold text-slate-900 text-xs">Not specified</div>
+            </div>
+
+            <!-- Staff Info Box -->
+            <div class="p-3 bg-indigo-50/60 rounded-xl border border-indigo-200/80 space-y-1">
+              <div class="flex items-center justify-between">
+                <span class="text-[10px] font-bold text-indigo-900 uppercase flex items-center gap-1">
+                  <i data-lucide="chef-hat" class="w-3.5 h-3.5 text-indigo-600"></i>
+                  <span id="cpStaffRoleLabel">Staff In-Charge</span>
+                </span>
+                <span id="cpStaffPhoneLink"></span>
+              </div>
+              <div id="cpStaffName" class="font-extrabold text-slate-900 text-xs">Not specified</div>
+            </div>
+
+            <!-- Notes / Route Info Box -->
+            <div id="cpNotesBox" class="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1 sm:col-span-2 lg:col-span-1">
+              <span class="text-[10px] font-bold text-slate-500 uppercase flex items-center gap-1">
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-slate-400"></i>
+                <span>Notes &amp; Delivery Route</span>
+              </span>
+              <div id="cpNotesText" class="font-medium text-slate-700 text-xs truncate">No extra notes</div>
+            </div>
+          </div>
+
+          <!-- Lifetime Spend & Volume Statistics 4-Card Grid -->
+          <div class="grid grid-cols-2 lg:grid-cols-4 gap-3 pt-3 border-t border-slate-100">
+            <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-center">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-slate-500">Total Orders Placed</span>
+              <div id="cpTotalOrders" class="text-base sm:text-xl font-black text-slate-900 mt-0.5">0</div>
+              <span id="cpTotalBags" class="text-[11px] font-semibold text-slate-500">0 Bags</span>
+            </div>
+            <div class="p-3.5 bg-blue-50/60 rounded-xl border border-blue-200 text-center">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-blue-700">Total Lifetime Spend</span>
+              <div id="cpTotalSpend" class="text-base sm:text-xl font-black text-blue-800 mt-0.5">₹0</div>
+              <span id="cpAvgOrderValue" class="text-[11px] font-semibold text-blue-600">₹0 / order avg</span>
+            </div>
+            <div class="p-3.5 bg-emerald-50/60 rounded-xl border border-emerald-200 text-center">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-emerald-700">Total Volume (KG)</span>
+              <div id="cpTotalKg" class="text-base sm:text-xl font-black text-emerald-800 mt-0.5">0 kg</div>
+              <span id="cpTotalTonnes" class="text-[11px] font-semibold text-emerald-600">0 Tonnes</span>
+            </div>
+            <div class="p-3.5 bg-purple-50/60 rounded-xl border border-purple-200 text-center">
+              <span class="text-[10px] font-bold uppercase tracking-wider text-purple-700">Latest Order Date</span>
+              <div id="cpLastOrderDate" class="text-base sm:text-xl font-black text-purple-900 mt-0.5">—</div>
+              <span id="cpActiveStatus" class="text-[11px] font-semibold text-purple-600">Buyer</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Team Members & Contacts Section -->
+        <div class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+          <div class="flex items-center justify-between pb-2.5 border-b border-slate-100">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                <i data-lucide="users" class="w-3.5 h-3.5"></i>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Team Members &amp; Contacts</span>
+                  <span id="cpMembersCountBadge" class="bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded-full text-[10px] font-extrabold">0</span>
+                </h4>
+              </div>
+            </div>
+            <button type="button" onclick="openAddMemberFormForProfile()" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 py-1.5 rounded-xl transition inline-flex items-center gap-1 border border-indigo-200 shadow-2xs active:scale-95">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+              <span>+ Add Member</span>
+            </button>
+          </div>
+          <div id="cpMembersContainer" class="flex items-center gap-2 flex-wrap">
+            <!-- Dynamically populated -->
+          </div>
+        </div>
+
+        <!-- Complete Order History Section -->
+        <div class="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden space-y-0">
+          <!-- Header Row with Search Input -->
+          <div class="p-4 sm:p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex items-center gap-2.5">
+              <div class="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                <i data-lucide="history" class="w-4 h-4"></i>
+              </div>
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="font-black text-sm sm:text-base text-slate-900">Complete Order History</h3>
+                  <span id="cpOrderHistoryCountBadge" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-200">0 Orders</span>
+                </div>
+                <p class="text-[11px] text-slate-400">All historical and recent orders placed by this customer, latest first</p>
+              </div>
+            </div>
+            <div class="relative w-full sm:w-64">
+              <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input type="text" id="cpOrderSearchInput" oninput="filterCustomerOrderHistory()" placeholder="Search order ID, product, date..." class="w-full text-xs pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+            </div>
+          </div>
+
+          <!-- Desktop Order History Table (Visible on sm screens and up) -->
+          <div class="hidden sm:block overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="bg-slate-900 text-white uppercase text-[10px] tracking-wider font-extrabold">
+                <tr>
+                  <th class="px-4 py-3 w-32">Order ID &amp; Date</th>
+                  <th class="px-4 py-3">Products / Items Ordered</th>
+                  <th class="px-4 py-3 text-right w-28">Quantity</th>
+                  <th class="px-4 py-3 text-right w-28">Order Amount</th>
+                  <th class="px-4 py-3 text-center w-36">Order Status</th>
+                  <th class="px-4 py-3 text-center w-28">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="cpOrderHistoryTableBody" class="divide-y divide-slate-100">
+                <!-- Rendered dynamically -->
+              </tbody>
+            </table>
+          </div>
+
+          <!-- Mobile Order History Cards List (Visible on mobile only) -->
+          <div id="cpOrderHistoryMobileList" class="sm:hidden p-3 space-y-2.5 divide-y-0">
+            <!-- Rendered dynamically -->
+          </div>
+
+          <!-- Empty State Container -->
+          <div id="cpOrderHistoryEmpty" class="hidden p-8 text-center text-xs text-slate-400 space-y-2">
+            <div class="text-3xl">📦</div>
+            <div class="font-bold text-slate-700">No orders found for this customer</div>
+            <p class="text-[11px] text-slate-400">New orders placed for this customer will automatically appear here dynamically.</p>
+          </div>
+        </div>
+
+      </div>
+      <!-- /#customerProfileContainer -->
     </div>
 
     <!-- ==================== VIEW 4: INCENTIVES SCHEME ==================== -->
@@ -3784,6 +3983,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.12.1"></script>
+  <script src="app.js?v=2.13.0"></script>
 </body>
 </html>
