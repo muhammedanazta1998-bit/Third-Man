@@ -515,6 +515,79 @@ window.onerror = function(msg, url, line, col, err) {
   trashList = [];
   saveTrashToStorage();
 
+  // TEST 16: Dashboard Incentive Privacy Toggle (Persistent Eye / Eye-Off)
+  log("\n--- Testing Dashboard Incentive Privacy Toggle ---");
+  assert(typeof isDashboardIncentiveHidden === 'function', "isDashboardIncentiveHidden function exists");
+  assert(typeof setDashboardIncentiveHidden === 'function', "setDashboardIncentiveHidden function exists");
+  assert(typeof toggleIncentivePrivacy === 'function', "toggleIncentivePrivacy function exists");
+  assert(typeof applyIncentivePrivacy === 'function', "applyIncentivePrivacy function exists");
+
+  // A. Clean state: when key is not in localStorage, default MUST be hidden (true)
+  localStorage.removeItem('hideDashboardIncentive');
+  assert(isDashboardIncentiveHidden() === true, "Default privacy state is hidden (true) on clean load");
+
+  // Prepare mock DOM elements for incentive card if running in test environment
+  let mockBtn = document.getElementById('btnToggleIncentivePrivacy');
+  if (!mockBtn) {
+    mockBtn = document.createElement('button');
+    mockBtn.id = 'btnToggleIncentivePrivacy';
+    document.body.appendChild(mockBtn);
+  }
+  let mockAmt = document.getElementById('incentiveAmount');
+  if (!mockAmt) {
+    mockAmt = document.createElement('h3');
+    mockAmt.id = 'incentiveAmount';
+    document.body.appendChild(mockAmt);
+  }
+  let mockSub = document.getElementById('incentiveSubText');
+  if (!mockSub) {
+    mockSub = document.createElement('p');
+    mockSub.id = 'incentiveSubText';
+    document.body.appendChild(mockSub);
+  }
+
+  // Set real values
+  mockAmt.setAttribute('data-real-amount', '₹25,480');
+  mockSub.setAttribute('data-real-subtext', '(₹5,000 + ₹20,480 Extra Bonus)');
+  mockSub.setAttribute('data-target-reached', 'true');
+
+  // Apply default hidden state
+  applyIncentivePrivacy();
+  assert(mockAmt.textContent === '₹ ••••••', `When hidden, incentiveAmount is masked with dots: '${mockAmt.textContent}'`);
+  assert(mockBtn.getAttribute('title') === 'Reveal incentive amount', "Toggle button title is 'Reveal incentive amount'");
+  assert(mockBtn.innerHTML.includes('eye-off'), "Toggle button renders eye-off icon when hidden");
+
+  // B. Toggle to reveal
+  toggleIncentivePrivacy();
+  assert(localStorage.getItem('hideDashboardIncentive') === 'false', "localStorage saved 'false' after toggle");
+  assert(isDashboardIncentiveHidden() === false, "isDashboardIncentiveHidden() is false");
+  assert(mockAmt.textContent === '₹25,480', `When revealed, real amount '₹25,480' is displayed (actual: '${mockAmt.textContent}')`);
+  assert(mockSub.textContent === '(₹5,000 + ₹20,480 Extra Bonus)', "When revealed, real subtext is displayed");
+  assert(mockBtn.getAttribute('title') === 'Hide incentive amount', "Toggle button title is 'Hide incentive amount'");
+  assert(mockBtn.innerHTML.includes('eye') && !mockBtn.innerHTML.includes('eye-off'), "Toggle button renders open eye icon when revealed");
+
+  // C. Toggle back to hidden
+  toggleIncentivePrivacy();
+  assert(localStorage.getItem('hideDashboardIncentive') === 'true', "localStorage saved 'true' after toggling back");
+  assert(isDashboardIncentiveHidden() === true, "isDashboardIncentiveHidden() is true");
+  assert(mockAmt.textContent === '₹ ••••••', "Amount masked again with '₹ ••••••'");
+  assert(mockBtn.getAttribute('title') === 'Reveal incentive amount', "Toggle button title restored to 'Reveal incentive amount'");
+  assert(mockBtn.innerHTML.includes('eye-off'), "Toggle button icon restored to eye-off");
+
+  // D. Update incentive card while hidden
+  mockAmt.setAttribute('data-real-amount', '₹35,000');
+  applyIncentivePrivacy();
+  assert(mockAmt.textContent === '₹ ••••••', "Newly computed amount remains masked while hidden");
+
+  // E. Reveal newly computed amount
+  setDashboardIncentiveHidden(false);
+  applyIncentivePrivacy();
+  assert(mockAmt.textContent === '₹35,000', "Revealing shows updated computed amount '₹35,000'");
+
+  // Reset to default hidden
+  setDashboardIncentiveHidden(true);
+  applyIncentivePrivacy();
+
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   if (failed === 0) {

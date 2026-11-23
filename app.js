@@ -862,6 +862,9 @@ function initApp() {
     // Refresh entire dashboard UI
     updateDashboard();
 
+    // Apply Dashboard Incentive Privacy preference
+    applyIncentivePrivacy();
+
     // Update Accidental Deletion Shield & Trash Badges
     updateTrashBadges();
 
@@ -4792,6 +4795,93 @@ function calculateIncentive(ordersList = [], totalKg = 0) {
   };
 }
 
+// ==================== DASHBOARD INCENTIVE PRIVACY TOGGLE ====================
+
+const INCENTIVE_PRIVACY_STORAGE_KEY = 'hideDashboardIncentive';
+
+function isDashboardIncentiveHidden() {
+  try {
+    const stored = localStorage.getItem(INCENTIVE_PRIVACY_STORAGE_KEY);
+    // Default to hidden (true) on first load or when key is not set
+    if (stored === null || stored === undefined) {
+      return true;
+    }
+    return stored === 'true';
+  } catch (e) {
+    return true; // Safe fallback on storage errors
+  }
+}
+
+function setDashboardIncentiveHidden(hide) {
+  try {
+    localStorage.setItem(INCENTIVE_PRIVACY_STORAGE_KEY, hide ? 'true' : 'false');
+  } catch (e) {}
+}
+
+function updateIncentivePrivacyButtonUI(isHidden) {
+  const btn = document.getElementById('btnToggleIncentivePrivacy');
+  if (!btn) return;
+
+  const title = isHidden ? 'Reveal incentive amount' : 'Hide incentive amount';
+  btn.setAttribute('title', title);
+  btn.setAttribute('aria-label', title);
+
+  const iconName = isHidden ? 'eye-off' : 'eye';
+  btn.innerHTML = `<i id="incentivePrivacyEyeIcon" data-lucide="${iconName}" class="w-4 h-4 text-white pointer-events-none"></i>`;
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function applyIncentivePrivacy() {
+  const isHidden = isDashboardIncentiveHidden();
+  updateIncentivePrivacyButtonUI(isHidden);
+
+  const amountEl = document.getElementById('incentiveAmount');
+  const subTextEl = document.getElementById('incentiveSubText');
+  const brandBonusEl = document.getElementById('incentiveBrandBonusText');
+
+  if (amountEl) {
+    if (isHidden) {
+      amountEl.textContent = '₹ ••••••';
+    } else {
+      amountEl.textContent = amountEl.getAttribute('data-real-amount') || '₹0';
+    }
+  }
+
+  if (subTextEl) {
+    if (isHidden) {
+      const isTargetReached = subTextEl.getAttribute('data-target-reached') === 'true';
+      const remainingKg = subTextEl.getAttribute('data-remaining-kg') || '';
+      if (isTargetReached) {
+        subTextEl.textContent = '🎉 Target Reached • Bonus Active';
+      } else if (remainingKg) {
+        subTextEl.textContent = `${remainingKg} kg to Unlock 10T Slab`;
+      } else {
+        subTextEl.textContent = 'Target Progress';
+      }
+    } else {
+      subTextEl.textContent = subTextEl.getAttribute('data-real-subtext') || 'Target Progress';
+    }
+  }
+
+  if (brandBonusEl) {
+    if (isHidden) {
+      brandBonusEl.textContent = '+₹••••';
+    } else {
+      brandBonusEl.textContent = brandBonusEl.getAttribute('data-real-bonus') || '+₹0';
+    }
+  }
+}
+
+function toggleIncentivePrivacy() {
+  const currentHidden = isDashboardIncentiveHidden();
+  const newHidden = !currentHidden;
+  setDashboardIncentiveHidden(newHidden);
+  applyIncentivePrivacy();
+}
+
 function updateIncentiveCard(ordersList = [], totalKg = 0) {
   const inc = calculateIncentive(ordersList, totalKg);
 
@@ -4812,24 +4902,28 @@ function updateIncentiveCard(ordersList = [], totalKg = 0) {
   const preSchemeNoticeEl = document.getElementById('incentivePreSchemeNotice');
 
   if (amountEl) {
-    amountEl.textContent = `₹${Math.round(inc.totalIncentive).toLocaleString('en-IN')}`;
+    amountEl.setAttribute('data-real-amount', `₹${Math.round(inc.totalIncentive).toLocaleString('en-IN')}`);
   }
 
   // Subtext on Orange Metric Card
   if (subTextEl) {
+    let realSub = '';
     if (inc.isTargetReached) {
       if (inc.specialBrandIncentive > 0) {
-        subTextEl.textContent = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} + Brand ₹${Math.round(inc.specialBrandIncentive)})`;
+        realSub = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} + Brand ₹${Math.round(inc.specialBrandIncentive)})`;
       } else {
-        subTextEl.textContent = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} Extra Bonus)`;
+        realSub = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} Extra Bonus)`;
       }
     } else {
       if (inc.specialBrandIncentive > 0) {
-        subTextEl.textContent = `(Brand Bonus: ₹${Math.round(inc.specialBrandIncentive)} • 10T Locked)`;
+        realSub = `(Brand Bonus: ₹${Math.round(inc.specialBrandIncentive)} • 10T Locked)`;
       } else {
-        subTextEl.textContent = `${Math.round(inc.remainingKg).toLocaleString('en-IN')} kg to Unlock 10T Slab`;
+        realSub = `${Math.round(inc.remainingKg).toLocaleString('en-IN')} kg to Unlock 10T Slab`;
       }
     }
+    subTextEl.setAttribute('data-real-subtext', realSub);
+    subTextEl.setAttribute('data-target-reached', inc.isTargetReached ? 'true' : 'false');
+    subTextEl.setAttribute('data-remaining-kg', Math.round(inc.remainingKg).toLocaleString('en-IN'));
   }
 
   // Volume Progress (strictly for active scheme volume)
@@ -4869,8 +4963,11 @@ function updateIncentiveCard(ordersList = [], totalKg = 0) {
     brandSalesTextEl.textContent = `Brands: ₹${Math.round(inc.specialBrandRevenue).toLocaleString('en-IN')}`;
   }
   if (brandBonusTextEl) {
-    brandBonusTextEl.textContent = `+₹${Math.round(inc.specialBrandIncentive).toLocaleString('en-IN')}`;
+    brandBonusTextEl.setAttribute('data-real-bonus', `+₹${Math.round(inc.specialBrandIncentive).toLocaleString('en-IN')}`);
   }
+
+  // Apply privacy mask according to stored preference
+  applyIncentivePrivacy();
 
   // Dashboard Widget Scheme Badges
   if (schemeBadgeEl) {
