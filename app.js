@@ -4088,7 +4088,7 @@ function saveQuickCustomerAndApply() {
         staffPhone: staffPhone,
         phone: ownerPhone || staffPhone || 'Nil'
       };
-      removeCustomerTombstone(name);
+      removeCustomerTombstone(quickName);
       customers.push(newCust);
       syncCloudCustomer(newCust);
       const selectedCustIdEl = document.getElementById('selectedCustomerId');
@@ -4287,7 +4287,7 @@ function handleSaveOrder(event) {
         location: customerLocation || 'Ernakulam',
         notes: 'Added from order'
       };
-      removeCustomerTombstone(name);
+      removeCustomerTombstone(customerName);
       customers.push(newCust);
       saveDataToStorage();
       syncCloudCustomer(newCust);
@@ -8650,9 +8650,20 @@ function deleteCustomer(customerId) {
   const cust = customers.find(c => c.id === customerId);
   if (!cust) return;
 
+  const custOrders = (Array.isArray(orders) ? orders : []).filter(o => {
+    if (!o || !o.customer) return false;
+    const oName = (typeof o.customer === 'string' ? o.customer : (o.customer.name || '')).trim().toLowerCase();
+    const oId = (typeof o.customer === 'object' && o.customer.id) ? o.customer.id : '';
+    return (customerId && oId === customerId) || (cust.name && oName === cust.name.trim().toLowerCase());
+  });
+
+  const orderWarning = custOrders.length > 0
+    ? `<br><br><span class="text-amber-600 text-xs font-semibold">ℹ️ This customer has ${custOrders.length} existing order(s). Their order history will remain preserved in sales records, but this customer profile will be moved to the Recycle Bin.</span>`
+    : '';
+
   showConfirmModal({
     title: `Delete Customer: ${cust.name}?`,
-    message: `Move customer <strong>${escapeHtml(cust.name)}</strong> (${escapeHtml(cust.category || 'Customer')}) to the Recycle Bin?`,
+    message: `Move customer <strong>${escapeHtml(cust.name)}</strong> (${escapeHtml(cust.category || 'Customer')}) to the Recycle Bin?${orderWarning}`,
     hint: '🛡️ Customer details will be safely preserved in the Recycle Bin and can be restored anytime.',
     confirmText: 'Move to Recycle Bin',
     confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
@@ -8663,9 +8674,16 @@ function deleteCustomer(customerId) {
       }
 
       const removed = cust;
-      customers = customers.filter(c => c.id !== customerId);
+      // 1. Add Tombstone so cloud sync or order scans will NEVER resurrect this customer
+      addCustomerTombstone(removed);
+
+      // 2. Remove from active customers list
+      customers = customers.filter(c => c.id !== customerId && c.name?.trim().toLowerCase() !== removed.name?.trim().toLowerCase());
       saveDataToStorage();
-      deleteCloudCustomer(customerId);
+
+      // 3. Robust Cloud Deletion (by doc ID AND by query)
+      deleteCloudCustomer(customerId, removed.name);
+
       populateCustomerDropdown();
       renderCustomersList();
 
@@ -8681,6 +8699,13 @@ function deleteCustomer(customerId) {
       });
     }
   });
+}
+
+function deleteCustomerFromDetail() {
+  if (!activeDetailCustomerId) return;
+  const custId = activeDetailCustomerId;
+  closeCustomerDetailModal();
+  deleteCustomer(custId);
 }
 
 // ==================== CUSTOMER PROFILE & TEAM MEMBERS MANAGER ====================
@@ -9697,11 +9722,13 @@ function restoreTrashItem(trashId) {
     showNotification(`✓ Order ${item.data.id} restored successfully!`);
 
   } else if (item.type === 'customer') {
-    const exists = customers.some(c => c.id === item.data.id);
+    removeCustomerTombstone(item.data.name, item.data.id);
+    const exists = customers.some(c => c.id === item.data.id || (c.name && c.name.trim().toLowerCase() === (item.data.name || '').trim().toLowerCase()));
     if (!exists) {
       customers.push(item.data);
     }
     saveDataToStorage();
+    syncCloudCustomer(item.data);
     populateCustomerDropdown();
     renderCustomersList();
     showNotification(`✓ Customer '${item.data.name}' restored!`);
@@ -9752,7 +9779,11 @@ function restoreAllTrash() {
         if (item.type === 'order') {
           if (!orders.some(o => o.id === item.data.id)) orders.unshift(item.data);
         } else if (item.type === 'customer') {
-          if (!customers.some(c => c.id === item.data.id)) customers.push(item.data);
+          removeCustomerTombstone(item.data.name, item.data.id);
+          if (!customers.some(c => c.id === item.data.id || (c.name && c.name.trim().toLowerCase() === (item.data.name || '').trim().toLowerCase()))) {
+            customers.push(item.data);
+            syncCloudCustomer(item.data);
+          }
         } else if (item.type === 'product') {
           if (!products.some(p => p.id === item.data.id)) products.push(item.data);
         } else if (item.type === 'batch_orders' && Array.isArray(item.data)) {
@@ -9779,10 +9810,15 @@ function deleteTrashPermanently(trashId) {
   showConfirmModal({
     title: 'Delete Permanently?',
     message: 'Are you sure you want to permanently delete this item? It cannot be recovered after this.',
-    hint: '⚠️ This will permanently remove the item from local storage.',
+    hint: '⚠️ This will permanently remove the item from local storage and cloud.',
     confirmText: 'Delete Permanently',
     confirmClass: 'bg-rose-700 hover:bg-rose-800 text-white',
     onConfirm: () => {
+      const item = trashList.find(t => t.trashId === trashId);
+      if (item && item.type === 'customer' && item.data) {
+        addCustomerTombstone(item.data);
+        deleteCloudCustomer(item.data.id, item.data.name);
+      }
       trashList = trashList.filter(t => t.trashId !== trashId);
       saveTrashToStorage();
       renderTrashList();
@@ -9804,6 +9840,12 @@ function emptyTrashPrompt() {
     confirmText: 'Empty Trash',
     confirmClass: 'bg-rose-700 hover:bg-rose-800 text-white',
     onConfirm: () => {
+      trashList.forEach(item => {
+        if (item && item.type === 'customer' && item.data) {
+          addCustomerTombstone(item.data);
+          deleteCloudCustomer(item.data.id, item.data.name);
+        }
+      });
       trashList = [];
       saveTrashToStorage();
       renderTrashList();
@@ -11666,6 +11708,10 @@ window.deduplicateCustomersList = deduplicateCustomersList;
 window.getCanonicalCustomerInfo = getCanonicalCustomerInfo;
 window.runManualCustomerDeduplication = runManualCustomerDeduplication;
 window.editCustomerFromDetail = editCustomerFromDetail;
+window.deleteCustomerFromDetail = deleteCustomerFromDetail;
+window.isCustomerTombstoned = isCustomerTombstoned;
+window.addCustomerTombstone = addCustomerTombstone;
+window.removeCustomerTombstone = removeCustomerTombstone;
 window.resetCustomersToPreNovemberSales = resetCustomersToPreNovemberSales;
 window.processIncomingCloudCustomers = processIncomingCloudCustomers;
 window.PRE_NOVEMBER_CANONICAL_CUSTOMERS = PRE_NOVEMBER_CANONICAL_CUSTOMERS;
