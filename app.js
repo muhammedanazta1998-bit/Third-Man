@@ -4296,13 +4296,24 @@ function refreshItemRatesForCustomer(customerName) {
 function handleSaveOrder(event) {
   event.preventDefault();
 
-  const customerName = document.getElementById('customerName')?.value.trim();
+  let customerName = document.getElementById('customerName')?.value.trim();
   const customerCategory = document.getElementById('customerCategory')?.value || 'Caterer';
   const customerDistrict = document.getElementById('orderDistrictSelect')?.value || 'Ernakulam';
-  const customerTown = document.getElementById('orderTownInput')?.value.trim() || document.getElementById('customerArea')?.value.trim() || '';
+  let customerTown = document.getElementById('orderTownInput')?.value.trim() || document.getElementById('customerArea')?.value.trim() || '';
   const customerLandmark = document.getElementById('orderLandmarkInput')?.value.trim() || document.getElementById('customerPlace')?.value.trim() || '';
   const customerPanchayath = document.getElementById('orderPanchayathInput')?.value.trim() || '';
   const customerLocationRaw = document.getElementById('customerLocation')?.value.trim() || '';
+
+  if (customerName) {
+    const cleanLower = customerName.trim().toLowerCase();
+    const aliasInfo = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[cleanLower];
+    if (aliasInfo) {
+      customerName = aliasInfo.canonicalName;
+      if (!customerTown || customerTown === 'Ernakulam' || customerTown === 'Local') {
+        customerTown = aliasInfo.town;
+      }
+    }
+  }
 
   if (customerTown) {
     saveNewDistrictTown(customerDistrict, customerTown);
