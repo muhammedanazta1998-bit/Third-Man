@@ -383,6 +383,9 @@ function removeCustomerTombstone(name, id) {
   saveDeletedCustomerTombstones();
 }
 
+// Immediately load tombstones on script startup
+loadDeletedCustomerTombstones();
+
 // Global App State
 let orders = [];
 let products = [];

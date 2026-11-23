@@ -450,6 +450,33 @@ window.onerror = function(msg, url, line, col, err) {
   assert(profEl && profEl.classList.contains('hidden'), "Profile container hidden when Back to Customers clicked");
   assert(dirEl && !dirEl.classList.contains('hidden'), "Directory container visible after Back to Customers clicked");
 
+  // TEST 14: Customer Deletion & Tombstone Protection System
+  log("\n--- Testing Customer Deletion & Tombstone Protection ---");
+  assert(typeof isCustomerTombstoned === 'function', "isCustomerTombstoned function exists");
+  assert(isCustomerTombstoned('test', ''), "Customer 'test' is permanently tombstoned by default");
+  assert(isCustomerTombstoned('Test', ''), "Customer 'Test' (case-insensitive) matches tombstone");
+
+  addCustomerTombstone({ name: 'Temporary Test Cust', id: 'c_temp_test_123' });
+  assert(isCustomerTombstoned('Temporary Test Cust', 'c_temp_test_123'), "Added customer is tombstoned");
+
+  // processIncomingCloudCustomers ignores tombstoned customer
+  const fakeRemote = [
+    { id: 'c_temp_test_123', name: 'Temporary Test Cust', category: 'Retailer', town: 'Ernakulam' }
+  ];
+  processIncomingCloudCustomers(fakeRemote);
+  assert(!customers.some(c => c.id === 'c_temp_test_123' || c.name === 'Temporary Test Cust'), "Tombstoned customer is BLOCKED from cloud sync");
+
+  // extractCustomersFromOrdersIfMissing ignores tombstoned customer
+  const oldOrders = orders;
+  orders = [{ id: 'ord_test_999', customer: { id: 'c_temp_test_123', name: 'Temporary Test Cust' }, items: [], totalKg: 25, totalAmount: 2500 }];
+  extractCustomersFromOrdersIfMissing(false);
+  assert(!customers.some(c => c.id === 'c_temp_test_123' || c.name === 'Temporary Test Cust'), "Tombstoned customer is NEVER auto-recovered from orders");
+  orders = oldOrders;
+
+  // removeCustomerTombstone works cleanly
+  removeCustomerTombstone('Temporary Test Cust', 'c_temp_test_123');
+  assert(!isCustomerTombstoned('Temporary Test Cust', 'c_temp_test_123'), "Tombstone removed cleanly when restored or re-added");
+
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   if (failed === 0) {
