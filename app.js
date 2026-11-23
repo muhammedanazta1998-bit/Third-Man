@@ -304,6 +304,84 @@ const STORAGE_SAVED_TOWNS = 'biriyani_rice_saved_district_towns_v2';
 const STORAGE_TRASH = 'third_man_trash_v2';
 const STORAGE_SAFETY_SNAPSHOT = 'third_man_safety_snapshot';
 const STORAGE_INCENTIVE_EFFECTIVE_DATE = 'biriyani_rice_scheme_effective_date_v1';
+const STORAGE_DELETED_CUSTOMERS = 'third_man_deleted_customers_v1';
+
+// Deleted Customers Tombstone System (Permanently blocks deleted customers from resurrecting)
+let deletedCustomerTombstones = [];
+
+function loadDeletedCustomerTombstones() {
+  try {
+    const raw = localStorage.getItem(STORAGE_DELETED_CUSTOMERS);
+    deletedCustomerTombstones = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(deletedCustomerTombstones)) deletedCustomerTombstones = [];
+  } catch (e) {
+    deletedCustomerTombstones = [];
+  }
+  // Ensure "test" and similar test-created customer names are permanently tombstoned so ghost test customers never resurrect
+  const initialTestNames = ['test', 'customer test', 'test customer'];
+  initialTestNames.forEach(tName => {
+    if (!isCustomerTombstoned(tName, '')) {
+      deletedCustomerTombstones.push({ id: '', name: tName, deletedAt: new Date().toISOString() });
+    }
+  });
+  saveDeletedCustomerTombstones();
+}
+
+function saveDeletedCustomerTombstones() {
+  try {
+    localStorage.setItem(STORAGE_DELETED_CUSTOMERS, JSON.stringify(deletedCustomerTombstones));
+  } catch (e) {}
+}
+
+function isCustomerTombstoned(name, id) {
+  const normName = (name || '').trim().toLowerCase();
+  const cleanId = (id || '').trim();
+  if (!normName && !cleanId) return false;
+  return (Array.isArray(deletedCustomerTombstones) ? deletedCustomerTombstones : []).some(t => {
+    if (cleanId && t.id && t.id === cleanId) return true;
+    if (normName && t.name && t.name.toLowerCase() === normName) return true;
+    return false;
+  });
+}
+
+function isCustomerInTrash(name, id) {
+  if (!Array.isArray(trashList) || trashList.length === 0) return false;
+  const normName = (name || '').trim().toLowerCase();
+  const cleanId = (id || '').trim();
+  return trashList.some(item => {
+    if (item.type !== 'customer' || !item.data) return false;
+    if (cleanId && item.data.id === cleanId) return true;
+    if (normName && item.data.name && item.data.name.trim().toLowerCase() === normName) return true;
+    return false;
+  });
+}
+
+function addCustomerTombstone(cust) {
+  if (!cust) return;
+  const normName = (cust.name || '').trim().toLowerCase();
+  const id = cust.id || '';
+  if (!isCustomerTombstoned(normName, id)) {
+    if (!Array.isArray(deletedCustomerTombstones)) deletedCustomerTombstones = [];
+    deletedCustomerTombstones.push({
+      id: id,
+      name: normName,
+      deletedAt: new Date().toISOString()
+    });
+    saveDeletedCustomerTombstones();
+  }
+}
+
+function removeCustomerTombstone(name, id) {
+  const normName = (name || '').trim().toLowerCase();
+  const cleanId = (id || '').trim();
+  if (!Array.isArray(deletedCustomerTombstones)) deletedCustomerTombstones = [];
+  deletedCustomerTombstones = deletedCustomerTombstones.filter(t => {
+    if (cleanId && t.id === cleanId) return false;
+    if (normName && t.name === normName) return false;
+    return true;
+  });
+  saveDeletedCustomerTombstones();
+}
 
 // Global App State
 let orders = [];
@@ -677,6 +755,19 @@ function initApp() {
     loadDataFromStorage();
     deduplicateProductsList(products, true);
     cascadeCanonicalProductsToOrders();
+
+    // Sanitize customers: strip any tombstoned customers or ghost test entries immediately
+    customers = (Array.isArray(customers) ? customers : []).filter(c => {
+      if (!c || !c.name) return false;
+      const n = c.name.trim().toLowerCase();
+      if (n === 'test' || isCustomerTombstoned(c.name, c.id) || isCustomerInTrash(c.name, c.id)) {
+        addCustomerTombstone(c);
+        deleteCloudCustomer(c.id, c.name);
+        return false;
+      }
+      return true;
+    });
+
     extractCustomersFromOrdersIfMissing(false);
     if (typeof normalizeOrderCustomerNames === 'function') {
       normalizeOrderCustomerNames();
@@ -687,6 +778,10 @@ function initApp() {
       customers = deduplicateCustomersList(customers, true);
       saveDataToStorage();
     }
+
+    // Ensure tombstoned customers stay purged after rebuild
+    customers = customers.filter(c => c && !isCustomerTombstoned(c.name, c.id) && !isCustomerInTrash(c.name, c.id));
+    saveDataToStorage();
 
     // Set default order date to today
     const today = new Date().toISOString().split('T')[0];
@@ -749,6 +844,7 @@ if (document.readyState === 'loading') {
 
 function loadDataFromStorage() {
   try {
+    loadDeletedCustomerTombstones();
     // 1. Load orders (try fresh_v2, then fallback to historical v1/unversioned orders without purging them)
     let parsedOrders = [];
     const storedOrders = localStorage.getItem(STORAGE_ORDERS);
@@ -939,6 +1035,8 @@ function loadDataFromStorage() {
       }
     }
     customers = (loadedCust && loadedCust.length > 0) ? loadedCust : DEFAULT_CUSTOMERS;
+    // Filter out any tombstoned customer or trash customer
+    customers = customers.filter(c => c && !isCustomerTombstoned(c.name, c.id) && !isCustomerInTrash(c.name, c.id));
 
     // Harmonize loaded customers with verified canonical records
     if (Array.isArray(customers) && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
@@ -1175,6 +1273,20 @@ function processIncomingCloudCustomers(remoteCustomers) {
 
   isReceivingCloudCustomers = true;
 
+  // Filter out any incoming remote customer that is tombstoned or in trash
+  const cleanRemote = [];
+  remoteCustomers.forEach(rc => {
+    if (!rc) return;
+    const rName = (rc.name || '').trim().toLowerCase();
+    const rId = rc.id || '';
+    if (isCustomerTombstoned(rName, rId) || isCustomerInTrash(rName, rId)) {
+      // Actively purge from cloud in the background so Firestore stops sending it
+      deleteCloudCustomer(rId, rc.name);
+      return;
+    }
+    cleanRemote.push(rc);
+  });
+
   const localById = new Map();
   const localByName = new Map();
   if (Array.isArray(customers)) {
@@ -1191,7 +1303,7 @@ function processIncomingCloudCustomers(remoteCustomers) {
   const needsCloudUpload = [];
 
   // 1. Process all incoming customers from Cloud Firestore
-  remoteCustomers.forEach(remoteCust => {
+  cleanRemote.forEach(remoteCust => {
     if (!remoteCust || (!remoteCust.id && !remoteCust.name)) return;
 
     // Apply canonical alias if any (e.g. "Riyas" -> "Riyas Traders", "Thanima" -> "Thanima Hotel")
@@ -1272,6 +1384,7 @@ function processIncomingCloudCustomers(remoteCustomers) {
     customers.forEach(localCust => {
       if (!localCust || !localCust.id) return;
       const lowerName = (localCust.name || '').trim().toLowerCase();
+      if (isCustomerTombstoned(lowerName, localCust.id) || isCustomerInTrash(lowerName, localCust.id)) return;
       if (processedIds.has(localCust.id) || (lowerName && processedNames.has(lowerName))) return;
 
       processedIds.add(localCust.id);
@@ -1288,6 +1401,7 @@ function processIncomingCloudCustomers(remoteCustomers) {
   if (typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined' && Array.isArray(PRE_NOVEMBER_CANONICAL_CUSTOMERS)) {
     PRE_NOVEMBER_CANONICAL_CUSTOMERS.forEach(canon => {
       const key = canon.name.trim().toLowerCase();
+      if (isCustomerTombstoned(key, canon.id) || isCustomerInTrash(key, canon.id)) return;
       const exists = mergedCustomers.some(c => (c.name && c.name.trim().toLowerCase() === key) || (c.id === canon.id));
       if (!exists) {
         const fresh = { ...canon };
@@ -1302,6 +1416,9 @@ function processIncomingCloudCustomers(remoteCustomers) {
   customers = (typeof deduplicateCustomersList === 'function')
     ? deduplicateCustomersList(mergedCustomers, false)
     : mergedCustomers;
+
+  // Final sanity filter: Ensure no deleted customer or in-trash customer remains
+  customers = customers.filter(c => c && !isCustomerTombstoned(c.name, c.id) && !isCustomerInTrash(c.name, c.id));
 
   // Harmonize incoming cloud customers with verified canonical records
   if (Array.isArray(customers) && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
@@ -1390,8 +1507,10 @@ function setupFirestoreRealtimeListeners() {
         localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
       } catch (e) {}
 
-      // Automatically harvest any customer from orders into customer directory
-      extractCustomersFromOrdersIfMissing(true);
+      // Automatically harvest any customer from orders into customer directory only if directory is empty
+      if (customers.length === 0) {
+        extractCustomersFromOrdersIfMissing(true);
+      }
       if (typeof deduplicateCustomersList === 'function') {
         customers = deduplicateCustomersList(customers, true);
       }
@@ -1624,7 +1743,13 @@ function extractCustomersFromOrdersIfMissing(syncToCloud = false) {
     if (!ord || !ord.customer) return;
     const c = ord.customer;
     const cName = (typeof c === 'string' ? c : (c.name || '')).trim();
+    const cId = (typeof c === 'object' && c.id) ? c.id : '';
     if (!cName) return;
+
+    // NEVER auto-recover customers that have been intentionally deleted or are in Recycle Bin
+    if (isCustomerTombstoned(cName, cId) || isCustomerInTrash(cName, cId)) {
+      return;
+    }
 
     const cPhone = (typeof c === 'object' && c.phone) ? String(c.phone).trim() : '';
     const cOwnerPhone = (typeof c === 'object' && c.ownerPhone) ? String(c.ownerPhone).trim() : '';
@@ -1716,11 +1841,35 @@ function syncCloudCustomer(customer) {
   });
 }
 
-function deleteCloudCustomer(customerId) {
-  if (!db || !customerId) return;
-  db.collection('customers').doc(customerId).delete().catch(err => {
-    console.warn('Error deleting customer from Firestore:', err);
-  });
+function deleteCloudCustomer(customerId, customerName) {
+  if (!db) return;
+  // 1. Direct doc delete by ID
+  if (customerId) {
+    db.collection('customers').doc(customerId).delete().catch(err => {
+      console.warn('Error deleting customer from Firestore doc:', err);
+    });
+    // Query delete if doc has id field matching customerId
+    db.collection('customers').where('id', '==', customerId).get().then(snap => {
+      if (snap && !snap.empty) {
+        snap.forEach(doc => doc.ref.delete().catch(e => {}));
+      }
+    }).catch(e => {});
+  }
+  // 2. Query delete if name matches (clean, lower, upper, capitalized)
+  if (customerName && typeof customerName === 'string') {
+    const cleanN = customerName.trim();
+    if (cleanN) {
+      const variations = [cleanN, cleanN.toLowerCase(), cleanN.toUpperCase(), cleanN.charAt(0).toUpperCase() + cleanN.slice(1).toLowerCase()];
+      const uniqueVars = Array.from(new Set(variations));
+      uniqueVars.forEach(v => {
+        db.collection('customers').where('name', '==', v).get().then(snap => {
+          if (snap && !snap.empty) {
+            snap.forEach(doc => doc.ref.delete().catch(e => {}));
+          }
+        }).catch(e => {});
+      });
+    }
+  }
 }
 
 let syncConfigDebounceTimer = null;
@@ -2548,6 +2697,11 @@ function resetCustomersToPreNovemberSales(syncToCloud = true) {
           deletedCloudIds.push(cust.id);
         }
       } else {
+        // Skip any deleted or in-trash customer
+        if (isCustomerTombstoned(cust.name, cust.id) || isCustomerInTrash(cust.name, cust.id)) {
+          if (cust.id) deletedCloudIds.push(cust.id);
+          return;
+        }
         // Legitimate customer added after November - preserve in directory
         if (!Array.isArray(cust.members) || cust.members.length === 0) {
           cust.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(cust) : [];
@@ -2598,6 +2752,11 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
     item.name = rawName || 'Customer';
 
     const rawLowerName = item.name.toLowerCase();
+    // Skip any deleted or in-trash customer
+    if (isCustomerTombstoned(rawLowerName, item.id) || isCustomerInTrash(rawLowerName, item.id)) {
+      if (item.id) deletedIds.push(item.id);
+      return;
+    }
     const aliasInfo = CANONICAL_CUSTOMER_ALIASES[rawLowerName];
     if (aliasInfo) {
       item.name = aliasInfo.canonicalName;
@@ -3929,6 +4088,7 @@ function saveQuickCustomerAndApply() {
         staffPhone: staffPhone,
         phone: ownerPhone || staffPhone || 'Nil'
       };
+      removeCustomerTombstone(name);
       customers.push(newCust);
       syncCloudCustomer(newCust);
       const selectedCustIdEl = document.getElementById('selectedCustomerId');
@@ -4127,6 +4287,7 @@ function handleSaveOrder(event) {
         location: customerLocation || 'Ernakulam',
         notes: 'Added from order'
       };
+      removeCustomerTombstone(name);
       customers.push(newCust);
       saveDataToStorage();
       syncCloudCustomer(newCust);
@@ -5616,15 +5777,10 @@ function openMobileMoreDrawer() {
   const drawer = document.getElementById('mobileMoreDrawer');
   if (!drawer || !overlay) return;
 
-  overlay.classList.remove('hidden');
-  drawer.classList.remove('hidden');
-
-  requestAnimationFrame(() => {
-    overlay.classList.remove('opacity-0');
-    overlay.classList.add('opacity-100');
-    drawer.classList.remove('translate-y-full');
-    drawer.classList.add('translate-y-0');
-  });
+  overlay.classList.remove('hidden', 'opacity-0');
+  overlay.classList.add('opacity-100');
+  drawer.classList.remove('hidden', 'translate-y-full');
+  drawer.classList.add('translate-y-0');
 
   updateBottomNavActiveTab('more');
 
@@ -5816,28 +5972,10 @@ function switchMainView(viewName, subTab) {
       isActive = (currentMainView === btnObj.view);
     }
 
-    if (btnObj.id === 'navBtnViews') {
-      if (isActive) {
-        btn.className = 'text-[10px] text-cyan-300 font-bold underline';
-      } else {
-        btn.className = 'text-[10px] text-slate-400 hover:text-cyan-300 font-bold hover:underline';
-      }
-      return;
-    }
-
-    if (btnObj.id === 'navBtnOverview') {
-      if (isActive) {
-        btn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition';
-      } else {
-        btn.className = 'w-full flex items-center gap-3 px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition';
-      }
-      return;
-    }
-
     if (isActive) {
-      btn.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition group';
+      btn.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-bold bg-blue-600 text-white shadow-md shadow-blue-600/30 transition group cursor-pointer';
     } else {
-      btn.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group';
+      btn.className = 'w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold text-slate-300 hover:text-white hover:bg-slate-800/60 transition group cursor-pointer';
     }
   });
 
@@ -8105,6 +8243,7 @@ function handleCustomerFormSubmit(event) {
         location: combinedLoc || 'Ernakulam',
         notes: notes || ''
       };
+      removeCustomerTombstone(name);
       customers.push(newCust);
 
       saveDataToStorage();
