@@ -305,6 +305,35 @@ const STORAGE_TRASH = 'third_man_trash_v2';
 const STORAGE_SAFETY_SNAPSHOT = 'third_man_safety_snapshot';
 const STORAGE_INCENTIVE_EFFECTIVE_DATE = 'biriyani_rice_scheme_effective_date_v1';
 const STORAGE_DELETED_CUSTOMERS = 'third_man_deleted_customers_v1';
+const STORAGE_PERMANENTLY_DELETED_TRASH_IDS = 'third_man_permanently_deleted_trash_ids_v1';
+
+// Permanently Deleted Trash Registry (Ensures emptied/deleted trash stays permanently deleted across cloud syncs)
+let permanentlyDeletedTrashIds = new Set();
+
+function loadPermanentlyDeletedTrashIds() {
+  try {
+    const raw = localStorage.getItem(STORAGE_PERMANENTLY_DELETED_TRASH_IDS);
+    const arr = raw ? JSON.parse(raw) : [];
+    permanentlyDeletedTrashIds = new Set(Array.isArray(arr) ? arr : []);
+  } catch (e) {
+    permanentlyDeletedTrashIds = new Set();
+  }
+  if (typeof window !== 'undefined') {
+    window.permanentlyDeletedTrashIds = permanentlyDeletedTrashIds;
+  }
+}
+
+function savePermanentlyDeletedTrashIds() {
+  try {
+    localStorage.setItem(STORAGE_PERMANENTLY_DELETED_TRASH_IDS, JSON.stringify(Array.from(permanentlyDeletedTrashIds)));
+  } catch (e) {}
+}
+
+function addPermanentlyDeletedTrashId(trashId) {
+  if (!trashId) return;
+  permanentlyDeletedTrashIds.add(trashId);
+  savePermanentlyDeletedTrashIds();
+}
 
 // Deleted Customers Tombstone System (Permanently blocks deleted customers from resurrecting)
 let deletedCustomerTombstones = [];
@@ -350,6 +379,7 @@ function isCustomerInTrash(name, id) {
   const cleanId = (id || '').trim();
   return trashList.some(item => {
     if (item.type !== 'customer' || !item.data) return false;
+    if (item.trashId && permanentlyDeletedTrashIds.has(item.trashId)) return false;
     if (cleanId && item.data.id === cleanId) return true;
     if (normName && item.data.name && item.data.name.trim().toLowerCase() === normName) return true;
     return false;
@@ -383,8 +413,31 @@ function removeCustomerTombstone(name, id) {
   saveDeletedCustomerTombstones();
 }
 
-// Immediately load tombstones on script startup
+function mergeDeletedCustomerTombstones(incoming) {
+  if (!Array.isArray(incoming)) return;
+  if (!Array.isArray(deletedCustomerTombstones)) deletedCustomerTombstones = [];
+  let added = false;
+  incoming.forEach(t => {
+    if (!t) return;
+    const tName = (t.name || '').trim().toLowerCase();
+    const tId = (t.id || '').trim();
+    if (!isCustomerTombstoned(tName, tId)) {
+      deletedCustomerTombstones.push({
+        id: tId,
+        name: tName,
+        deletedAt: t.deletedAt || new Date().toISOString()
+      });
+      added = true;
+    }
+  });
+  if (added) {
+    saveDeletedCustomerTombstones();
+  }
+}
+
+// Immediately load tombstones & permanently deleted trash IDs on script startup
 loadDeletedCustomerTombstones();
+loadPermanentlyDeletedTrashIds();
 
 // Global App State
 let orders = [];
@@ -1106,9 +1159,28 @@ function loadDataFromStorage() {
     }
 
     // Load Recycle Bin (Trash)
+    loadPermanentlyDeletedTrashIds();
     const storedTrash = localStorage.getItem(STORAGE_TRASH);
     trashList = storedTrash ? JSON.parse(storedTrash) : [];
     if (!Array.isArray(trashList)) trashList = [];
+
+    // Filter out any permanently deleted items or test customers from local trashList on startup
+    trashList = trashList.filter(item => {
+      if (!item || !item.trashId) return false;
+      if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
+      if (item.type === 'customer' && item.data) {
+        const cName = (item.data.name || item.title || '').trim().toLowerCase();
+        if (cName === 'test' || cName === 'customer test' || cName === 'test customer') {
+          permanentlyDeletedTrashIds.add(item.trashId);
+          return false;
+        }
+      }
+      return true;
+    });
+    savePermanentlyDeletedTrashIds();
+    try {
+      localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
+    } catch (e) {}
   } catch (e) {
     console.error('Error loading localStorage data:', e);
     orders = [];
@@ -1593,10 +1665,43 @@ function setupFirestoreRealtimeListeners() {
         savedDistrictTowns = cfg.savedDistrictTowns;
         localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
       }
+      let needsTrashCloudSync = false;
+      if (Array.isArray(cfg.permanentlyDeletedTrashIds)) {
+        cfg.permanentlyDeletedTrashIds.forEach(id => {
+          if (id) permanentlyDeletedTrashIds.add(id);
+        });
+        savePermanentlyDeletedTrashIds();
+      }
+      if (Array.isArray(cfg.deletedCustomerTombstones) && typeof mergeDeletedCustomerTombstones === 'function') {
+        mergeDeletedCustomerTombstones(cfg.deletedCustomerTombstones);
+      }
       if (Array.isArray(cfg.trashList)) {
-        trashList = cfg.trashList;
-        localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
+        const cleanTrash = cfg.trashList.filter(item => {
+          if (!item || !item.trashId) return false;
+          if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
+          if (item.type === 'customer' && item.data) {
+            const cName = (item.data.name || item.title || '').trim().toLowerCase();
+            if (cName === 'test' || cName === 'customer test' || cName === 'test customer') {
+              permanentlyDeletedTrashIds.add(item.trashId);
+              return false;
+            }
+          }
+          return true;
+        });
+
+        if (cleanTrash.length !== cfg.trashList.length) {
+          needsTrashCloudSync = true;
+        }
+
+        trashList = cleanTrash;
+        try {
+          localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
+        } catch (e) {}
         if (typeof updateTrashBadges === 'function') updateTrashBadges();
+        const trashModalEl = document.getElementById('trashModal');
+        if (trashModalEl && !trashModalEl.classList.contains('hidden') && typeof renderTrashList === 'function') {
+          renderTrashList();
+        }
       }
       if (cfg.appLogo !== undefined) {
         if (cfg.appLogo) {
@@ -1612,6 +1717,9 @@ function setupFirestoreRealtimeListeners() {
         }
       }
       isReceivingCloudSettings = false;
+      if (needsTrashCloudSync) {
+        syncCloudConfig(true);
+      }
     } else {
       syncCloudConfig();
     }
@@ -1876,26 +1984,47 @@ function deleteCloudCustomer(customerId, customerName) {
 }
 
 let syncConfigDebounceTimer = null;
-function syncCloudConfig() {
-  if (!db || isReceivingCloudSettings) return;
-  clearTimeout(syncConfigDebounceTimer);
-  syncConfigDebounceTimer = setTimeout(() => {
+function syncCloudConfig(immediate = false) {
+  if (!db) return;
+  if (isReceivingCloudSettings && !immediate) return;
+
+  const performSync = () => {
     let currentLogo = null;
     try {
       currentLogo = localStorage.getItem(STORAGE_APP_LOGO) || null;
     } catch (e) {}
+
+    const sanitizedTrash = (trashList || []).filter(item => {
+      if (!item || !item.trashId) return false;
+      if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
+      if (item.type === 'customer' && item.data) {
+        const cName = (item.data.name || item.title || '').trim().toLowerCase();
+        if (cName === 'test' || cName === 'customer test' || cName === 'test customer') return false;
+      }
+      return true;
+    });
 
     db.collection('settings').doc('app_config').set(sanitizeForFirestore({
       products: products || [],
       bagSizes: bagSizes || [],
       savedAreas: savedAreas || [],
       savedDistrictTowns: savedDistrictTowns || [],
-      trashList: trashList || [],
+      trashList: sanitizedTrash,
+      permanentlyDeletedTrashIds: Array.from(permanentlyDeletedTrashIds),
+      deletedCustomerTombstones: deletedCustomerTombstones || [],
       defaultRememberedBagSize: defaultRememberedBagSize || 26,
       incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01',
       appLogo: currentLogo
     }), { merge: true }).catch(err => console.warn('Config sync error:', err));
-  }, 500);
+  };
+
+  if (immediate) {
+    clearTimeout(syncConfigDebounceTimer);
+    performSync();
+  } else {
+    clearTimeout(syncConfigDebounceTimer);
+    syncConfigDebounceTimer = setTimeout(performSync, 500);
+  }
 }
 
 function manualTriggerCloudSync(isQuiet = false) {
@@ -6674,22 +6803,8 @@ function closeIncentiveDetails() {
 let currentSettingsTab = 'towns';
 
 function updateSettingsDataTab() {
-  const count = trashList ? trashList.length : 0;
-  const countBadge = document.getElementById('settingsTrashCountBadge');
-  if (countBadge) {
-    countBadge.textContent = `${count} ${count === 1 ? 'Item' : 'Items'} in Bin`;
-    if (count > 0) {
-      countBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-800 border border-rose-300';
-    } else {
-      countBadge.className = 'text-[10px] font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200';
-    }
-  }
-
-  const subText = document.getElementById('settingsTrashSubtext');
-  if (subText) {
-    subText.textContent = count > 0
-      ? `${count} items safely preserved in trash. You can restore them anytime.`
-      : 'Recycle Bin is currently empty. Deleted orders, customers or products will appear here.';
+  if (typeof updateTrashBadges === 'function') {
+    updateTrashBadges();
   }
 
   // Check safety snapshot
@@ -9499,7 +9614,16 @@ function closeConfirmModal() {
 
 // ----------------- Trash Badges & Storage -----------------
 function updateTrashBadges() {
-  const count = trashList.length;
+  const cleanList = (trashList || []).filter(item => {
+    if (!item || !item.trashId) return false;
+    if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
+    if (item.type === 'customer' && item.data) {
+      const cName = (item.data.name || item.title || '').trim().toLowerCase();
+      if (cName === 'test' || cName === 'customer test' || cName === 'test customer') return false;
+    }
+    return true;
+  });
+  const count = cleanList.length;
   const sideBadge = document.getElementById('trashCountBadge');
   const sideSettingsIndicator = document.getElementById('settingsTrashCountIndicator');
   const topBadge = document.getElementById('topTrashCountBadge');
@@ -9547,8 +9671,20 @@ function updateTrashBadges() {
 
 function saveTrashToStorage() {
   try {
+    trashList = (trashList || []).filter(item => {
+      if (!item || !item.trashId) return false;
+      if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
+      if (item.type === 'customer' && item.data) {
+        const cName = (item.data.name || item.title || '').trim().toLowerCase();
+        if (cName === 'test' || cName === 'customer test' || cName === 'test customer') return false;
+      }
+      return true;
+    });
     localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
     updateTrashBadges();
+    if (typeof syncCloudConfig === 'function') {
+      syncCloudConfig(true);
+    }
   } catch (e) {
     console.error('Error saving trash:', e);
   }
@@ -9629,7 +9765,15 @@ function renderTrashList() {
 
   updateTrashBadges();
 
-  let items = trashList;
+  let items = (trashList || []).filter(it => {
+    if (!it || !it.trashId) return false;
+    if (permanentlyDeletedTrashIds.has(it.trashId)) return false;
+    if (it.type === 'customer' && it.data) {
+      const cName = (it.data.name || it.title || '').trim().toLowerCase();
+      if (cName === 'test' || cName === 'customer test' || cName === 'test customer') return false;
+    }
+    return true;
+  });
   if (currentTrashFilter !== 'all') {
     items = items.filter(it => it.type === currentTrashFilter);
   }
@@ -9822,6 +9966,9 @@ function deleteTrashPermanently(trashId) {
         addCustomerTombstone(item.data);
         deleteCloudCustomer(item.data.id, item.data.name);
       }
+      if (trashId) {
+        addPermanentlyDeletedTrashId(trashId);
+      }
       trashList = trashList.filter(t => t.trashId !== trashId);
       saveTrashToStorage();
       renderTrashList();
@@ -9844,6 +9991,9 @@ function emptyTrashPrompt() {
     confirmClass: 'bg-rose-700 hover:bg-rose-800 text-white',
     onConfirm: () => {
       trashList.forEach(item => {
+        if (item && item.trashId) {
+          addPermanentlyDeletedTrashId(item.trashId);
+        }
         if (item && item.type === 'customer' && item.data) {
           addCustomerTombstone(item.data);
           deleteCloudCustomer(item.data.id, item.data.name);
@@ -9910,6 +10060,9 @@ window.emptyTrashPrompt = emptyTrashPrompt;
 window.restoreSafetySnapshot = restoreSafetySnapshot;
 window.showConfirmModal = showConfirmModal;
 window.closeConfirmModal = closeConfirmModal;
+window.permanentlyDeletedTrashIds = permanentlyDeletedTrashIds;
+window.addPermanentlyDeletedTrashId = addPermanentlyDeletedTrashId;
+window.saveTrashToStorage = saveTrashToStorage;
 
 // ==================== GLOBAL WINDOW BINDINGS ====================
 // Guarantees all onclick handlers work in all browser contexts

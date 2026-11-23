@@ -38,6 +38,14 @@
     <div id="cpOrderHistoryMobileList"></div>
     <div id="cpOrderHistoryEmpty" class="hidden"></div>
   </div>
+  <div id="trashModal" class="hidden"></div>
+  <div id="trashItemsContainer"></div>
+  <span id="trashCountBadge"></span>
+  <span id="topTrashCountBadge"></span>
+  <span id="settingsTrashCountIndicator"></span>
+  <span id="settingsTrashCountBadge"></span>
+  <span id="trashModalTotalBadge"></span>
+  <span id="settingsTrashSubtext"></span>
 </div>
 
 <script>
@@ -476,6 +484,36 @@ window.onerror = function(msg, url, line, col, err) {
   // removeCustomerTombstone works cleanly
   removeCustomerTombstone('Temporary Test Cust', 'c_temp_test_123');
   assert(!isCustomerTombstoned('Temporary Test Cust', 'c_temp_test_123'), "Tombstone removed cleanly when restored or re-added");
+
+  // TEST 15: Recycle Bin Permanent Deletion & Cloud Sync Loop Prevention
+  log("\n--- Testing Recycle Bin Permanent Deletion & Cloud Sync Fix ---");
+  assert(typeof loadPermanentlyDeletedTrashIds === 'function', "loadPermanentlyDeletedTrashIds function exists");
+  assert(typeof savePermanentlyDeletedTrashIds === 'function', "savePermanentlyDeletedTrashIds function exists");
+  assert(typeof addPermanentlyDeletedTrashId === 'function', "addPermanentlyDeletedTrashId function exists");
+
+  const testTrashId = 'tr_test_perm_del_999';
+  addPermanentlyDeletedTrashId(testTrashId);
+  assert(permanentlyDeletedTrashIds.has(testTrashId), "addPermanentlyDeletedTrashId successfully registers ID");
+
+  // Create mock trash list with a deleted item, a test customer, and a legitimate customer
+  trashList = [
+    { trashId: testTrashId, type: 'customer', title: 'Deleted Once', data: { id: 'c_del_1', name: 'Deleted Once' } },
+    { trashId: 'tr_test_ghost_cust', type: 'customer', title: 'test', data: { id: 'c_test_ghost', name: 'test' } },
+    { trashId: 'tr_legit_cust', type: 'customer', title: 'Legit Customer', data: { id: 'c_legit', name: 'Legit Customer' } }
+  ];
+
+  // saveTrashToStorage sanitizes trashList
+  saveTrashToStorage();
+  assert(!trashList.some(t => t.trashId === testTrashId), "saveTrashToStorage purged permanently deleted item by ID");
+  assert(!trashList.some(t => t.data && t.data.name.toLowerCase() === 'test'), "saveTrashToStorage purged ghost 'test' customer");
+  assert(trashList.some(t => t.trashId === 'tr_legit_cust'), "Legitimate customer preserved in trash");
+
+  // renderTrashList filtering test
+  renderTrashList();
+  const trashContainer = document.getElementById('trashItemsContainer');
+  // Clean up
+  trashList = [];
+  saveTrashToStorage();
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
