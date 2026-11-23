@@ -2469,7 +2469,7 @@ function updateTownDatalists() {
       });
     }
 
-    let opts = `<option value="all">🌍 All Towns / Areas</option>`;
+    let opts = `<option value="all">All Towns / Areas</option>`;
     sorted.forEach(t => {
       const count = orderTownCounts[t.toLowerCase()] || 0;
       opts += `<option value="${escapeHtml(t)}">${escapeHtml(t)}${count > 0 ? ` (${count})` : ''}</option>`;
@@ -6281,13 +6281,30 @@ function renderOrdersTable() {
   const orderAmountFilterVal = document.getElementById('orderAmountFilterSelect')?.value || 'all';
   const orderSortVal = document.getElementById('orderSortSelect')?.value || 'date-desc';
 
-  // Toggle clear date button visibility
+  // Toggle clear date button visibility & update display label
   const clearDateBtn = document.getElementById('clearDateBtn');
+  const dateDisplay = document.getElementById('orderDateFilterDisplay');
   if (clearDateBtn) {
     if (orderDateFilterVal) {
       clearDateBtn.classList.remove('hidden');
     } else {
       clearDateBtn.classList.add('hidden');
+    }
+  }
+  if (dateDisplay) {
+    if (orderDateFilterVal) {
+      const parts = orderDateFilterVal.split('-');
+      if (parts.length === 3) {
+        dateDisplay.textContent = `${parts[2]}-${parts[1]}-${parts[0]}`;
+      } else {
+        dateDisplay.textContent = orderDateFilterVal;
+      }
+      dateDisplay.classList.remove('text-slate-400');
+      dateDisplay.classList.add('text-slate-700', 'font-semibold');
+    } else {
+      dateDisplay.textContent = 'Select Date';
+      dateDisplay.classList.add('text-slate-400');
+      dateDisplay.classList.remove('text-slate-700', 'font-semibold');
     }
   }
 
@@ -6572,9 +6589,21 @@ function toggleOrderSort(field) {
   renderOrdersTable();
 }
 
-function clearOrderDateFilter() {
+function clearOrderDateFilter(event) {
+  if (event) {
+    if (typeof event.stopPropagation === 'function') event.stopPropagation();
+    if (typeof event.preventDefault === 'function') event.preventDefault();
+  }
   const input = document.getElementById('orderDateFilter');
   if (input) input.value = '';
+  const dateDisplay = document.getElementById('orderDateFilterDisplay');
+  if (dateDisplay) {
+    dateDisplay.textContent = 'Select Date';
+    dateDisplay.classList.add('text-slate-400');
+    dateDisplay.classList.remove('text-slate-700', 'font-semibold');
+  }
+  const clearDateBtn = document.getElementById('clearDateBtn');
+  if (clearDateBtn) clearDateBtn.classList.add('hidden');
   renderOrdersTable();
 }
 

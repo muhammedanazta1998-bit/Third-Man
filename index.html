@@ -1087,51 +1087,68 @@
       <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
         
         <!-- Table Control Header -->
-        <div class="p-5 border-b border-slate-200/80 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div>
-            <h3 class="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <i data-lucide="list-filter" class="w-4 h-4 text-blue-600"></i>
-              <span>Filter &amp; Search Orders</span>
-            </h3>
-            <p class="text-[11px] text-slate-500">Filter by customer shop, specific date, sale value, or town</p>
+        <div class="px-3.5 py-3 sm:px-5 sm:py-3.5 border-b border-slate-200/80 flex flex-col gap-2.5 sm:gap-3">
+          
+          <!-- Header Title & Subtitle -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-1.5">
+              <i data-lucide="list-filter" class="w-3.5 h-3.5 text-slate-400"></i>
+              <h3 class="text-xs font-bold text-slate-700 uppercase tracking-wider">Filter &amp; Search Orders</h3>
+            </div>
+            <p class="text-[11px] text-slate-400 hidden sm:block">Filter by customer shop, specific date, sale value, or town</p>
           </div>
 
-          <!-- Search & Filter Controls -->
-          <div class="flex items-center gap-2 w-full sm:w-auto flex-wrap">
-            <div class="relative flex-1 sm:w-52 min-w-[160px]">
-              <i data-lucide="search" class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2"></i>
-              <input type="text" id="orderSearchInput" oninput="renderOrdersTable()" placeholder="Search Shop, ID, Rice, Notes..." class="w-full pl-9 pr-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:border-blue-500">
+          <!-- Controls Layout: Search bar on top, 4 filters below -->
+          <div class="flex flex-col lg:flex-row lg:items-center gap-2 w-full">
+            
+            <!-- Full-width Search Input on Mobile, Flexible on Large screens -->
+            <div class="relative w-full lg:flex-1 min-w-0">
+              <i data-lucide="search" class="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none"></i>
+              <input type="text" id="orderSearchInput" oninput="renderOrdersTable()" placeholder="Search Shop, ID, Rice, Notes..." class="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 hover:bg-white focus:bg-white border border-slate-200/90 rounded-lg text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors">
             </div>
 
-            <!-- Sort By Select (Default: Date Newest First) -->
-            <select id="orderSortSelect" onchange="renderOrdersTable()" class="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-              <option value="date-desc">📅 Date: Newest First</option>
-              <option value="date-asc">📅 Date: Oldest First</option>
-              <option value="amount-desc">💰 Sale: High to Low</option>
-              <option value="amount-asc">💰 Sale: Low to High</option>
-              <option value="qty-desc">📦 Bags: High to Low</option>
-            </select>
+            <!-- 4 Filter Controls: Neat 2x2 Grid on Mobile, Flex Row on sm/lg Screens -->
+            <div class="grid grid-cols-2 sm:flex sm:items-center gap-2 w-full lg:w-auto min-w-0">
+              
+              <!-- 1. Sort By Select -->
+              <div class="relative min-w-0">
+                <select id="orderSortSelect" onchange="renderOrdersTable()" class="w-full sm:w-auto h-9 text-xs bg-slate-50 hover:bg-white border border-slate-200/90 rounded-lg px-2.5 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 truncate cursor-pointer transition-colors" title="Sort orders">
+                  <option value="date-desc">Date: Newest First</option>
+                  <option value="date-asc">Date: Oldest First</option>
+                  <option value="amount-desc">Sale: High to Low</option>
+                  <option value="amount-asc">Sale: Low to High</option>
+                  <option value="qty-desc">Bags: High to Low</option>
+                </select>
+              </div>
 
-            <!-- Specific Date Filter -->
-            <div class="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1" title="Filter orders by specific date">
-              <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-400"></i>
-              <input type="date" id="orderDateFilter" onchange="renderOrdersTable()" class="text-xs bg-transparent text-slate-700 font-semibold focus:outline-none cursor-pointer">
-              <button type="button" onclick="clearOrderDateFilter()" id="clearDateBtn" class="hidden text-slate-400 hover:text-rose-600 text-[10px] font-black px-1" title="Clear Date Filter">✕</button>
+              <!-- 2. Specific Date Picker Container with Placeholder -->
+              <div class="relative flex items-center h-9 bg-slate-50 hover:bg-white border border-slate-200/90 rounded-lg px-2 text-xs text-slate-700 font-medium min-w-0 cursor-pointer transition-colors" title="Filter orders by specific date">
+                <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-400 shrink-0 pointer-events-none"></i>
+                <span id="orderDateFilterDisplay" class="pl-1.5 truncate flex-1 min-w-0 pointer-events-none text-slate-400 select-none">Select Date</span>
+                <input type="date" id="orderDateFilter" onchange="renderOrdersTable()" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" aria-label="Filter orders by specific date">
+                <button type="button" onclick="clearOrderDateFilter(event)" id="clearDateBtn" class="hidden z-10 text-slate-400 hover:text-rose-600 text-xs font-black px-1 shrink-0 transition-colors" title="Clear Date Filter">✕</button>
+              </div>
+
+              <!-- 3. Sale Amount Range Filter -->
+              <div class="relative min-w-0">
+                <select id="orderAmountFilterSelect" onchange="renderOrdersTable()" class="w-full sm:w-auto h-9 text-xs bg-slate-50 hover:bg-white border border-slate-200/90 rounded-lg px-2.5 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 truncate cursor-pointer transition-colors" title="Filter by sale amount">
+                  <option value="all">All Amounts</option>
+                  <option value="above-1lakh">₹1,00,000 &amp; Above</option>
+                  <option value="50k-1lakh">₹50,000 - ₹1,00,000</option>
+                  <option value="25k-50k">₹25,000 - ₹50,000</option>
+                  <option value="below-25k">Below ₹25,000</option>
+                </select>
+              </div>
+
+              <!-- 4. Town / Area Filter -->
+              <div class="relative min-w-0">
+                <select id="orderAreaFilterSelect" onchange="renderOrdersTable()" class="w-full sm:w-auto h-9 text-xs bg-slate-50 hover:bg-white border border-slate-200/90 rounded-lg px-2.5 font-medium text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 truncate cursor-pointer transition-colors" title="Filter by town/area">
+                  <option value="all">All Towns / Areas</option>
+                </select>
+              </div>
+
             </div>
 
-            <!-- Sale Amount Range Filter -->
-            <select id="orderAmountFilterSelect" onchange="renderOrdersTable()" class="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-              <option value="all">💵 All Sale Amounts</option>
-              <option value="above-1lakh">₹1,00,000 &amp; Above</option>
-              <option value="50k-1lakh">₹50,000 - ₹1,00,000</option>
-              <option value="25k-50k">₹25,000 - ₹50,000</option>
-              <option value="below-25k">Below ₹25,000</option>
-            </select>
-
-            <!-- Area / Town Filter -->
-            <select id="orderAreaFilterSelect" onchange="renderOrdersTable()" class="text-xs bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-              <option value="all">🌍 All Towns / Areas</option>
-            </select>
           </div>
         </div>
 

@@ -46,6 +46,35 @@
   <span id="settingsTrashCountBadge"></span>
   <span id="trashModalTotalBadge"></span>
   <span id="settingsTrashSubtext"></span>
+
+  <!-- Orders Filter & Table Fixtures -->
+  <input type="text" id="orderSearchInput" />
+  <select id="orderSortSelect">
+    <option value="date-desc">Date: Newest First</option>
+    <option value="date-asc">Date: Oldest First</option>
+    <option value="amount-desc">Sale: High to Low</option>
+    <option value="amount-asc">Sale: Low to High</option>
+    <option value="qty-desc">Bags: High to Low</option>
+  </select>
+  <div id="orderDateFilterContainer">
+    <span id="orderDateFilterDisplay">Select Date</span>
+    <input type="date" id="orderDateFilter" />
+    <button type="button" id="clearDateBtn" class="hidden">✕</button>
+  </div>
+  <select id="orderAmountFilterSelect">
+    <option value="all">All Amounts</option>
+    <option value="above-1lakh">₹1,00,000 &amp; Above</option>
+    <option value="50k-1lakh">₹50,000 - ₹1,00,000</option>
+    <option value="25k-50k">₹25,000 - ₹50,000</option>
+    <option value="below-25k">Below ₹25,000</option>
+  </select>
+  <select id="orderAreaFilterSelect">
+    <option value="all">All Towns / Areas</option>
+  </select>
+  <table><tbody id="ordersTableBody"></tbody></table>
+  <span id="orderRecordCount"></span>
+  <span id="orderTotalBags"></span>
+  <span id="orderTotalRevenue"></span>
 </div>
 
 <script>
@@ -587,6 +616,46 @@ window.onerror = function(msg, url, line, col, err) {
   // Reset to default hidden
   setDashboardIncentiveHidden(true);
   applyIncentivePrivacy();
+
+  // TEST 13: Orders Filter & Search Controls (Standardized, Emoji-Free, Date Display Sync)
+  log("\n--- TEST 13: Orders Filter & Search Controls ---");
+  const sortSelect = document.getElementById('orderSortSelect');
+  const amountSelect = document.getElementById('orderAmountFilterSelect');
+  const areaSelect = document.getElementById('orderAreaFilterSelect');
+  const dateInput = document.getElementById('orderDateFilter');
+  const dateDisplay = document.getElementById('orderDateFilterDisplay');
+  const clearDateBtn = document.getElementById('clearDateBtn');
+
+  // Verify sort dropdown options are emoji-free
+  const sortEmojiFound = Array.from(sortSelect.options).some(o => /[\u{1F300}-\u{1F9FF}]/u.test(o.textContent));
+  assert(!sortEmojiFound, "Order Sort select has zero emojis in its options");
+  assert(sortSelect.options[0].textContent === "Date: Newest First", "Sort default text is 'Date: Newest First'");
+
+  // Verify amount dropdown options are emoji-free
+  const amountEmojiFound = Array.from(amountSelect.options).some(o => /[\u{1F300}-\u{1F9FF}]/u.test(o.textContent));
+  assert(!amountEmojiFound, "Order Amount select has zero emojis in its options");
+  assert(amountSelect.options[0].textContent === "All Amounts", "Amount filter default text is 'All Amounts'");
+
+  // Populate dynamic area dropdown and verify emoji-free
+  if (typeof populateSavedAreasDatalists === 'function') {
+    populateSavedAreasDatalists();
+    assert(!areaSelect.innerHTML.includes('🌍'), "Dynamic Area filter dropdown contains zero globe emojis");
+    assert(areaSelect.options[0].textContent === "All Towns / Areas", "Area filter default option is 'All Towns / Areas'");
+  }
+
+  // Date Filter Display sync when selecting date
+  dateInput.value = '2026-11-23';
+  renderOrdersTable();
+  assert(dateDisplay.textContent === '23-11-2026', `Date display formatted as '23-11-2026' when date selected (actual: '${dateDisplay.textContent}')`);
+  assert(!clearDateBtn.classList.contains('hidden'), "Clear Date button is visible when date is set");
+  assert(dateDisplay.classList.contains('text-slate-700'), "Date display has active text-slate-700 styling");
+
+  // Date Filter Clear
+  clearOrderDateFilter();
+  assert(dateInput.value === '', "orderDateFilter input is empty after clearOrderDateFilter()");
+  assert(dateDisplay.textContent === 'Select Date', "Date display reset to 'Select Date' placeholder");
+  assert(clearDateBtn.classList.contains('hidden'), "Clear Date button is hidden after clearing date");
+  assert(dateDisplay.classList.contains('text-slate-400'), "Date display has muted text-slate-400 placeholder styling");
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
