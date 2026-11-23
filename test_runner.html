@@ -369,10 +369,29 @@ window.onerror = function(msg, url, line, col, err) {
 
   const canonMaj = getCanonicalCustomerInfo('MAJ Angamaly');
   assert(canonMaj && canonMaj.name === 'MAJ', `Alias 'MAJ Angamaly' resolved to canonical name 'MAJ'`);
-  assert(canonMaj && canonMaj.id === 'c_hist_044', `Alias 'MAJ Angamaly' matched canonical id 'c_hist_044'`);
+  assert(canonMaj && canonMaj.id === 'c_hist_017', `Alias 'MAJ Angamaly' matched canonical id 'c_hist_017'`);
+
+  const canonUb = getCanonicalCustomerInfo('UB Kalady');
+  assert(canonUb && canonUb.name === 'Ubees kalady', `Alias 'UB Kalady' resolved to canonical name 'Ubees kalady'`);
+  assert(canonUb && canonUb.id === 'c_hist_012', `Alias 'UB Kalady' matched canonical id 'c_hist_012'`);
 
   const canonRiyas = getCanonicalCustomerInfo('Riyas');
   assert(canonRiyas && canonRiyas.name === 'Riyas Traders', `Alias 'Riyas' resolved to canonical name 'Riyas Traders'`);
+
+  const canonTm = getCanonicalCustomerInfo('ThattamMattom');
+  assert(canonTm && canonTm.name === 'Thattamattom' && canonTm.id === 'c_hist_063', `Alias 'ThattamMattom' resolved to canonical customer 'Thattamattom' (c_hist_063)`);
+
+  const canonMisba = getCanonicalCustomerInfo('Misba');
+  assert(canonMisba && canonMisba.name === 'MISBA SUPERMARKET' && canonMisba.id === 'c_hist_018', `Alias 'Misba' resolved to canonical customer 'MISBA SUPERMARKET' (c_hist_018)`);
+
+  const canonMak = getCanonicalCustomerInfo('MAK');
+  assert(canonMak && canonMak.name === 'MAK Aluva' && canonMak.id === 'c_hist_069', `Alias 'MAK' resolved to canonical customer 'MAK Aluva' (c_hist_069)`);
+
+  const canonEdavilayil = getCanonicalCustomerInfo('Edavilayil');
+  assert(canonEdavilayil && canonEdavilayil.name === 'Edavilayil Paravoor' && canonEdavilayil.id === 'c_hist_020', `Alias 'Edavilayil' resolved to canonical customer 'Edavilayil Paravoor' (c_hist_020)`);
+
+  const canonParallex = getCanonicalCustomerInfo('Parallex');
+  assert(canonParallex && canonParallex.name === 'Parallex Hotel' && canonParallex.id === 'c_hist_021', `Alias 'Parallex' resolved to canonical customer 'Parallex Hotel' (c_hist_021)`);
 
   // TEST 12: Customer Profile Complete Order History Feature (getCustomerOrders)
   const custHistoryOrders = [

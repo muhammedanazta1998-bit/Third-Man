@@ -230,55 +230,55 @@ const PRE_NOVEMBER_CANONICAL_CUSTOMERS = [
   { id: 'c_hist_007', name: 'A One Kalady', town: 'Kalady', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_008', name: 'Redberries Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Retailer', phone: '' },
   { id: 'c_hist_009', name: 'ZAM ZAM VALLAM', town: 'Vallam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
-  { id: 'c_hist_010', name: 'MAS PARAVOOR', town: 'Paravoor', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_011', name: 'Naaz Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_012', name: 'KCA Angamaly', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_013', name: 'Parallex Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
-  { id: 'c_hist_014', name: 'Malayalies Oottupura', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
-  { id: 'c_hist_015', name: 'Davis and Company', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_016', name: 'Edakkat Enterprises Bypass', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_017', name: 'Ubees kalady', town: 'Kalady', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_018', name: 'Khaja Makani', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
-  { id: 'c_hist_019', name: 'PMA Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_010', name: 'Malayalies Oottupura', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_011', name: 'Hotel Malabar Palace', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_012', name: 'Ubees kalady', town: 'Kalady', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_013', name: 'Ameen traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_014', name: 'PMA Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_015', name: 'The Grand Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_016', name: 'AR Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_017', name: 'MAJ', town: 'Angamaly', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_018', name: 'MISBA SUPERMARKET', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_019', name: 'Naaz Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_020', name: 'Edavilayil Paravoor', town: 'Paravoor', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_021', name: 'Mezhukkattil', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_022', name: 'Ameen traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_023', name: 'Marwa Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_024', name: 'Shoppers shope', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_025', name: 'Sanchika', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Retailer', phone: '' },
-  { id: 'c_hist_026', name: 'Southern Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_027', name: 'AR Traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_028', name: 'Hotel Malabar Palace', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
-  { id: 'c_hist_029', name: 'The Grand Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
-  { id: 'c_hist_030', name: 'SRINIVASAKAPERUMAL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_031', name: 'SULTHAN BASMATI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_032', name: 'Union Basmati', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_033', name: 'ALUVA TRADING COMPANY', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_034', name: 'MISBA SUPERMARKET', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_035', name: 'MR TRADERS ADIMALI', town: 'Adimali', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_036', name: 'KCM TRADERS MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_037', name: 'MAMMOOTTY STORES MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_038', name: 'KMA PEZHAKKAPPILLY', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_039', name: 'PARUTHIKKAATTIL', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_040', name: 'VNV VALLANATTU ADIMALI', town: 'Adimali', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_041', name: 'Vettikkaattil Thodupuzha', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_042', name: 'NADUKUDIYIL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_043', name: 'Bismi Traders Kothamangalam', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_044', name: 'MAJ', town: 'Angamaly', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_045', name: 'Naattukada', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_046', name: 'Tiktok Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_021', name: 'Parallex Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_022', name: 'Mezhukkattil', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_023', name: 'Davis and Company', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_024', name: 'FOOD BEE', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_025', name: 'SULTHAN BASMATI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_026', name: 'VNV VALLANATTU ADIMALI', town: 'Adimali', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_027', name: 'MAMMOOTTY STORES MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_028', name: 'SRINIVASAKAPERUMAL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_029', name: 'MR TRADERS ADIMALI', town: 'Adimali', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_030', name: 'PARUTHIKKAATTIL', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_031', name: 'Edakkat Enterprises Bypass', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_032', name: 'KCM TRADERS MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_033', name: 'NADUKUDIYIL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_034', name: 'Khaja Makani', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_035', name: 'KERALA RICE BAZAR', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_036', name: 'Shoppers shope', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_037', name: 'Naattukada', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_038', name: 'KCA Angamaly', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_039', name: 'Union Basmati', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_040', name: 'Southern Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_041', name: 'Bismi Traders Kothamangalam', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_042', name: 'Sanchika', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Retailer', phone: '' },
+  { id: 'c_hist_043', name: 'ALUVA TRADING COMPANY', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_044', name: 'Marwa Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_045', name: 'KRP', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_046', name: 'BHAVANI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_047', name: 'Classio Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
-  { id: 'c_hist_048', name: 'ALI SONS', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_049', name: 'PR ENTERPRISES', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_050', name: 'BHAVANI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_051', name: 'KRP', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_052', name: 'FOOD BEE', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_053', name: 'GRAND KARUKAPPILLY', town: 'Ernakulam', district: 'Ernakulam', category: 'Retailer', phone: '' },
-  { id: 'c_hist_054', name: 'KERALA RICE BAZAR', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_055', name: 'AB Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_056', name: 'MK ALI AND SONS KALAMASSERY', town: 'Kalamassery', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_057', name: 'Edassery Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Retailer', phone: '' },
-  { id: 'c_hist_058', name: 'Joyis Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_048', name: 'Tiktok Hotel', town: 'Ernakulam', district: 'Ernakulam', category: 'Hotel / Restaurant', phone: '' },
+  { id: 'c_hist_049', name: 'KMA PEZHAKKAPPILLY', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_050', name: 'AB Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_051', name: 'GRAND KARUKAPPILLY', town: 'Ernakulam', district: 'Retailer', category: 'Retailer', phone: '' },
+  { id: 'c_hist_052', name: 'PR ENTERPRISES', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_053', name: 'Edassery Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Retailer', phone: '' },
+  { id: 'c_hist_054', name: 'Vettikkaattil Thodupuzha', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_055', name: 'Joyis Supermarket', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_056', name: 'MAS PARAVOOR', town: 'Paravoor', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_057', name: 'MK ALI AND SONS KALAMASSERY', town: 'Kalamassery', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_058', name: 'ALI SONS', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_059', name: 'PKBR', town: 'Elamakkara', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_060', name: 'TKM ASSOCIATES', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_061', name: 'ALIYAR PILLAI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
@@ -2386,7 +2386,18 @@ const CANONICAL_CUSTOMER_ALIASES = {
   'pkbr elamakkara': { canonicalName: 'PKBR', town: 'Elamakkara' },
   'pkbr': { canonicalName: 'PKBR', town: 'Elamakkara' },
   'al-safi food court, pukkattupady': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' },
-  'al-safi food court': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' }
+  'al-safi food court': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' },
+  'ub kalady': { canonicalName: 'Ubees kalady', town: 'Kalady' },
+  'ubees kalady': { canonicalName: 'Ubees kalady', town: 'Kalady' },
+  'ubees': { canonicalName: 'Ubees kalady', town: 'Kalady' },
+  "ub's": { canonicalName: 'Ubees kalady', town: 'Kalady' },
+  "ub's kalady": { canonicalName: 'Ubees kalady', town: 'Kalady' },
+  'thattammattom': { canonicalName: 'Thattamattom', town: 'Ernakulam' },
+  'misba': { canonicalName: 'MISBA SUPERMARKET', town: 'Ernakulam' },
+  'mak': { canonicalName: 'MAK Aluva', town: 'Aluva' },
+  'edavilayil': { canonicalName: 'Edavilayil Paravoor', town: 'Paravoor' },
+  'parallex': { canonicalName: 'Parallex Hotel', town: 'Ernakulam' },
+  'kerala rice bazar': { canonicalName: 'KERALA RICE BAZAR', town: 'Ernakulam' }
 };
 
 function normalizeOrderCustomerNames() {
@@ -2719,29 +2730,45 @@ function getCanonicalCustomerInfo(rawCustomer) {
     }
   }
 
-  // 1. Match by customer ID in customers
-  let match = rawId ? customers.find(c => c.id === rawId) : null;
-
-  // 2. Match by effective normalized name
-  if (!match && effectiveName) {
+  // 1. If effectiveName is present, match by canonical/alias name first
+  let match = null;
+  if (effectiveName) {
     const lower = effectiveName.toLowerCase();
     match = customers.find(c => c.name && c.name.trim().toLowerCase() === lower);
   }
-  // Try rawName if different from effectiveName
+
+  // 2. If no name match, match by customer ID in customers
+  if (!match && rawId) {
+    match = customers.find(c => c.id === rawId);
+  }
+
+  // 3. Safety check: If matched by rawId but effectiveName is present and conflicts with match.name,
+  // ensure we never misattribute orders to an unrelated store
+  if (match && effectiveName && match.name && match.name.trim().toLowerCase() !== effectiveName.toLowerCase()) {
+    const nameMatch = customers.find(c => c.name && c.name.trim().toLowerCase() === effectiveName.toLowerCase());
+    if (nameMatch) {
+      match = nameMatch;
+    }
+  }
+
+  // 4. Try rawName if different from effectiveName
   if (!match && rawName && rawName.toLowerCase() !== effectiveName.toLowerCase()) {
     const lowerRaw = rawName.toLowerCase();
     match = customers.find(c => c.name && c.name.trim().toLowerCase() === lowerRaw);
   }
 
-  // 3. Match by phone
+  // 5. Match by phone
   if (!match && cleanP) {
     match = customers.find(c => cleanPhoneNumber(c.phone) === cleanP || cleanPhoneNumber(c.ownerPhone) === cleanP);
   }
 
-  // 4. Fallback search in pre-November canonical customers catalog
+  // 6. Fallback search in pre-November canonical customers catalog
   if (!match && effectiveName && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
     const lower = effectiveName.toLowerCase();
     match = PRE_NOVEMBER_CANONICAL_CUSTOMERS.find(c => c.name && c.name.trim().toLowerCase() === lower);
+  }
+  if (!match && rawId && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
+    match = PRE_NOVEMBER_CANONICAL_CUSTOMERS.find(c => c.id === rawId);
   }
 
   if (match) {
