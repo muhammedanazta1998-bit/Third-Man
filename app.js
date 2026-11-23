@@ -940,6 +940,23 @@ function loadDataFromStorage() {
     }
     customers = (loadedCust && loadedCust.length > 0) ? loadedCust : DEFAULT_CUSTOMERS;
 
+    // Harmonize loaded customers with verified canonical records
+    if (Array.isArray(customers) && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
+      const canonMap = new Map(PRE_NOVEMBER_CANONICAL_CUSTOMERS.map(c => [c.id, c]));
+      customers.forEach(c => {
+        if (c && c.id && canonMap.has(c.id)) {
+          const canon = canonMap.get(c.id);
+          c.name = canon.name;
+          c.town = canon.town;
+          c.district = canon.district;
+          c.category = canon.category;
+        }
+      });
+      try {
+        localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+      } catch (e) {}
+    }
+
     // Ensure all customers have normalized district, town, landmark, and members
     customers.forEach(c => {
       if (!c.district) {
@@ -1286,6 +1303,20 @@ function processIncomingCloudCustomers(remoteCustomers) {
     ? deduplicateCustomersList(mergedCustomers, false)
     : mergedCustomers;
 
+  // Harmonize incoming cloud customers with verified canonical records
+  if (Array.isArray(customers) && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
+    const canonMap = new Map(PRE_NOVEMBER_CANONICAL_CUSTOMERS.map(c => [c.id, c]));
+    customers.forEach(c => {
+      if (c && c.id && canonMap.has(c.id)) {
+        const canon = canonMap.get(c.id);
+        c.name = canon.name;
+        c.town = canon.town;
+        c.district = canon.district;
+        c.category = canon.category;
+      }
+    });
+  }
+
   try {
     localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
   } catch (e) {}
@@ -1293,6 +1324,8 @@ function processIncomingCloudCustomers(remoteCustomers) {
   populateCustomerDropdown();
   if (typeof renderCustomersList === 'function') renderCustomersList();
   if (typeof populateSavedAreasDatalists === 'function') populateSavedAreasDatalists();
+  if (typeof updateDashboard === 'function') updateDashboard();
+  if (typeof renderLeaderboardSection === 'function') renderLeaderboardSection();
 
   // If customer detail modal is currently open, refresh members list and badge in real time!
   if (activeDetailCustomerId) {
