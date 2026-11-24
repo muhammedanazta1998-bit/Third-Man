@@ -1795,7 +1795,12 @@ function showOrderDeliveredToast(order) {
   const orderId = order.id || '';
 
   const toast = document.createElement('div');
-  toast.className = 'bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border-2 border-emerald-500/80 pointer-events-auto flex items-start justify-between gap-3 transform translate-x-12 opacity-0 transition-all duration-300';
+  toast.className = 'bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border-2 border-emerald-500/80 pointer-events-auto flex items-start justify-between gap-3 transform translate-x-12 opacity-0 transition-all duration-300 cursor-pointer';
+  toast.onclick = (e) => {
+    if (!e.target.closest('button')) {
+      highlightDeliveredOrderInTable(order.id);
+    }
+  };
   toast.innerHTML = `
     <div class="flex items-start gap-2.5 min-w-0">
       <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-400/30 mt-0.5">
@@ -1833,7 +1838,7 @@ function triggerBrowserDeliveredNotification(order) {
       const noteText = order.deliveryNote ? ` (${order.deliveryNote})` : '';
       new Notification(`✅ Order Delivered: ${custName}`, {
         body: `${order.id}${noteText} — Delivered successfully!`,
-        icon: 'uploaded-logo.png?v=2'
+        icon: 'uploaded-logo.png?v=3'
       });
     }
   } catch (e) {}
@@ -1901,7 +1906,7 @@ function renderDeliveryAlertList() {
   listEl.innerHTML = history.map(item => {
     const timeStr = item.deliveredAt ? new Date(item.deliveredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
     return `
-      <div class="p-2.5 hover:bg-slate-50 transition rounded-xl flex items-start justify-between gap-2">
+      <div onclick="highlightDeliveredOrderInTable('${item.id}')" class="p-2.5 hover:bg-emerald-50/70 transition rounded-xl flex items-start justify-between gap-2 cursor-pointer" title="Click to view delivery in table">
         <div class="min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
             <span class="font-black text-slate-900">${escapeHtml(item.customer)}</span>
@@ -1999,52 +2004,78 @@ function updateMainDeliverySoundToggleUI() {
   if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
 }
 
-// Viewed state tracking for blinking "NEW ORDER" and "UPDATED" badges
-const STORAGE_VIEWED_ORDERS_MAP = 'thirdman_viewed_orders_map';
+// Viewed state tracking for blinking "DELIVERED" badge in Main Sales App
+const STORAGE_VIEWED_DELIVERIES_MAP = 'thirdman_viewed_deliveries_map';
 
-function getViewedOrdersMap() {
+function getViewedDeliveriesMap() {
   try {
-    const raw = localStorage.getItem(STORAGE_VIEWED_ORDERS_MAP);
+    const raw = localStorage.getItem(STORAGE_VIEWED_DELIVERIES_MAP);
     return raw ? JSON.parse(raw) : {};
   } catch (e) {
     return {};
   }
 }
 
-function markOrderAsViewed(orderId, timestamp) {
+function markDeliveryAsViewed(orderId, timestamp) {
   if (!orderId) return;
   try {
-    const map = getViewedOrdersMap();
+    const map = getViewedDeliveriesMap();
     map[orderId] = timestamp || new Date().toISOString();
-    localStorage.setItem(STORAGE_VIEWED_ORDERS_MAP, JSON.stringify(map));
+    localStorage.setItem(STORAGE_VIEWED_DELIVERIES_MAP, JSON.stringify(map));
   } catch (e) {}
 
-  const badgeEls = document.querySelectorAll(`[data-order-badge-id="${orderId}"]`);
+  // Immediately remove blinking DELIVERED badge element from DOM
+  const badgeEls = document.querySelectorAll(`[data-delivery-badge-id="${orderId}"]`);
   badgeEls.forEach(el => el.remove());
 }
 
-function getOrderBadgeState(order) {
-  if (!order || !order.id) return null;
-  if (order.dispatchStatus === 'Delivered') return null;
+function markOrderAsViewed(orderId, timestamp) {
+  markDeliveryAsViewed(orderId, timestamp);
+}
 
-  const viewedMap = getViewedOrdersMap();
+function getOrderDeliveredBadgeState(order) {
+  if (!order || !order.id) return null;
+  // In Main Sales app, only DELIVERED orders get a blinking badge for admin attention
+  if (order.dispatchStatus !== 'Delivered') return null;
+
+  const deliveredAtTime = order.deliveredAt ? new Date(order.deliveredAt).getTime() : 0;
+  if (!deliveredAtTime) return null;
+
+  // Don't blink orders delivered more than 72 hours ago
+  const now = Date.now();
+  if (now - deliveredAtTime > 72 * 3600 * 1000) return null;
+
+  const viewedMap = getViewedDeliveriesMap();
   const lastViewedAt = viewedMap[order.id];
 
-  const createdAt = order.createdAt ? new Date(order.createdAt).getTime() : (order.date ? new Date(order.date).getTime() : 0);
-  const updatedAt = order.updatedAt ? new Date(order.updatedAt).getTime() : createdAt;
-
   if (!lastViewedAt) {
-    const now = Date.now();
-    const isRecent = createdAt > 0 ? (now - createdAt < 48 * 3600 * 1000) : true;
-    return isRecent ? 'NEW' : null;
+    return 'DELIVERED';
   }
 
   const lastViewedTime = new Date(lastViewedAt).getTime();
-  if (updatedAt > lastViewedTime && updatedAt > createdAt) {
-    return 'UPDATED';
+  if (deliveredAtTime > lastViewedTime) {
+    return 'DELIVERED';
   }
 
   return null;
+}
+
+function highlightDeliveredOrderInTable(orderId) {
+  markDeliveryAsViewed(orderId);
+  closeDeliveryAlertMenu();
+  if (typeof switchMainView === 'function' && currentMainView !== 'sales-register') {
+    switchMainView('sales-register');
+  }
+  setTimeout(() => {
+    const rows = document.querySelectorAll('#ordersTableBody tr');
+    rows.forEach(row => {
+      if (row.textContent.includes(orderId)) {
+        row.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        row.classList.add('bg-emerald-100', 'transition-all');
+        setTimeout(() => row.classList.remove('bg-emerald-100'), 2500);
+      }
+    });
+  }, 150);
 }
 
 function requestBrowserNotificationPermission() {
@@ -2156,32 +2187,12 @@ function setupFirestoreRealtimeListeners() {
                 notes: ord.notes || '',
                 rate: ord.perKgRate || 0
               };
-              if (status !== 'Delivered') {
-                triggerNewOrderAlertInMainApp(ord);
-              }
             }
           } else if (change.type === 'modified') {
             const prevStatus = knownOrderDeliveryStatuses.get(ord.id);
             const newStatus = ord.dispatchStatus || 'Pending';
             if (prevStatus && prevStatus !== 'Delivered' && newStatus === 'Delivered') {
               triggerOrderDeliveredAlert(ord);
-            } else if (newStatus !== 'Delivered') {
-              const prev = mainOrdersStateMap[ord.id] || {};
-              const currentItemsHash = JSON.stringify(ord.items || []);
-              const currentBagQty = (ord.bagQty !== undefined) ? ord.bagQty : (ord.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
-              const currentUpdatedAt = ord.updatedAt || '';
-
-              const isContentChanged = (
-                (currentUpdatedAt && currentUpdatedAt !== prev.updatedAt) ||
-                currentItemsHash !== prev.itemsHash ||
-                currentBagQty !== prev.bagQty ||
-                (ord.notes || '') !== (prev.notes || '') ||
-                (ord.perKgRate || 0) !== (prev.rate || 0)
-              );
-
-              if (isContentChanged) {
-                triggerOrderUpdatedAlertInMainApp(ord);
-              }
             }
 
             knownOrderDeliveryStatuses.set(ord.id, newStatus);
@@ -7216,25 +7227,21 @@ function renderOrdersTable() {
       </span>`;
     }
 
-    const badgeState = getOrderBadgeState(o);
-    let orderBadgeHtml = '';
-    if (badgeState === 'NEW') {
-      orderBadgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping mr-0.5"></span>NEW ORDER</span>`;
-    } else if (badgeState === 'UPDATED') {
-      orderBadgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping mr-0.5"></span>UPDATED</span>`;
+    const isDeliveredBlinking = (getOrderDeliveredBadgeState(o) === 'DELIVERED');
+    let deliveredBadgeHtml = '';
+    if (isDeliveredBlinking) {
+      deliveredBadgeHtml = `<span data-delivery-badge-id="${o.id}" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-600 text-white border border-emerald-400 animate-pulse shadow-sm shadow-emerald-500/30" title="Delivered! Click to acknowledge"><span class="w-1.5 h-1.5 rounded-full bg-white animate-ping mr-0.5"></span>DELIVERED</span>`;
     }
 
     tr.onclick = (e) => {
-      if (!e.target.closest('button') && !e.target.closest('a')) {
-        markOrderAsViewed(o.id);
-      }
+      markDeliveryAsViewed(o.id);
     };
 
     tr.innerHTML = `
       <td class="px-4 py-3 whitespace-nowrap">
         <div class="flex items-center gap-1.5 flex-wrap">
           <div class="font-mono font-bold text-blue-700 text-xs">${escapeHtml(o.id)}</div>
-          ${orderBadgeHtml}
+          ${deliveredBadgeHtml}
           ${isUrgent ? '<span class="px-1 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-200">Urgent</span>' : ''}
         </div>
         <div class="text-[11px] text-slate-500 font-medium">${escapeHtml(o.date)}</div>
@@ -13763,4 +13770,7 @@ window.triggerOrderDeliveredAlert = triggerOrderDeliveredAlert;
 window.triggerNewOrderAlertInMainApp = triggerNewOrderAlertInMainApp;
 window.triggerOrderUpdatedAlertInMainApp = triggerOrderUpdatedAlertInMainApp;
 window.markOrderAsViewed = markOrderAsViewed;
+window.markDeliveryAsViewed = markDeliveryAsViewed;
 window.getOrderBadgeState = getOrderBadgeState;
+window.getOrderDeliveredBadgeState = getOrderDeliveredBadgeState;
+window.highlightDeliveredOrderInTable = highlightDeliveredOrderInTable;
