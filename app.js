@@ -7022,12 +7022,12 @@ function updateTopCustomersWidget(filteredOrders) {
 
     const item = document.createElement('div');
     item.className = 'flex items-center justify-between p-2 rounded-xl bg-slate-50 text-xs hover:bg-amber-50 cursor-pointer transition';
-    item.onclick = () => openLeaderboardModal();
-    item.title = 'Click to open Full Leaderboards';
+    item.onclick = () => openCustomerProfile(itemData.id || itemData.name, 'overview');
+    item.title = `Click to view profile of ${itemData.name}`;
     item.innerHTML = `
       <div class="flex items-center gap-2.5 min-w-0">
         <span class="w-5 h-5 rounded-full ${badgeColor} font-black flex items-center justify-center text-[10px] shrink-0 shadow-sm">${rank}</span>
-        <span class="font-bold text-slate-800 truncate">${escapeHtml(itemData.name)}</span>
+        <span class="font-bold text-slate-800 truncate hover:text-blue-600 transition-colors">${escapeHtml(itemData.name)}</span>
       </div>
       <span class="font-black text-blue-600 shrink-0">${Math.round(itemData.kg).toLocaleString('en-IN')} kg</span>
     `;
@@ -7782,7 +7782,10 @@ function renderOrdersTable() {
         <div class="mt-1">${dispatchBadgeHtml}</div>
       </td>
       <td class="px-4 py-3">
-        <div class="font-bold text-slate-900 text-xs sm:text-sm tracking-tight">${escapeHtml(getCustomerName(o.customer))}</div>
+        <button type="button" onclick="event.stopPropagation(); openCustomerProfile('${escapeHtml((typeof o.customer === 'object' && o.customer.id) ? o.customer.id : getCustomerName(o.customer))}', 'sales-register')" class="font-bold text-slate-900 text-xs sm:text-sm tracking-tight hover:text-blue-600 hover:underline inline-flex items-center gap-1 text-left cursor-pointer transition-colors" title="View Customer Profile">
+          <span>${escapeHtml(getCustomerName(o.customer))}</span>
+          <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-400"></i>
+        </button>
         ${o.notes ? `
           <div class="text-[10px] text-slate-500 mt-0.5 flex items-start gap-1 max-w-[260px]">
             <span class="font-semibold text-slate-700 shrink-0">📝 Note:</span>
@@ -10133,13 +10136,17 @@ function renderCustomersList() {
     uniqueFiltered.push(c);
   });
 
-  if (countBadge) countBadge.textContent = customers.length;
+  const totalCount = customers.length;
+  if (countBadge) countBadge.textContent = `Customers (${totalCount})`;
+  const totalBadgeText = document.getElementById('custTotalBadgeText');
+  if (totalBadgeText) totalBadgeText.textContent = `Customers (${totalCount})`;
+
   if (filteredBadge) {
     const isFilterActive = (customerDistrictFilter !== 'all' || customerTownFilter !== 'all' || customerAreaFilter !== 'all' || customerCategoryFilter !== 'all' || Boolean(search));
     if (!isFilterActive) {
       filteredBadge.textContent = `${uniqueFiltered.length} customer${uniqueFiltered.length === 1 ? '' : 's'}`;
     } else {
-      filteredBadge.textContent = `Showing ${uniqueFiltered.length} of ${customers.length}`;
+      filteredBadge.textContent = `Showing ${uniqueFiltered.length} of ${totalCount}`;
     }
   }
 
@@ -10155,128 +10162,50 @@ function renderCustomersList() {
     if (customerCategoryFilter !== 'all') filterDesc.push(`category '${customerCategoryFilter}'`);
     const filterDescStr = filterDesc.length > 0 ? ` in ${filterDesc.join(', ')}` : '';
     container.innerHTML = `<div class="p-6 text-center text-xs text-slate-400">
-      No customers found${filterDescStr}. Add a new customer on the left!
+      No customers found${filterDescStr}. Click '+ Add Customer' to add one.
     </div>`;
     return;
   }
 
-  uniqueFiltered.forEach(c => {
-    const custOrders = orders.filter(o => {
-      if (!o || !o.customer) return false;
-      if (typeof o.customer === 'object' && o.customer.id && o.customer.id === c.id) return true;
-      return getCustomerName(o.customer).trim().toLowerCase() === c.name.trim().toLowerCase();
-    });
-    const totalKg = custOrders.reduce((sum, o) => sum + (parseFloat(o.totalKg) || 0), 0);
-    const totalRevenue = custOrders.reduce((sum, o) => sum + (parseFloat(o.totalAmount) || 0), 0);
-    const catBadge = getCustomerCategoryBadge(c.category || 'Caterer');
-
-    const members = getCustomerMembers(c);
-    let contactsHtml = '';
-    if (members.length > 0) {
-      const memberChips = members.map(m => {
-        const badge = getDesignationBadge(m.role);
-        return `
-          <div class="inline-flex items-center gap-1.5 bg-slate-50 border border-slate-200/80 rounded-lg px-2 py-1 text-[11px]">
-            <span class="font-bold text-slate-800">${escapeHtml(m.name)}</span>
-            ${badge}
-            ${m.isPrimary ? '<span class="text-[9px] font-black text-amber-700">★</span>' : ''}
-            ${m.phone ? `<a href="tel:${escapeHtml(m.phone)}" class="font-mono text-blue-700 font-bold hover:underline flex items-center gap-0.5 ml-0.5"><i data-lucide="phone" class="w-3 h-3"></i>${escapeHtml(m.phone)}</a>` : ''}
-          </div>
-        `;
-      }).join('');
-
-      contactsHtml = `
-        <div class="mt-2 pt-2 border-t border-slate-100 space-y-1.5">
-          <div class="flex items-center justify-between text-[11px]">
-            <button type="button" onclick="openCustomerDetailModal('${c.id}')" class="font-bold text-indigo-700 hover:text-indigo-900 flex items-center gap-1 hover:underline">
-              <i data-lucide="users" class="w-3.5 h-3.5 text-indigo-600"></i>
-              <span>Team &amp; Contacts (${members.length})</span>
-            </button>
-            <button type="button" onclick="openCustomerDetailModal('${c.id}', true)" class="text-[11px] text-blue-600 hover:text-blue-800 font-bold hover:underline inline-flex items-center gap-0.5">
-              <i data-lucide="plus" class="w-3 h-3"></i>
-              <span>+ Add Member</span>
-            </button>
-          </div>
-          <div class="flex items-center gap-1.5 flex-wrap">
-            ${memberChips}
-          </div>
-        </div>
-      `;
-    } else {
-      contactsHtml = `
-        <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px]">
-          <span class="text-slate-400">No members added yet</span>
-          <button type="button" onclick="openCustomerDetailModal('${c.id}', true)" class="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold hover:underline inline-flex items-center gap-0.5">
-            <i data-lucide="plus" class="w-3 h-3"></i>
-            <span>+ Add Member</span>
-          </button>
-        </div>
-      `;
-    }
-
-    const cDist = getCustomerDistrict(c);
-    const cTown = getCustomerTown(c);
-    const cLandmark = getCustomerLandmark(c);
-    const cPanch = getCustomerPanchayath(c);
-
-    let locChips = [];
-    if (cLandmark) {
-      locChips.push(`<span class="inline-flex items-center gap-1 font-semibold text-slate-800"><i data-lucide="map-pin" class="w-3 h-3 text-rose-500"></i><span>${escapeHtml(cLandmark)}</span></span>`);
-    }
-    if (cTown) {
-      locChips.push(`<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">🏙️ ${escapeHtml(cTown)}${cDist && cDist.toLowerCase() !== cTown.toLowerCase() ? `, ${escapeHtml(cDist)}` : ''}</span>`);
-    } else if (cDist) {
-      locChips.push(`<span class="inline-flex items-center gap-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">📍 ${escapeHtml(cDist)}</span>`);
-    }
-    if (cPanch) {
-      locChips.push(`<span class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200/60">🏛️ ${escapeHtml(cPanch)}</span>`);
-    }
-
-    const locSnippet = locChips.length > 0
-      ? `<div class="text-[11px] text-slate-600 mt-0.5 flex items-center gap-1.5 flex-wrap">${locChips.join(' ')}</div>`
-      : `<div class="text-[11px] text-slate-500 mt-0.5 flex items-center gap-1"><i data-lucide="map-pin" class="w-3 h-3 text-rose-500"></i><span>${escapeHtml(getCustomerLocation(c))}</span></div>`;
-
-    const card = document.createElement('div');
-    card.className = 'p-3 bg-white border border-slate-200 rounded-xl hover:shadow-sm transition flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5';
-    card.innerHTML = `
-      <div class="flex-1 min-w-0 w-full sm:w-auto">
-        <div class="flex items-center gap-1.5 flex-wrap">
-          <button type="button" onclick="openCustomerProfile('${c.id}')" class="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline flex items-center gap-1 text-left" title="Click to view Customer Profile &amp; Complete Order History">
-            <span>${escapeHtml(c.name)}</span>
-            <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-blue-500"></i>
-          </button>
-          ${catBadge}
-        </div>
-        ${locSnippet}
-        ${contactsHtml}
-        ${c.notes ? `<div class="text-[10px] text-slate-400 mt-1">${escapeHtml(c.notes)}</div>` : ''}
-        <div class="text-[10px] text-blue-700 font-semibold mt-1">
-          Total: ${custOrders.length} orders • ${totalKg.toLocaleString('en-IN')} kg • ₹${Math.round(totalRevenue).toLocaleString('en-IN')}
-        </div>
+  uniqueFiltered.forEach((c, idx) => {
+    const custId = getCustomerDisplayId(c, idx);
+    const row = document.createElement('div');
+    row.className = 'flex items-center justify-between px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-blue-300 rounded-xl cursor-pointer transition shadow-2xs group active:scale-[0.99]';
+    row.onclick = () => openCustomerProfile(c.id, 'customers');
+    row.title = `Click to view profile of ${c.name}`;
+    row.innerHTML = `
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 shrink-0 group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-200 transition-colors">${custId}</span>
+        <span class="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-blue-600 transition-colors truncate">${escapeHtml(c.name)}</span>
       </div>
-      <div class="flex items-center gap-1.5 self-end sm:self-center shrink-0">
-        <button type="button" onclick="openCustomerProfile('${c.id}')" title="View Detailed Customer Profile &amp; Complete Order History" class="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1.5 border border-indigo-200/70 shadow-2xs active:scale-95">
-          <i data-lucide="user-check" class="w-3.5 h-3.5"></i>
-          <span>Profile &amp; Orders</span>
-        </button>
-        <button onclick="startOrderForCustomer('${c.id}')" class="text-xs bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold px-3 py-1.5 rounded-lg transition inline-flex items-center gap-1">
-          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
-          <span>Order</span>
-        </button>
-        <button onclick="editCustomer('${c.id}')" title="Edit Customer Details" class="p-1.5 text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded-lg transition">
-          <i data-lucide="edit-3" class="w-4 h-4"></i>
-        </button>
-        <button onclick="deleteCustomer('${c.id}')" title="Delete customer" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition">
-          <i data-lucide="trash-2" class="w-4 h-4"></i>
-        </button>
+      <div class="flex items-center gap-1.5 shrink-0 text-slate-400 group-hover:text-blue-600 transition-colors">
+        <i data-lucide="chevron-right" class="w-4 h-4"></i>
       </div>
     `;
-    container.appendChild(card);
+    container.appendChild(row);
   });
 
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
   }
+}
+
+function getCustomerDisplayId(c, index) {
+  if (!c) return 'CUST-000';
+  if (c.customId && typeof c.customId === 'string' && c.customId.trim()) {
+    return c.customId.trim();
+  }
+  if (c.id && typeof c.id === 'string') {
+    const match = c.id.match(/(?:c_hist_|cust_|CUST-)(\d+)/i);
+    if (match) {
+      return `CUST-${String(match[1]).padStart(3, '0')}`;
+    }
+  }
+  let idx = (typeof index === 'number' && index >= 0) ? index : (Array.isArray(customers) ? customers.findIndex(item => item && (item.id === c.id || (item.name && c.name && item.name.trim().toLowerCase() === c.name.trim().toLowerCase()))) : -1);
+  if (idx >= 0) {
+    return `CUST-${String(idx + 1).padStart(3, '0')}`;
+  }
+  return 'CUST-001';
 }
 
 function startOrderForCustomer(customerId) {
@@ -10324,6 +10253,10 @@ function deleteCustomer(customerId) {
 
       populateCustomerDropdown();
       renderCustomersList();
+
+      if (currentProfileCustomerId === customerId) {
+        closeCustomerProfile();
+      }
 
       const trashEntry = moveToTrash(
         'customer',
@@ -11960,7 +11893,7 @@ function renderCustomersLeaderboard() {
           <div class="w-10 h-10 rounded-full ${rankBg} font-black flex items-center justify-center text-sm shadow-sm mb-2">
             #${rank}
           </div>
-          <button type="button" onclick="openCustomerProfile('')" class="font-extrabold text-xs text-slate-900 hover:text-blue-600 hover:underline truncate max-w-full px-1 block" title="View Customer Profile">${escapeHtml(cust.name)}</button>
+          <button type="button" onclick="closeLeaderboardModal(); openCustomerProfile('${escapeHtml(cust.id || cust.name)}', 'incentives')" class="font-extrabold text-xs text-slate-900 hover:text-blue-600 hover:underline truncate max-w-full px-1 block" title="View Customer Profile">${escapeHtml(cust.name)}</button>
           <div class="mt-1">${getCustomerCategoryBadge(cust.category)}</div>
           <div class="text-[11px] text-slate-500 mt-1">${escapeHtml(cust.location)}</div>
           <div class="mt-2 text-sm font-black text-blue-700">${metricDisplay}</div>
@@ -11999,7 +11932,7 @@ function renderCustomersLeaderboard() {
       <td class="px-3.5 py-3 text-center">${rankBadge}</td>
       <td class="px-3.5 py-3">
         <div class="flex items-center gap-1.5 flex-wrap">
-          <button type="button" onclick="openCustomerProfile('')" class="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline text-left inline-flex items-center gap-1" title="View Detailed Customer Profile &amp; Order History"><span>${escapeHtml(c.name)}</span><i data-lucide="chevron-right" class="w-3 h-3 text-blue-500"></i></button>
+          <button type="button" onclick="closeLeaderboardModal(); openCustomerProfile('${escapeHtml(c.id || c.name)}', 'incentives')" class="font-bold text-slate-900 text-xs hover:text-blue-600 hover:underline text-left inline-flex items-center gap-1" title="View Detailed Customer Profile &amp; Order History"><span>${escapeHtml(c.name)}</span><i data-lucide="chevron-right" class="w-3 h-3 text-blue-500"></i></button>
           ${getCustomerCategoryBadge(c.category)}
         </div>
         <div class="text-[11px] text-slate-500">${escapeHtml(c.location)} ${c.phone ? '• ' + escapeHtml(c.phone) : ''}</div>
@@ -12235,7 +12168,7 @@ function renderChampionsLeaderboard() {
             <span class="px-2 py-0.5 bg-amber-400 text-amber-950 font-black text-[9px] rounded-full shadow-xs">#1 Champion 🏆</span>
           </div>
           <div class="text-[10px] text-slate-400 mb-2">${cat.sub}</div>
-          <h4 class="font-extrabold text-sm text-slate-900 leading-tight"><button type="button" onclick="openCustomerProfile('')" class="hover:text-blue-600 hover:underline text-left leading-tight">${escapeHtml(champion.name)}</button></h4>
+          <h4 class="font-extrabold text-sm text-slate-900 leading-tight"><button type="button" onclick="closeLeaderboardModal(); openCustomerProfile('${escapeHtml(champion.id || champion.name)}', 'incentives')" class="hover:text-blue-600 hover:underline text-left leading-tight">${escapeHtml(champion.name)}</button></h4>
           <p class="text-[11px] text-slate-500 mt-0.5">${escapeHtml(champion.location)} • ${escapeHtml(champion.phone)}</p>
           
           <div class="mt-3 p-2 bg-amber-100/50 rounded-xl border border-amber-200/60 flex items-center justify-between">
@@ -12390,7 +12323,7 @@ function renderMilestonesLeaderboard() {
         return `
           <div class="flex items-center justify-between p-2.5 rounded-xl bg-white border border-slate-100 hover:shadow-xs transition text-xs">
             <div class="flex items-center gap-2">
-              <button type="button" onclick="openCustomerProfile('')" class="font-extrabold text-slate-900 hover:text-blue-600 hover:underline text-left">${escapeHtml(m.name)}</button>
+              <button type="button" onclick="closeLeaderboardModal(); openCustomerProfile('${escapeHtml(m.id || m.name)}', 'incentives')" class="font-extrabold text-slate-900 hover:text-blue-600 hover:underline text-left">${escapeHtml(m.name)}</button>
               ${getCustomerCategoryBadge(m.category)}
               ${upgradeHint}
             </div>
@@ -12816,11 +12749,37 @@ function getCustomerOrders(customerOrId, includeCancelled = false) {
   return matched;
 }
 
+let customerProfilePreviousView = 'customers';
+
 /**
  * Opens detailed Customer Profile inline page view
  */
-function openCustomerProfile(customerId, openAddMemberImmediately = false) {
+function openCustomerProfile(customerId, fromView = null) {
   if (!customerId) return;
+
+  // Track origin view for Back button navigation
+  if (typeof fromView === 'string' && fromView) {
+    customerProfilePreviousView = fromView;
+  } else if (currentMainView && currentMainView !== 'customers') {
+    customerProfilePreviousView = currentMainView;
+  } else {
+    customerProfilePreviousView = 'customers';
+  }
+
+  // Update back button label
+  const backBtnText = document.getElementById('cpBackBtnText');
+  if (backBtnText) {
+    const viewLabels = {
+      'overview': 'Back to Dashboard',
+      'sales-register': 'Back to Orders',
+      'orders': 'Back to Orders',
+      'incentives': 'Back to Incentives',
+      'leaderboard': 'Back to Leaderboard',
+      'daily-report': 'Back to Daily Report',
+      'customers': 'Back to Customers'
+    };
+    backBtnText.textContent = viewLabels[customerProfilePreviousView] || 'Back to Customers';
+  }
 
   // Find customer by ID, or by name / alias
   let cust = customers.find(c => c.id === customerId);
@@ -12906,6 +12865,8 @@ function openCustomerProfile(customerId, openAddMemberImmediately = false) {
   // 1. Populate Customer Summary Header
   const nameEl = document.getElementById('cpCustomerName');
   const avatarEl = document.getElementById('cpAvatar');
+  const idBadgeEl = document.getElementById('cpCustomerIdBadge');
+  const tierBadgeEl = document.getElementById('cpTierBadge');
   const catBadgeEl = document.getElementById('cpCategoryBadge');
   const milestoneBadgeEl = document.getElementById('cpMilestoneBadge');
   const locEl = document.getElementById('cpLocationText');
@@ -12913,7 +12874,15 @@ function openCustomerProfile(customerId, openAddMemberImmediately = false) {
 
   if (nameEl) nameEl.textContent = cust.name;
   if (avatarEl) avatarEl.textContent = (cust.name || 'C').charAt(0).toUpperCase();
+  if (idBadgeEl) idBadgeEl.textContent = getCustomerDisplayId(cust);
   if (catBadgeEl) catBadgeEl.innerHTML = getCustomerCategoryBadge(cust.category || 'Caterer');
+
+  // Tier badge
+  if (tierBadgeEl) {
+    const t = cust.tier || 'C';
+    const cadenceDays = (typeof VISIT_CADENCE_DAYS !== 'undefined' && VISIT_CADENCE_DAYS[t]) ? VISIT_CADENCE_DAYS[t] : 21;
+    tierBadgeEl.textContent = `Tier ${t} (${cadenceDays}d)`;
+  }
 
   // Milestone tier badge
   if (milestoneBadgeEl) {
@@ -13016,7 +12985,10 @@ function openCustomerProfile(customerId, openAddMemberImmediately = false) {
   // 3. Team Members Section
   renderProfileMembersList(cust);
 
-  // 4. Complete Order History Section
+  // 4. Recent Visits History Section
+  renderCustomerVisitsHistory(cust);
+
+  // 5. Complete Order History Section
   const searchInput = document.getElementById('cpOrderSearchInput');
   if (searchInput) searchInput.value = '';
   renderCustomerOrderHistory(currentProfileOrders);
@@ -13030,23 +13002,97 @@ function openCustomerProfile(customerId, openAddMemberImmediately = false) {
 }
 
 /**
- * Returns from Customer Profile view back to Customers Directory list
+ * Returns from Customer Profile view back to origin view (or Customers Directory list)
  */
 function closeCustomerProfile() {
   currentProfileCustomerId = null;
   activeDetailCustomerId = null;
 
-  const dirContainer = document.getElementById('customersDirectoryContainer');
   const profContainer = document.getElementById('customerProfileContainer');
   if (profContainer) profContainer.classList.add('hidden');
-  if (dirContainer) dirContainer.classList.remove('hidden');
 
-  const mainTitle = document.getElementById('mainViewHeaderTitle');
-  const mainSubtitle = document.getElementById('mainViewHeaderSubtitle');
-  if (mainTitle) mainTitle.textContent = 'CUSTOMERS DIRECTORY';
-  if (mainSubtitle) mainSubtitle.textContent = 'Wholesale Buyers & Contact Management';
+  const origin = customerProfilePreviousView || 'customers';
+  if (origin !== 'customers' && typeof switchMainView === 'function') {
+    switchMainView(origin);
+  } else {
+    const dirContainer = document.getElementById('customersDirectoryContainer');
+    if (dirContainer) dirContainer.classList.remove('hidden');
 
-  renderCustomersList();
+    const mainTitle = document.getElementById('mainViewHeaderTitle');
+    const mainSubtitle = document.getElementById('mainViewHeaderSubtitle');
+    if (mainTitle) mainTitle.textContent = 'CUSTOMERS DIRECTORY';
+    if (mainSubtitle) mainSubtitle.textContent = 'Wholesale Buyers & Contact Management';
+
+    renderCustomersList();
+  }
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function deleteCustomerFromProfile() {
+  if (!currentProfileCustomerId) return;
+  const custId = currentProfileCustomerId;
+  deleteCustomer(custId);
+}
+
+function openLogShopVisitModalFromProfile() {
+  if (!currentProfileCustomerId) return;
+  openLogShopVisitModal(currentProfileCustomerId);
+}
+
+/**
+ * Renders the recent visits history in the customer profile
+ */
+function renderCustomerVisitsHistory(cust) {
+  const container = document.getElementById('cpVisitsList');
+  const badge = document.getElementById('cpVisitsCountBadge');
+  if (!container) return;
+
+  const visits = (Array.isArray(dailyVisits) ? dailyVisits : []).filter(v => {
+    if (!v) return false;
+    if (v.shopId && v.shopId === cust.id) return true;
+    if (v.shopName && cust.name && v.shopName.trim().toLowerCase() === cust.name.trim().toLowerCase()) return true;
+    return false;
+  }).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+  if (badge) {
+    badge.textContent = `${visits.length} Visit${visits.length === 1 ? '' : 's'}`;
+  }
+
+  if (visits.length === 0) {
+    container.innerHTML = `
+      <div class="p-6 text-center text-xs text-slate-400 space-y-1">
+        <div class="text-2xl">📍</div>
+        <div class="font-bold text-slate-600">No shop visits logged yet</div>
+        <p class="text-[11px] text-slate-400">Click '+ Log Visit' above to record field visits, payment collections, or touchpoints.</p>
+      </div>
+    `;
+    return;
+  }
+
+  container.innerHTML = visits.map(v => {
+    const parts = (v.date || '').split('-');
+    const formattedDate = (parts.length === 3) ? `${parts[2]}-${parts[1]}-${parts[0]}` : (v.date || 'Recent');
+    const tag = v.tag || 'General Visit';
+    return `
+      <div class="flex items-center justify-between p-3 rounded-xl bg-slate-50 border border-slate-200/80 hover:bg-slate-100/70 transition text-xs">
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="font-mono font-bold text-slate-900">${escapeHtml(formattedDate)}</span>
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-200">${escapeHtml(tag)}</span>
+            ${v.tier ? `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-700">Tier ${escapeHtml(v.tier)}</span>` : ''}
+          </div>
+          ${v.notes ? `<div class="text-[11px] text-slate-600 mt-1">📝 ${escapeHtml(v.notes)}</div>` : ''}
+        </div>
+        <button type="button" onclick="removeShopVisitForDate('${cust.id}', '${v.date}')" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition shrink-0 ml-2" title="Delete visit record">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    `;
+  }).join('');
+
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
   }
@@ -13293,7 +13339,7 @@ function renderProfileMembersList(cust) {
 
     return `
       <div class="inline-flex items-center gap-1.5 p-2 bg-slate-50 border border-slate-200 rounded-xl text-xs hover:border-slate-300 transition">
-        <button type="button" onclick="openCustomerProfile('')" class="font-extrabold text-slate-900 hover:text-blue-600 hover:underline text-left">${escapeHtml(m.name)}</button>
+        <span class="font-extrabold text-slate-900 text-left">${escapeHtml(m.name)}</span>
         ${roleBadge}
         ${m.isPrimary ? '<span class="text-[9px] font-black text-amber-700 bg-amber-100 px-1 rounded">★ Primary</span>' : ''}
         ${cleanPhone ? `<span class="font-mono text-slate-500 text-[11px] ml-1">${escapeHtml(m.phone)}</span>` : ''}
@@ -13391,6 +13437,10 @@ window.getCanonicalCustomerInfo = getCanonicalCustomerInfo;
 window.runManualCustomerDeduplication = runManualCustomerDeduplication;
 window.editCustomerFromDetail = editCustomerFromDetail;
 window.deleteCustomerFromDetail = deleteCustomerFromDetail;
+window.deleteCustomerFromProfile = deleteCustomerFromProfile;
+window.openLogShopVisitModalFromProfile = openLogShopVisitModalFromProfile;
+window.renderCustomerVisitsHistory = renderCustomerVisitsHistory;
+window.getCustomerDisplayId = getCustomerDisplayId;
 window.isCustomerTombstoned = isCustomerTombstoned;
 window.addCustomerTombstone = addCustomerTombstone;
 window.removeCustomerTombstone = removeCustomerTombstone;
@@ -14273,7 +14323,10 @@ function renderDailyReportShopsList() {
         <!-- Shop Info -->
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-2 flex-wrap">
-            <h4 class="font-black text-slate-900 text-sm truncate">${escapeHtml(shop.name)}</h4>
+            <button type="button" onclick="openCustomerProfile('${escapeHtml(shop.id)}', 'daily-report')" class="font-black text-slate-900 text-sm truncate hover:text-blue-600 hover:underline inline-flex items-center gap-1 text-left cursor-pointer transition-colors" title="View Customer Profile">
+              <span>${escapeHtml(shop.name)}</span>
+              <i data-lucide="chevron-right" class="w-3.5 h-3.5 text-slate-400"></i>
+            </button>
             
             <!-- Customer vs Prospect Badge -->
             <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isProspect ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}">

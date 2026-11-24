@@ -13,8 +13,11 @@
   <div id="mainViewHeaderSubtitle"></div>
   <div id="customersDirectoryContainer"></div>
   <div id="customerProfileContainer" class="hidden">
+    <button type="button" id="cpBackBtn"><span id="cpBackBtnText"></span></button>
     <div id="cpAvatar"></div>
     <div id="cpCustomerName"></div>
+    <span id="cpCustomerIdBadge"></span>
+    <span id="cpTierBadge"></span>
     <div id="cpCategoryBadge"></div>
     <div id="cpMilestoneBadge"></div>
     <div id="cpLocationText"></div>
@@ -35,6 +38,8 @@
     <div id="cpActiveStatus"></div>
     <div id="cpMembersContainer"></div>
     <div id="cpMembersCountBadge"></div>
+    <span id="cpVisitsCountBadge"></span>
+    <div id="cpVisitsList"></div>
     <input id="cpOrderSearchInput" type="text" />
     <span id="cpOrderHistoryCountBadge"></span>
     <table><tbody id="cpOrderHistoryTableBody"></tbody></table>
@@ -137,6 +142,7 @@
   <div id="customersListContainer"></div>
   <span id="custCountBadge"></span>
   <span id="custFilteredCountBadge"></span>
+  <span id="custTotalBadge"><span id="custTotalBadgeText"></span></span>
   <input type="text" id="custDirectorySearchInput" />
   <button type="button" id="btnCustSearchClear" class="hidden"></button>
   <button type="button" id="btnToggleCustFilters"></button>
@@ -558,18 +564,58 @@ window.onerror = function(msg, url, line, col, err) {
   const spendEl = document.getElementById('cpTotalSpend');
   const ordersEl = document.getElementById('cpTotalOrders');
   const tbEl = document.getElementById('cpOrderHistoryTableBody');
+  const idEl = document.getElementById('cpCustomerIdBadge');
+  const tierEl = document.getElementById('cpTierBadge');
+  const backTextEl = document.getElementById('cpBackBtnText');
 
   assert(dirEl && dirEl.classList.contains('hidden'), "Directory container hidden when profile opens");
   assert(profEl && !profEl.classList.contains('hidden'), "Profile container visible when profile opens");
   assert(nameEl && nameEl.textContent === 'Thanima Hotel', `Customer name header rendered 'Thanima Hotel'`);
+  assert(idEl && idEl.textContent === 'CUST-001', `Customer ID badge rendered 'CUST-001' (actual: ${idEl?.textContent})`);
+  assert(tierEl && tierEl.textContent.includes('Tier C'), `Customer tier badge rendered 'Tier C' (actual: ${tierEl?.textContent})`);
   assert(spendEl && spendEl.textContent.includes('90,000'), `Lifetime spend rendered '₹90,000'`);
   assert(ordersEl && ordersEl.textContent.includes('3'), `Total orders rendered '3 Orders'`);
   assert(tbEl && tbEl.children.length === 3, `Order history table has 3 rows (actual: ${tbEl ? tbEl.children.length : 0})`);
 
+  // Test origin view tracking (e.g. opened from 'sales-register')
+  openCustomerProfile('c_hist_001', 'sales-register');
+  assert(backTextEl && backTextEl.textContent === 'Back to Orders', "Back button reflects origin view 'Back to Orders'");
+  assert(customerProfilePreviousView === 'sales-register', "customerProfilePreviousView correctly set to 'sales-register'");
+
   // Test closeCustomerProfile
   closeCustomerProfile();
   assert(profEl && profEl.classList.contains('hidden'), "Profile container hidden when Back to Customers clicked");
-  assert(dirEl && !dirEl.classList.contains('hidden'), "Directory container visible after Back to Customers clicked");
+
+  // TEST 13B: Ultra-Minimal Customer Directory List Rendering
+  log("\n--- Testing Ultra-Minimal Customer Directory List & Unique IDs ---");
+  customers = [
+    { id: 'c_hist_001', name: 'Thanima Hotel', category: 'Hotel / Restaurant' },
+    { id: 'c_hist_002', name: 'Al-Safi Food Court', category: 'Hotel / Restaurant' }
+  ];
+  renderCustomersList();
+  const custListEl = document.getElementById('customersListContainer');
+  assert(custListEl && custListEl.children.length === 2, "Customer Directory renders exactly 2 minimal list rows");
+  const firstRow = custListEl.children[0];
+  assert(firstRow && firstRow.textContent.includes('CUST-001'), "Row contains Unique ID 'CUST-001'");
+  assert(firstRow && firstRow.textContent.includes('Thanima Hotel'), "Row contains Customer Name 'Thanima Hotel'");
+  assert(!firstRow.innerHTML.includes('Hotel / Restaurant'), "Row does NOT contain cluttered business type badge");
+  assert(!firstRow.innerHTML.includes('Team &amp; Contacts'), "Row does NOT contain cluttered contacts section");
+  assert(!firstRow.innerHTML.includes('Total:'), "Row does NOT contain cluttered purchase totals");
+  assert(!firstRow.innerHTML.includes('Profile &amp; Orders'), "Row does NOT contain bulky action buttons");
+
+  assert(getCustomerDisplayId({ id: 'c_hist_042' }) === 'CUST-042', "getCustomerDisplayId formats 'c_hist_042' to 'CUST-042'");
+  assert(getCustomerDisplayId({ customId: 'CUST-777' }) === 'CUST-777', "getCustomerDisplayId respects customId 'CUST-777'");
+
+  // Test Recent Visits rendering
+  dailyVisits = [
+    { id: 'v1', shopId: 'c_hist_001', shopName: 'Thanima Hotel', date: '2026-11-20', tag: 'Order Booking', notes: 'Booked 20 bags' }
+  ];
+  renderCustomerVisitsHistory(thanimaRecord);
+  const visitsListEl = document.getElementById('cpVisitsList');
+  const visitsBadgeEl = document.getElementById('cpVisitsCountBadge');
+  assert(visitsBadgeEl && visitsBadgeEl.textContent === '1 Visit', "Visits count badge shows '1 Visit'");
+  assert(visitsListEl && visitsListEl.textContent.includes('20-11-2026'), "Visits list shows formatted date '20-11-2026'");
+  assert(visitsListEl && visitsListEl.textContent.includes('Order Booking'), "Visits list shows visit tag 'Order Booking'");
 
   // TEST 14: Customer Deletion & Tombstone Protection System
   log("\n--- Testing Customer Deletion & Tombstone Protection ---");
