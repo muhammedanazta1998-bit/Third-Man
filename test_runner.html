@@ -138,6 +138,22 @@
     </div>
   </div>
 
+  <!-- Support Chat / Helpline Fixtures -->
+  <div id="supportChatContainer">
+    <button type="button" id="btnSupportChat" onclick="toggleSupportChatMenu()">
+      <span id="supportChatUnreadBadge" class="hidden">0</span>
+    </button>
+    <div id="supportChatDropdown" class="hidden">
+      <div id="adminSupportMessageList">
+        <div id="adminSupportEmptyState"></div>
+      </div>
+      <form id="adminSupportChatForm">
+        <input type="text" id="adminSupportReplyInput" />
+        <button type="submit" id="btnAdminSupportSend"></button>
+      </form>
+    </div>
+  </div>
+
   <!-- Customers Directory Standardized Toolbar & Collapsible Filter Fixtures -->
   <div id="customersListContainer"></div>
   <span id="custCountBadge"></span>
@@ -1140,6 +1156,87 @@ window.onerror = function(msg, url, line, col, err) {
   assert(viewOverviewEl !== null, "viewOverview fixture exists in DOM");
   assert(viewOverviewEl.querySelector('.bg-gradient-to-r.from-blue-900\\/90') === null, "Redundant Quick Sales Register banner is removed from Overview");
   assert(document.getElementById('testFixtures').querySelector('footer') === null, "Outdated footer banner is not in overview fixtures");
+
+  // ==========================================
+  // TEST 19: Support Chat & Helpline System
+  // ==========================================
+  log("\n--- TEST 19: Support Chat & Helpline System ---");
+  const btnSupportChat = document.getElementById('btnSupportChat');
+  const supportChatDropdown = document.getElementById('supportChatDropdown');
+  const supportChatUnreadBadge = document.getElementById('supportChatUnreadBadge');
+  const adminSupportMessageList = document.getElementById('adminSupportMessageList');
+  const adminSupportReplyInput = document.getElementById('adminSupportReplyInput');
+
+  assert(btnSupportChat !== null, "btnSupportChat exists in DOM");
+  assert(supportChatDropdown !== null, "supportChatDropdown exists in DOM");
+  assert(supportChatDropdown.classList.contains('hidden'), "supportChatDropdown starts closed");
+
+  // 1. Menu open, close and toggle
+  openSupportChatMenu();
+  assert(!supportChatDropdown.classList.contains('hidden'), "openSupportChatMenu() opens the support chat panel");
+  closeSupportChatMenu();
+  assert(supportChatDropdown.classList.contains('hidden'), "closeSupportChatMenu() closes the support chat panel");
+  toggleSupportChatMenu();
+  assert(!supportChatDropdown.classList.contains('hidden'), "toggleSupportChatMenu() opens panel when closed");
+  toggleSupportChatMenu();
+  assert(supportChatDropdown.classList.contains('hidden'), "toggleSupportChatMenu() closes panel when open");
+
+  // 2. Unread badge calculation
+  const mockChatList = [
+    {
+      id: 'mock-chat-1',
+      sender: 'delivery',
+      senderName: 'Rider Anil',
+      tag: 'Bug',
+      text: 'Cannot complete delivery #5468, app is spinning',
+      timestamp: new Date().toISOString(),
+      readByAdmin: false,
+      readByDelivery: true
+    },
+    {
+      id: 'mock-chat-2',
+      sender: 'delivery',
+      senderName: 'Driver Biju',
+      tag: 'Delivery Issue',
+      text: 'Shop owner not available at PKBR',
+      timestamp: new Date().toISOString(),
+      readByAdmin: false,
+      readByDelivery: true
+    }
+  ];
+  setSupportChatMessages(mockChatList);
+  updateSupportChatUnreadBadge();
+  assert(!supportChatUnreadBadge.classList.contains('hidden'), "supportChatUnreadBadge is visible with unread messages");
+  assert(supportChatUnreadBadge.textContent === '2', "supportChatUnreadBadge count equals 2");
+
+  // 3. Message rendering
+  renderAdminSupportMessages();
+  assert(adminSupportMessageList.innerHTML.includes('Rider Anil'), "adminSupportMessageList renders sender name");
+  assert(adminSupportMessageList.innerHTML.includes('🐞 Bug'), "adminSupportMessageList renders bug tag badge");
+  assert(adminSupportMessageList.innerHTML.includes('Cannot complete delivery #5468'), "adminSupportMessageList renders message text");
+
+  // 4. Mark messages as read
+  markAdminMessagesAsRead();
+  const currentMessages = getSupportChatMessages();
+  assert(currentMessages.every(m => m.readByAdmin === true), "All delivery messages marked readByAdmin: true");
+  assert(supportChatUnreadBadge.classList.contains('hidden'), "Unread badge is hidden after marking messages as read");
+
+  // 5. Send Admin reply
+  adminSupportReplyInput.value = 'Checking now, hold on';
+  sendAdminSupportReply();
+  assert(adminSupportReplyInput.value === '', "sendAdminSupportReply clears the reply input");
+  const adminMsg = getSupportChatMessages().find(m => m.sender === 'admin');
+  assert(adminMsg !== undefined, "Admin reply is appended to supportChatMessages");
+  assert(adminMsg.text === 'Checking now, hold on', "Admin message content is accurate");
+  assert(adminMsg.readByDelivery === false, "Admin message has readByDelivery: false");
+
+  // 6. Clear / Resolve Support Chat
+  const origConfirm = window.confirm;
+  window.confirm = () => true;
+  clearOrResolveSupportChat();
+  window.confirm = origConfirm;
+  assert(getSupportChatMessages().length === 0, "clearOrResolveSupportChat clears all messages");
+  assert(document.getElementById('adminSupportEmptyState') !== null, "Empty state displayed after clearing messages");
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

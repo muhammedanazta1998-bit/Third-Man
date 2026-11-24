@@ -2318,6 +2318,376 @@ document.addEventListener('click', (e) => {
   }
 });
 
+// ==================== TWO-WAY SUPPORT & HELPLINE CHAT SYSTEM (ADMIN SIDE) ====================
+
+let supportChatMessages = [];
+let knownAdminChatMessageIds = new Set();
+let isInitialAdminChatLoad = true;
+let supportChatUnsubscribe = null;
+let isSupportChatMenuOpen = false;
+const STORAGE_SUPPORT_CHATS_CACHE = 'thirdman_support_chats_cache';
+
+function loadCachedSupportChats() {
+  try {
+    const raw = localStorage.getItem(STORAGE_SUPPORT_CHATS_CACHE);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        supportChatMessages = parsed;
+        supportChatMessages.forEach(m => {
+          if (m && m.id) knownAdminChatMessageIds.add(m.id);
+        });
+        updateSupportChatUnreadBadge();
+      }
+    }
+  } catch (e) {}
+}
+
+function playSupportChatChime() {
+  if (typeof isMainDeliverySoundEnabled === 'function' && !isMainDeliverySoundEnabled()) return;
+  try {
+    const ctx = getMainDeliveryAudioContext ? getMainDeliveryAudioContext() : new (window.AudioContext || window.webkitAudioContext)();
+    if (!ctx) return;
+    if (ctx.state === 'suspended') ctx.resume().catch(() => {});
+    const now = ctx.currentTime;
+    // Pleasant 2-tone melodic chime: F5 (698.46Hz) -> C6 (1046.50Hz)
+    const osc1 = ctx.createOscillator();
+    const gain1 = ctx.createGain();
+    osc1.type = 'sine';
+    osc1.frequency.setValueAtTime(698.46, now);
+    gain1.gain.setValueAtTime(0.15, now);
+    gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    osc1.connect(gain1);
+    gain1.connect(ctx.destination);
+    osc1.start(now);
+    osc1.stop(now + 0.16);
+
+    const osc2 = ctx.createOscillator();
+    const gain2 = ctx.createGain();
+    osc2.type = 'sine';
+    osc2.frequency.setValueAtTime(1046.50, now + 0.11);
+    gain2.gain.setValueAtTime(0.18, now + 0.11);
+    gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+    osc2.connect(gain2);
+    gain2.connect(ctx.destination);
+    osc2.start(now + 0.11);
+    osc2.stop(now + 0.38);
+  } catch (e) {
+    console.warn('Support chat sound notice:', e);
+  }
+}
+
+function listenToSupportChats() {
+  if (!db) return;
+  if (supportChatUnsubscribe) {
+    try { supportChatUnsubscribe(); } catch (e) {}
+    supportChatUnsubscribe = null;
+  }
+
+  loadCachedSupportChats();
+
+  try {
+    supportChatUnsubscribe = db.collection('support_chats').orderBy('timestamp', 'asc').onSnapshot(snapshot => {
+      if (!snapshot) return;
+
+      const loaded = [];
+      let newIncomingDeliveryCount = 0;
+
+      snapshot.forEach(doc => {
+        const d = doc.data() || {};
+        const msg = {
+          id: doc.id,
+          text: d.text || '',
+          tag: d.tag || 'Help',
+          sender: d.sender || 'delivery',
+          senderName: d.senderName || 'Delivery Team',
+          timestamp: d.timestamp || new Date().toISOString(),
+          readByAdmin: d.readByAdmin === true,
+          readByDelivery: d.readByDelivery === true
+        };
+        loaded.push(msg);
+
+        // Check for new incoming delivery messages
+        if (!knownAdminChatMessageIds.has(doc.id)) {
+          knownAdminChatMessageIds.add(doc.id);
+          if (!isInitialAdminChatLoad && msg.sender === 'delivery') {
+            newIncomingDeliveryCount++;
+          }
+        }
+      });
+
+      supportChatMessages = loaded;
+      try {
+        localStorage.setItem(STORAGE_SUPPORT_CHATS_CACHE, JSON.stringify(supportChatMessages));
+      } catch (e) {}
+
+      // Trigger sound & toast if new delivery message arrived
+      if (!isInitialAdminChatLoad && newIncomingDeliveryCount > 0) {
+        playSupportChatChime();
+        const latestMsg = supportChatMessages.filter(m => m.sender === 'delivery').slice(-1)[0];
+        if (latestMsg && typeof showNotification === 'function') {
+          showNotification(`💬 Delivery Support (${latestMsg.tag || 'Help'}): ${latestMsg.text || 'New message'}`, 'delivery', 6000);
+        }
+      }
+
+      updateSupportChatUnreadBadge();
+
+      if (isSupportChatMenuOpen) {
+        renderAdminSupportMessages();
+        markAdminMessagesAsRead();
+      }
+
+      isInitialAdminChatLoad = false;
+    }, err => {
+      console.warn('support_chats snapshot error:', err);
+    });
+  } catch (err) {
+    console.warn('Error starting support_chats listener:', err);
+  }
+}
+
+function updateSupportChatUnreadBadge() {
+  const badge = document.getElementById('supportChatUnreadBadge');
+  if (!badge) return;
+
+  const unreadCount = supportChatMessages.filter(m => m && m.sender === 'delivery' && !m.readByAdmin).length;
+  badge.textContent = unreadCount;
+  if (unreadCount > 0) {
+    badge.classList.remove('hidden');
+    badge.classList.add('flex');
+  } else {
+    badge.classList.add('hidden');
+    badge.classList.remove('flex');
+  }
+}
+
+function toggleSupportChatMenu() {
+  const dropdown = document.getElementById('supportChatDropdown');
+  if (!dropdown) return;
+
+  if (dropdown.classList.contains('hidden')) {
+    openSupportChatMenu();
+  } else {
+    closeSupportChatMenu();
+  }
+}
+
+function openSupportChatMenu() {
+  const dropdown = document.getElementById('supportChatDropdown');
+  if (!dropdown) return;
+
+  // Close delivery alert dropdown if open
+  closeDeliveryAlertMenu();
+
+  dropdown.classList.remove('hidden');
+  isSupportChatMenuOpen = true;
+
+  renderAdminSupportMessages();
+  markAdminMessagesAsRead();
+
+  // Focus input
+  setTimeout(() => {
+    const input = document.getElementById('adminSupportReplyInput');
+    if (input) input.focus();
+  }, 100);
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function closeSupportChatMenu() {
+  const dropdown = document.getElementById('supportChatDropdown');
+  if (dropdown) dropdown.classList.add('hidden');
+  isSupportChatMenuOpen = false;
+}
+
+function renderAdminSupportMessages() {
+  const container = document.getElementById('adminSupportMessageList');
+  if (!container) return;
+
+  if (supportChatMessages.length === 0) {
+    container.innerHTML = `
+      <div id="adminSupportEmptyState" class="py-8 text-center text-slate-400 text-xs">
+        <i data-lucide="message-circle" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
+        <p class="font-bold">No support messages yet</p>
+        <p class="text-[11px] text-slate-400">Incoming messages from delivery staff will appear here.</p>
+      </div>
+    `;
+    if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    return;
+  }
+
+  let html = '';
+  supportChatMessages.forEach(msg => {
+    const isDelivery = msg.sender === 'delivery';
+    const timeStr = formatChatTimestamp(msg.timestamp);
+
+    // Tag badge
+    let tagBadge = '';
+    if (msg.tag === 'Bug') {
+      tagBadge = '<span class="px-1.5 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-800 border border-rose-200">🐞 Bug</span>';
+    } else if (msg.tag === 'Delivery Issue') {
+      tagBadge = '<span class="px-1.5 py-0.2 rounded text-[9px] font-black bg-amber-100 text-amber-800 border border-amber-200">📦 Delivery</span>';
+    } else if (msg.tag === 'Help') {
+      tagBadge = '<span class="px-1.5 py-0.2 rounded text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-200">❓ Help</span>';
+    } else {
+      tagBadge = `<span class="px-1.5 py-0.2 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">${escapeHtml(msg.tag || 'Chat')}</span>`;
+    }
+
+    if (isDelivery) {
+      // Incoming from Delivery Team (Left aligned)
+      html += `
+        <div class="flex flex-col items-start max-w-[88%] space-y-1">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-extrabold text-[11px] text-slate-800">${escapeHtml(msg.senderName || 'Delivery Team')}</span>
+            ${tagBadge}
+            <span class="text-[9px] text-slate-400 font-medium">${timeStr}</span>
+          </div>
+          <div class="p-2.5 rounded-2xl rounded-tl-xs bg-white border border-slate-200 text-slate-800 shadow-2xs leading-relaxed break-words text-xs">
+            ${escapeHtml(msg.text)}
+          </div>
+        </div>
+      `;
+    } else {
+      // Outgoing from Admin (Right aligned)
+      html += `
+        <div class="flex flex-col items-end max-w-[88%] ml-auto space-y-1">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="text-[9px] text-slate-400 font-medium">${timeStr}</span>
+            <span class="font-extrabold text-[11px] text-indigo-600">You (Admin)</span>
+          </div>
+          <div class="p-2.5 rounded-2xl rounded-tr-xs bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs leading-relaxed break-words text-xs">
+            ${escapeHtml(msg.text)}
+          </div>
+        </div>
+      `;
+    }
+  });
+
+  container.innerHTML = html;
+  container.scrollTop = container.scrollHeight;
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function formatChatTimestamp(isoStr) {
+  if (!isoStr) return '';
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '';
+    const hours = d.getHours();
+    const mins = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    const formattedHours = hours % 12 || 12;
+    return `${formattedHours}:${mins} ${ampm}`;
+  } catch (e) {
+    return '';
+  }
+}
+
+function sendAdminSupportReply() {
+  const input = document.getElementById('adminSupportReplyInput');
+  if (!input) return;
+  const text = (input.value || '').trim();
+  if (!text) return;
+
+  const replyData = {
+    text: text,
+    tag: 'Reply',
+    sender: 'admin',
+    senderName: 'Admin',
+    timestamp: new Date().toISOString(),
+    readByAdmin: true,
+    readByDelivery: false
+  };
+
+  input.value = '';
+
+  if (db) {
+    db.collection('support_chats').add(replyData).catch(err => {
+      console.warn('Error sending admin support reply to Firestore:', err);
+    });
+  } else {
+    // Offline local fallback
+    replyData.id = 'local_' + Date.now();
+    supportChatMessages.push(replyData);
+    renderAdminSupportMessages();
+  }
+
+  // Scroll to bottom
+  const container = document.getElementById('adminSupportMessageList');
+  if (container) container.scrollTop = container.scrollHeight;
+}
+
+function markAdminMessagesAsRead() {
+  const unreadDeliveryMsgs = supportChatMessages.filter(m => m && m.sender === 'delivery' && !m.readByAdmin);
+  if (unreadDeliveryMsgs.length === 0) {
+    updateSupportChatUnreadBadge();
+    return;
+  }
+
+  unreadDeliveryMsgs.forEach(m => {
+    m.readByAdmin = true;
+    if (db && m.id && !m.id.startsWith('local_')) {
+      db.collection('support_chats').doc(m.id).update({ readByAdmin: true }).catch(() => {});
+    }
+  });
+
+  try {
+    localStorage.setItem(STORAGE_SUPPORT_CHATS_CACHE, JSON.stringify(supportChatMessages));
+  } catch (e) {}
+
+  updateSupportChatUnreadBadge();
+}
+
+function clearOrResolveSupportChat() {
+  if (supportChatMessages.length === 0) return;
+  if (!confirm('Are you sure you want to resolve and clear all support messages?')) return;
+
+  if (db) {
+    const batch = db.batch();
+    supportChatMessages.forEach(m => {
+      if (m && m.id && !m.id.startsWith('local_')) {
+        batch.delete(db.collection('support_chats').doc(m.id));
+      }
+    });
+    batch.commit().then(() => {
+      if (typeof showNotification === 'function') {
+        showNotification('✓ Support chat resolved and cleared.');
+      }
+    }).catch(err => {
+      console.warn('Error clearing support chats:', err);
+    });
+  }
+
+  supportChatMessages = [];
+  knownAdminChatMessageIds.clear();
+  try {
+    localStorage.removeItem(STORAGE_SUPPORT_CHATS_CACHE);
+  } catch (e) {}
+
+  renderAdminSupportMessages();
+  updateSupportChatUnreadBadge();
+}
+
+function setSupportChatMessages(msgs) {
+  supportChatMessages = Array.isArray(msgs) ? msgs : [];
+}
+
+function getSupportChatMessages() {
+  return supportChatMessages;
+}
+
+document.addEventListener('click', (e) => {
+  const chatContainer = document.getElementById('supportChatContainer');
+  if (chatContainer && !chatContainer.contains(e.target)) {
+    closeSupportChatMenu();
+  }
+});
+
 let mainOrdersUnsubscribe = null;
 let reconnectMainOrdersTimeout = null;
 const mainOrdersStateMap = {};
@@ -2674,6 +3044,9 @@ function setupFirestoreRealtimeListeners() {
   }, err => {
     console.warn('dailyReports snapshot error:', err);
   });
+
+  // 6. Support & Helpline Chats Realtime Listener
+  listenToSupportChats();
 }
 
 function seedLocalOrdersToCloud() {
@@ -14844,3 +15217,16 @@ window.toggleCustomerFiltersPanel = toggleCustomerFiltersPanel;
 window.clearCustomerSearch = clearCustomerSearch;
 window.resetCustomerFilters = resetCustomerFilters;
 window.updateCustomerActiveFilterUI = updateCustomerActiveFilterUI;
+
+// Two-Way Support & Helpline Chat Exports
+window.toggleSupportChatMenu = toggleSupportChatMenu;
+window.openSupportChatMenu = openSupportChatMenu;
+window.closeSupportChatMenu = closeSupportChatMenu;
+window.sendAdminSupportReply = sendAdminSupportReply;
+window.clearOrResolveSupportChat = clearOrResolveSupportChat;
+window.playSupportChatChime = playSupportChatChime;
+window.renderAdminSupportMessages = renderAdminSupportMessages;
+window.markAdminMessagesAsRead = markAdminMessagesAsRead;
+window.setSupportChatMessages = setSupportChatMessages;
+window.getSupportChatMessages = getSupportChatMessages;
+if (typeof supportChatMessages !== 'undefined') window.supportChatMessages = supportChatMessages;
