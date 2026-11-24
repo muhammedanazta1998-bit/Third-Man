@@ -96,6 +96,7 @@
   <span id="statFocusNeededCount"></span>
   <span id="dailyReportShopsCountBadge"></span>
   <input type="text" id="dailyReportSearchInput" />
+  <input type="date" id="dailyReportDatePicker" />
   <select id="dailyReportTownFilter"></select>
   <select id="dailyReportTypeFilter"></select>
   <select id="dailyReportTierFilter"></select>
@@ -118,10 +119,11 @@
 
 <script>
 window.onerror = function(msg, url, line, col, err) {
-  document.getElementById('output').innerHTML += "\nUNHANDLED ERROR: " + msg + " at " + line + ":" + col;
+  document.getElementById('output').innerHTML += "\nUNHANDLED ERROR: " + msg + " in " + url + " at line " + line + ":" + col;
+  if (err && err.stack) document.getElementById('output').innerHTML += "\nSTACK: " + err.stack;
 };
 </script>
-<script src="app.js"></script>
+<script src="app.js" onerror="document.getElementById('output').innerHTML += '\nSCRIPT LOAD FAILED for app.js'"></script>
 <script>
 (function runTests() {
   const log = (msg) => {
@@ -760,7 +762,7 @@ window.onerror = function(msg, url, line, col, err) {
   upgradeProspectToCustomerIfOrdered('Aluva Grand Traders Lead');
   assert(prospectShop.isProspect === false, "Prospect automatically upgraded to Customer (isProspect = false) when order is recorded");
 
-  // 4. Mark Visit (Check-in)
+  // 4. Mark Visit (Check-in) & Backdated Date Support
   selectDailyReportDate('2026-11-24');
   const visitsBefore = dailyVisits.length;
   markQuickShopVisit(prospectShop.id, 'Order Taken', 'Booked 50 bags Biriyani Rice');
@@ -772,7 +774,40 @@ window.onerror = function(msg, url, line, col, err) {
   assert(recordedVisit !== undefined, "Visit record found with correct shopId and date");
   assert(recordedVisit.tag === 'Order Taken', `Visit tag correctly saved as 'Order Taken' (actual: '${recordedVisit.tag}')`);
 
-  // 5. Leave / Holiday Tracking
+  // 5. Backdated Visit Test: Friday, 21st (2026-11-21)
+  selectDailyReportDate('2026-11-21');
+  assert(dailyReportSelectedDate === '2026-11-21', "Selected date successfully set to backdated Friday Nov 21");
+  const testBackdatedShop = {
+    id: 'test_backdated_s1',
+    name: 'Kalamassery Supermarket',
+    town: 'Kalamassery',
+    phone: '9846099999',
+    tier: 'B',
+    isProspect: false,
+    lastVisitedDate: null,
+    visitCount: 0
+  };
+  customers.push(testBackdatedShop);
+  markQuickShopVisit(testBackdatedShop.id, 'Payment Collected', 'Collected invoice payment');
+  const backdatedVisit = dailyVisits.find(v => v.shopId === testBackdatedShop.id && standardizeDateString(v.date) === '2026-11-21');
+  assert(backdatedVisit !== undefined, "Backdated visit for Friday, Nov 21st correctly saved in dailyVisits with standardized date");
+  assert(backdatedVisit.date === '2026-11-21', "Backdated visit date strictly formatted as '2026-11-21'");
+
+  // Test standardizeDateString across various Firestore/JS formats
+  assert(standardizeDateString('2026-11-21T14:30:00.000Z') === '2026-11-21', "standardizeDateString parses ISO string to '2026-11-21'");
+  assert(standardizeDateString('21-11-2026') === '2026-11-21', "standardizeDateString parses DD-MM-YYYY to '2026-11-21'");
+  const mockTimestamp = { toDate: () => new Date('2026-11-21T12:00:00') };
+  assert(standardizeDateString(mockTimestamp) === '2026-11-21', "standardizeDateString parses Firestore Timestamp object to '2026-11-21'");
+
+  // Test mergeIncomingCloudVisits with backdated remote visits
+  const mockRemoteVisits = [
+    { id: 'v_remote_1', shopId: 'test_backdated_s1', shopName: 'Kalamassery Supermarket', date: '2026-11-21T08:00:00.000Z' }
+  ];
+  mergeIncomingCloudVisits(mockRemoteVisits);
+  const foundMerged = dailyVisits.find(v => v.id === 'v_remote_1');
+  assert(foundMerged !== undefined && foundMerged.date === '2026-11-21', "mergeIncomingCloudVisits successfully syncs and standardizes backdated remote visits");
+
+  // 6. Leave / Holiday Tracking
   dailyReports['2026-11-25'] = {
     id: '2026-11-25',
     date: '2026-11-25',
@@ -782,16 +817,18 @@ window.onerror = function(msg, url, line, col, err) {
   saveDailyReportDataToStorage();
   assert(dailyReports['2026-11-25'] && dailyReports['2026-11-25'].status === 'leave', "2026-11-25 marked as Leave");
 
-  // 6. WhatsApp Report Minimal Format Verification
-  const dayVisits = dailyVisits.filter(v => v.date === '2026-11-24');
+  // 7. WhatsApp Report Minimal Format Verification (Date + Shop Names ONLY — strictly no area/location/parentheses)
+  selectDailyReportDate('2026-11-24');
+  const dayVisits = dailyVisits.filter(v => standardizeDateString(v.date) === '2026-11-24');
   assert(dayVisits.length > 0, "Visits exist for WhatsApp export");
   let exportOutput = `*Date: 24-11-2026*\n`;
   dayVisits.forEach((v, idx) => {
-    const townText = v.town ? ` (${v.town})` : '';
-    exportOutput += `${idx + 1}. ${v.shopName}${townText}\n`;
+    exportOutput += `${idx + 1}. ${(v.shopName || 'Shop').trim()}\n`;
   });
+  exportOutput = exportOutput.trim();
   assert(exportOutput.startsWith('*Date: 24-11-2026*'), "WhatsApp report starts with exact '*Date: DD-MM-YYYY*'");
-  assert(exportOutput.includes('1. Aluva Grand Traders Lead (Aluva)'), "Report contains clean numbered list with shop name and location");
+  assert(exportOutput.includes('1. Aluva Grand Traders Lead'), "Report contains clean numbered list with shop name ONLY");
+  assert(!exportOutput.includes('(Aluva)') && !exportOutput.includes('('), "Report strictly removes town, area, and location in parentheses");
   assert(!exportOutput.includes('Turnover') && !exportOutput.includes('Total Bags'), "WhatsApp report has zero clutter or stats");
 
   log(`\n================================`);

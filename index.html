@@ -1753,6 +1753,10 @@
             <i data-lucide="calendar" class="w-3.5 h-3.5 text-slate-500"></i>
             <span>Today</span>
           </button>
+          <div class="flex items-center gap-1.5 bg-slate-100 hover:bg-slate-200 px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs transition" title="Select or jump to specific date">
+            <i data-lucide="calendar-days" class="w-3.5 h-3.5 text-slate-500 shrink-0"></i>
+            <input type="date" id="dailyReportDatePicker" onchange="selectDailyReportDate(this.value)" class="bg-transparent border-0 text-slate-700 font-bold text-xs focus:outline-none cursor-pointer p-0" title="Select date to view or log visits">
+          </div>
           <button type="button" onclick="openLeaveHolidayModal()" id="btnDailyReportLeave" class="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 transition flex items-center gap-1.5 active:scale-95" title="Mark selected date as Leave or Holiday">
             <i data-lucide="coffee" class="w-3.5 h-3.5 text-amber-500"></i>
             <span>Leave / Holiday</span>
@@ -4465,6 +4469,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.15.0"></script>
+  <script src="app.js?v=2.16.0"></script>
 </body>
 </html>

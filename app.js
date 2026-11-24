@@ -1278,6 +1278,53 @@ const FIREBASE_CONFIG = {
   appId: "1:928547046358:web:723643e5a083a81f66da77"
 };
 
+function standardizeDateString(dateVal) {
+  if (!dateVal) return '';
+  // 1. If it's a Firestore Timestamp or object with toDate() or seconds
+  if (typeof dateVal === 'object') {
+    if (typeof dateVal.toDate === 'function') {
+      dateVal = dateVal.toDate();
+    } else if (dateVal.seconds !== undefined) {
+      dateVal = new Date(dateVal.seconds * 1000);
+    }
+  }
+  // 2. If it's a Date instance
+  if (dateVal instanceof Date) {
+    if (isNaN(dateVal.getTime())) return '';
+    const y = dateVal.getFullYear();
+    const m = String(dateVal.getMonth() + 1).padStart(2, '0');
+    const d = String(dateVal.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  // 3. If it's a string
+  if (typeof dateVal === 'string') {
+    let s = dateVal.trim();
+    if (!s) return '';
+    // If it has ISO timestamp part e.g. "2026-11-21T..."
+    if (s.includes('T')) {
+      s = s.split('T')[0];
+    }
+    // Match YYYY-MM-DD or YYYY/MM/DD
+    const ymdMatch = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$/);
+    if (ymdMatch) {
+      const y = ymdMatch[1];
+      const m = String(parseInt(ymdMatch[2], 10)).padStart(2, '0');
+      const d = String(parseInt(ymdMatch[3], 10)).padStart(2, '0');
+      return `${y}-${m}-${d}`;
+    }
+    // Match DD-MM-YYYY or DD/MM/YYYY
+    const dmyMatch = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})$/);
+    if (dmyMatch) {
+      const d = String(parseInt(dmyMatch[1], 10)).padStart(2, '0');
+      const m = String(parseInt(dmyMatch[2], 10)).padStart(2, '0');
+      const y = dmyMatch[3];
+      return `${y}-${m}-${d}`;
+    }
+    return s;
+  }
+  return String(dateVal);
+}
+
 function sanitizeForFirestore(obj) {
   if (obj === undefined) return null;
   if (obj === null || typeof obj !== 'object') return obj;
@@ -2391,41 +2438,58 @@ function setupFirestoreRealtimeListeners() {
     console.warn('Settings snapshot error:', err);
   });
 
-  // 4. Daily Visits Realtime Listener
-  db.collection('dailyVisits').onSnapshot(snapshot => {
-    if (!snapshot.empty) {
-      const remoteVisits = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d && d.id) remoteVisits.push(d);
-      });
-      if (typeof mergeIncomingCloudVisits === 'function') {
-        mergeIncomingCloudVisits(remoteVisits);
+  // 4. Daily Visits & Visits Realtime Listeners (All visits streamed real-time across devices)
+  const processVisitSnapshot = snapshot => {
+    if (!snapshot) return;
+    const remoteVisits = [];
+    snapshot.forEach(doc => {
+      const d = doc.data() || {};
+      const docId = doc.id;
+      const visitObj = { ...d, id: d.id || docId };
+      visitObj.date = standardizeDateString(visitObj.date || visitObj.timestamp || visitObj.createdAt);
+      if (visitObj.id && visitObj.date) {
+        remoteVisits.push(visitObj);
       }
+    });
+    if (typeof mergeIncomingCloudVisits === 'function') {
+      mergeIncomingCloudVisits(remoteVisits);
     }
-  }, err => {
+  };
+
+  db.collection('dailyVisits').onSnapshot(processVisitSnapshot, err => {
     console.warn('dailyVisits snapshot error:', err);
   });
 
-  // 5. Daily Reports & Holiday Status Realtime Listener
-  db.collection('dailyReports').onSnapshot(snapshot => {
-    if (!snapshot.empty) {
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d && d.date) {
-          dailyReports[d.date] = d;
-        }
-      });
-      if (typeof saveDailyReportDataToStorage === 'function') {
-        saveDailyReportDataToStorage();
+  db.collection('visits').onSnapshot(processVisitSnapshot, err => {
+    console.warn('visits snapshot error:', err);
+  });
+
+  // 5. Daily Reports & Holiday Status Realtime Listener (dailyReports & daily_reports)
+  const processReportSnapshot = snapshot => {
+    if (!snapshot) return;
+    snapshot.forEach(doc => {
+      const d = doc.data() || {};
+      const rawDate = d.date || doc.id;
+      const dateKey = standardizeDateString(rawDate);
+      if (dateKey) {
+        dailyReports[dateKey] = { ...d, date: dateKey };
       }
-      if (currentMainView === 'daily-report') {
-        if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
-        if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
-      }
+    });
+    if (typeof saveDailyReportDataToStorage === 'function') {
+      saveDailyReportDataToStorage();
     }
-  }, err => {
+    if (currentMainView === 'daily-report') {
+      if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
+      if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
+    }
+  };
+
+  db.collection('dailyReports').onSnapshot(processReportSnapshot, err => {
     console.warn('dailyReports snapshot error:', err);
+  });
+
+  db.collection('daily_reports').onSnapshot(processReportSnapshot, err => {
+    console.warn('daily_reports snapshot error:', err);
   });
 }
 
@@ -7503,14 +7567,25 @@ function copyDeliveryPortalLink() {
   }
 }
 
-function fallbackCopyText(text) {
+function fallbackCopyText(text, optionalMsg = null) {
   const temp = document.createElement('textarea');
   temp.value = text;
+  temp.style.position = 'fixed';
+  temp.style.left = '-9999px';
+  temp.style.top = '0';
   document.body.appendChild(temp);
   temp.select();
-  document.execCommand('copy');
+  try {
+    document.execCommand('copy');
+    if (optionalMsg) {
+      showNotification(optionalMsg);
+    } else {
+      showNotification('Copied to clipboard!');
+    }
+  } catch (e) {
+    console.warn('Fallback copy failed:', e);
+  }
   document.body.removeChild(temp);
-  showNotification('Delivery Portal Link copied!');
 }
 
 function shareDeliveryPortalWhatsApp() {
@@ -12776,18 +12851,37 @@ function getLocalTodayDateString() {
 function loadDailyReportDataFromStorage() {
   try {
     const vRaw = localStorage.getItem(STORAGE_DAILY_VISITS);
-    if (vRaw) dailyVisits = JSON.parse(vRaw) || [];
+    if (vRaw) {
+      const parsed = JSON.parse(vRaw) || [];
+      dailyVisits = parsed.map(v => ({
+        ...v,
+        date: standardizeDateString(v.date || v.timestamp || v.createdAt)
+      }));
+    }
   } catch (e) {
     dailyVisits = [];
   }
   try {
     const rRaw = localStorage.getItem(STORAGE_DAILY_REPORTS);
-    if (rRaw) dailyReports = JSON.parse(rRaw) || {};
+    if (rRaw) {
+      const parsed = JSON.parse(rRaw) || {};
+      const clean = {};
+      Object.keys(parsed).forEach(k => {
+        const stdKey = standardizeDateString(k);
+        if (stdKey) clean[stdKey] = { ...parsed[k], date: stdKey };
+      });
+      dailyReports = clean;
+    }
   } catch (e) {
     dailyReports = {};
   }
   if (!dailyReportSelectedDate) {
-    dailyReportSelectedDate = getLocalTodayDateString();
+    try {
+      const remembered = localStorage.getItem('third_man_daily_selected_date');
+      dailyReportSelectedDate = remembered ? standardizeDateString(remembered) : getLocalTodayDateString();
+    } catch (e) {
+      dailyReportSelectedDate = getLocalTodayDateString();
+    }
   }
 }
 
@@ -12795,18 +12889,66 @@ function saveDailyReportDataToStorage() {
   try {
     localStorage.setItem(STORAGE_DAILY_VISITS, JSON.stringify(dailyVisits));
     localStorage.setItem(STORAGE_DAILY_REPORTS, JSON.stringify(dailyReports));
+    if (dailyReportSelectedDate) {
+      localStorage.setItem('third_man_daily_selected_date', dailyReportSelectedDate);
+    }
   } catch (e) {}
+}
+
+function updateAllShopsLastVisitedFromVisits() {
+  if (!Array.isArray(customers) || customers.length === 0) return;
+  let hasChanges = false;
+  customers.forEach(shop => {
+    if (!shop || !shop.id) return;
+    const shopVisits = dailyVisits
+      .filter(v => v.shopId === shop.id && v.date)
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    if (shopVisits.length > 0) {
+      const latestDate = shopVisits[0].date;
+      if (shop.lastVisitedDate !== latestDate) {
+        shop.lastVisitedDate = latestDate;
+        hasChanges = true;
+      }
+      const count = shopVisits.length;
+      if (!shop.visitCount || shop.visitCount < count) {
+        shop.visitCount = count;
+        hasChanges = true;
+      }
+    }
+  });
+  if (hasChanges) {
+    saveDataToStorage();
+  }
 }
 
 function mergeIncomingCloudVisits(remoteVisits) {
   if (!Array.isArray(remoteVisits)) return;
   const visitMap = new Map();
-  dailyVisits.forEach(v => { if (v && v.id) visitMap.set(v.id, v); });
+  // Standardize and register all remote visits
   remoteVisits.forEach(rv => {
-    if (rv && rv.id) visitMap.set(rv.id, rv);
+    if (!rv) return;
+    const cleanId = rv.id;
+    if (!cleanId) return;
+    rv.date = standardizeDateString(rv.date || rv.timestamp || rv.createdAt);
+    visitMap.set(cleanId, rv);
   });
+
+  // Preserve any local visits created within the last 2 minutes that haven't reached cloud yet
+  dailyVisits.forEach(lv => {
+    if (lv && lv.id && !visitMap.has(lv.id)) {
+      const ageMs = lv.timestamp ? (Date.now() - new Date(lv.timestamp).getTime()) : 0;
+      if (ageMs >= 0 && ageMs < 120000) {
+        visitMap.set(lv.id, lv);
+      }
+    }
+  });
+
   dailyVisits = Array.from(visitMap.values());
   saveDailyReportDataToStorage();
+
+  // Recalculate shops' lastVisitedDate based on all synced visits
+  updateAllShopsLastVisitedFromVisits();
+
   if (currentMainView === 'daily-report') {
     renderDailyReportView();
   }
@@ -12814,30 +12956,48 @@ function mergeIncomingCloudVisits(remoteVisits) {
 
 function syncCloudVisit(visit) {
   if (!db || !visit || !visit.id) return;
-  db.collection('dailyVisits').doc(visit.id).set(sanitizeForFirestore(visit)).catch(err => {
-    console.warn('Error saving visit to Firestore:', err);
+  visit.date = standardizeDateString(visit.date || dailyReportSelectedDate || getLocalTodayDateString());
+  const cleanVisit = sanitizeForFirestore(visit);
+  // Write to both 'dailyVisits' and 'visits' collections for seamless sync across desktop and mobile
+  db.collection('dailyVisits').doc(visit.id).set(cleanVisit).then(() => {
+    updateCloudSyncStatus('synced', 'Live Synced 🟢');
+  }).catch(err => {
+    console.warn('Error saving visit to dailyVisits in Firestore:', err);
+  });
+  db.collection('visits').doc(visit.id).set(cleanVisit).catch(err => {
+    console.warn('Error saving visit to visits in Firestore:', err);
   });
 }
 
 function deleteCloudVisit(visitId) {
   if (!db || !visitId) return;
   db.collection('dailyVisits').doc(visitId).delete().catch(err => {
-    console.warn('Error deleting visit from Firestore:', err);
+    console.warn('Error deleting visit from dailyVisits:', err);
+  });
+  db.collection('visits').doc(visitId).delete().catch(err => {
+    console.warn('Error deleting visit from visits:', err);
   });
 }
 
 function syncCloudDailyReport(report) {
   if (!db || !report || !report.date) return;
-  db.collection('dailyReports').doc(report.date).set(sanitizeForFirestore(report)).catch(err => {
+  report.date = standardizeDateString(report.date);
+  const cleanReport = sanitizeForFirestore(report);
+  db.collection('dailyReports').doc(report.date).set(cleanReport).then(() => {
+    updateCloudSyncStatus('synced', 'Live Synced 🟢');
+  }).catch(err => {
     console.warn('Error saving daily report to Firestore:', err);
   });
+  db.collection('daily_reports').doc(report.date).set(cleanReport).catch(err => {});
 }
 
 function deleteCloudDailyReport(dateStr) {
   if (!db || !dateStr) return;
-  db.collection('dailyReports').doc(dateStr).delete().catch(err => {
+  const cleanDate = standardizeDateString(dateStr);
+  db.collection('dailyReports').doc(cleanDate).delete().catch(err => {
     console.warn('Error deleting daily report from Firestore:', err);
   });
+  db.collection('daily_reports').doc(cleanDate).delete().catch(err => {});
 }
 
 function upgradeProspectToCustomerIfOrdered(customerNameOrId) {
@@ -12945,15 +13105,24 @@ function renderDailyReportView() {
   const todayStr = getLocalTodayDateString();
   if (!dailyReportSelectedDate) dailyReportSelectedDate = todayStr;
 
+  // Sync date picker input value if element exists
+  const datePicker = document.getElementById('dailyReportDatePicker');
+  if (datePicker && dailyReportSelectedDate) {
+    datePicker.value = dailyReportSelectedDate;
+  }
+
   // Header Title & Date Label
   const dateLabel = document.getElementById('dailyReportDateLabel');
   const dayBadge = document.getElementById('dailyReportDayBadge');
   if (dateLabel) {
-    const [y, m, d] = dailyReportSelectedDate.split('-').map(Number);
-    const dateObj = new Date(y, m - 1, d);
-    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
-    const formattedDate = `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
-    dateLabel.textContent = `Selected Date: ${dayName}, ${formattedDate}`;
+    const parts = dailyReportSelectedDate.split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1]) && !isNaN(parts[2])) {
+      const [y, m, d] = parts;
+      const dateObj = new Date(y, m - 1, d);
+      const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+      const formattedDate = `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
+      dateLabel.textContent = `Selected Date: ${dayName}, ${formattedDate}`;
+    }
   }
   if (dayBadge) {
     if (dailyReportSelectedDate === todayStr) {
@@ -12961,7 +13130,7 @@ function renderDailyReportView() {
       dayBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200';
     } else if (dailyReportSelectedDate < todayStr) {
       dayBadge.textContent = 'Past Date';
-      dayBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200';
+      dayBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200';
     } else {
       dayBadge.textContent = 'Future Date';
       dayBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200';
@@ -12995,11 +13164,17 @@ function selectDailyReportDate(target) {
   if (target === 'today') {
     dailyReportSelectedDate = getLocalTodayDateString();
   } else if (target) {
-    dailyReportSelectedDate = target;
+    dailyReportSelectedDate = standardizeDateString(target);
   }
-  const [y, m] = dailyReportSelectedDate.split('-').map(Number);
-  dailyReportCalendarYear = y;
-  dailyReportCalendarMonth = m - 1;
+  try {
+    localStorage.setItem('third_man_daily_selected_date', dailyReportSelectedDate);
+  } catch (e) {}
+
+  const parts = (dailyReportSelectedDate || '').split('-').map(Number);
+  if (parts.length === 3 && !isNaN(parts[0]) && !isNaN(parts[1])) {
+    dailyReportCalendarYear = parts[0];
+    dailyReportCalendarMonth = parts[1] - 1;
+  }
   renderDailyReportView();
 }
 
@@ -13054,7 +13229,7 @@ function renderDailyReportCalendar() {
     const isLeave = (report && (report.status === 'leave' || report.status === 'holiday' || report.status === 'off'));
     const isSent = (report && report.status === 'submitted');
 
-    const dayVisits = dailyVisits.filter(v => v.date === dateStr);
+    const dayVisits = dailyVisits.filter(v => standardizeDateString(v.date) === dateStr);
     const hasVisits = (dayVisits.length > 0);
 
     // Indicator resolution
@@ -13129,7 +13304,7 @@ function renderDailyReportAnalytics() {
   const statTotalVisits = document.getElementById('statMonthlyVisitsTotal');
   const statFocus = document.getElementById('statFocusNeededCount');
 
-  const selectedVisits = dailyVisits.filter(v => v.date === dailyReportSelectedDate);
+  const selectedVisits = dailyVisits.filter(v => standardizeDateString(v.date) === dailyReportSelectedDate);
   const rep = dailyReports[dailyReportSelectedDate] || null;
 
   if (statSelected) statSelected.textContent = selectedVisits.length;
@@ -13151,7 +13326,10 @@ function renderDailyReportAnalytics() {
 
   // Monthly Reach
   const monthPrefix = `${dailyReportCalendarYear}-${String(dailyReportCalendarMonth + 1).padStart(2, '0')}`;
-  const monthVisits = dailyVisits.filter(v => v.date && v.date.startsWith(monthPrefix));
+  const monthVisits = dailyVisits.filter(v => {
+    const d = standardizeDateString(v.date);
+    return d && d.startsWith(monthPrefix);
+  });
   const uniqueShops = new Set(monthVisits.map(v => v.shopId || v.shopName)).size;
 
   if (statReach) statReach.textContent = uniqueShops;
@@ -13258,7 +13436,7 @@ function renderDailyReportShopsList() {
     if (tierFilter !== 'all' && cadence.tier !== tierFilter) return;
 
     // Check if visited on dailyReportSelectedDate
-    const isVisitedOnDate = dailyVisits.some(v => v.shopId === shop.id && v.date === dailyReportSelectedDate);
+    const isVisitedOnDate = dailyVisits.some(v => v.shopId === shop.id && standardizeDateString(v.date) === dailyReportSelectedDate);
 
     // 5. Status Filter
     if (statusFilter === 'overdue' && !cadence.isOverdue) return;
@@ -13421,9 +13599,15 @@ function openLogShopVisitModal(shopId) {
 
   if (title) title.textContent = `Mark Visit: ${shop.name}`;
   if (details) details.textContent = `${shop.name} • ${shop.town || shop.area || 'Ernakulam'}`;
+  const targetDate = standardizeDateString(dailyReportSelectedDate || getLocalTodayDateString());
   if (dateLabel) {
-    const [y, m, d] = dailyReportSelectedDate.split('-').map(Number);
-    dateLabel.textContent = `Visit Date: ${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
+    const parts = targetDate.split('-').map(Number);
+    if (parts.length === 3 && !isNaN(parts[0])) {
+      const [y, m, d] = parts;
+      dateLabel.textContent = `Visit Date: ${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
+    } else {
+      dateLabel.textContent = `Visit Date: ${targetDate}`;
+    }
   }
   if (hiddenId) hiddenId.value = shop.id;
   if (notes) notes.value = '';
@@ -13471,14 +13655,16 @@ function markQuickShopVisit(shopId, tag = 'General Visit', notes = '') {
   const shop = customers.find(c => c.id === shopId);
   if (!shop) return;
 
-  const targetDate = dailyReportSelectedDate || getLocalTodayDateString();
+  const targetDate = standardizeDateString(dailyReportSelectedDate || getLocalTodayDateString());
 
   // Check if visit already exists for this shop & date
-  let visit = dailyVisits.find(v => v.shopId === shop.id && v.date === targetDate);
+  let visit = dailyVisits.find(v => v.shopId === shop.id && standardizeDateString(v.date) === targetDate);
   if (visit) {
     visit.tag = tag;
     visit.notes = notes;
+    visit.date = targetDate;
     visit.timestamp = new Date().toISOString();
+    visit.updatedAt = new Date().toISOString();
   } else {
     visit = {
       id: 'v_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
@@ -13487,6 +13673,8 @@ function markQuickShopVisit(shopId, tag = 'General Visit', notes = '') {
       town: shop.town || shop.area || 'Ernakulam',
       date: targetDate,
       timestamp: new Date().toISOString(),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
       tier: shop.tier || 'C',
       notes: notes || '',
       tag: tag || 'General Visit',
@@ -13495,9 +13683,14 @@ function markQuickShopVisit(shopId, tag = 'General Visit', notes = '') {
     dailyVisits.push(visit);
   }
 
-  // Update shop record: update lastVisitedDate and visitCount
-  shop.lastVisitedDate = targetDate;
-  shop.visitCount = (shop.visitCount || 0) + 1;
+  // Update shop record: update lastVisitedDate to latest visit date
+  const allShopVisits = dailyVisits.filter(v => v.shopId === shop.id).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+  if (allShopVisits.length > 0) {
+    shop.lastVisitedDate = allShopVisits[0].date;
+  } else {
+    shop.lastVisitedDate = targetDate;
+  }
+  shop.visitCount = Math.max(allShopVisits.length, (shop.visitCount || 0) + 1);
   shop.updatedAt = new Date().toISOString();
 
   saveDailyReportDataToStorage();
@@ -13512,8 +13705,9 @@ function markQuickShopVisit(shopId, tag = 'General Visit', notes = '') {
 
 function removeShopVisitForDate(shopId, dateStr) {
   if (!shopId || !dateStr) return;
+  const cleanDate = standardizeDateString(dateStr);
   const shop = customers.find(c => c.id === shopId);
-  const vIndex = dailyVisits.findIndex(v => v.shopId === shopId && v.date === dateStr);
+  const vIndex = dailyVisits.findIndex(v => v.shopId === shopId && standardizeDateString(v.date) === cleanDate);
   if (vIndex < 0) return;
 
   const removed = dailyVisits[vIndex];
@@ -13604,8 +13798,8 @@ function removeLeaveHoliday() {
 }
 
 function exportDailyWhatsAppReport() {
-  const targetDate = dailyReportSelectedDate || getLocalTodayDateString();
-  const dayVisits = dailyVisits.filter(v => v.date === targetDate);
+  const targetDate = standardizeDateString(dailyReportSelectedDate || getLocalTodayDateString());
+  const dayVisits = dailyVisits.filter(v => standardizeDateString(v.date) === targetDate);
 
   if (dayVisits.length === 0) {
     showNotification('No visits logged yet for this date. Click "Mark Visit" on shops first!');
@@ -13613,15 +13807,20 @@ function exportDailyWhatsAppReport() {
   }
 
   // Format date as DD-MM-YYYY
-  const [y, m, d] = targetDate.split('-');
-  const displayDate = `${d}-${m}-${y}`;
+  const parts = targetDate.split('-');
+  let displayDate = targetDate;
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    displayDate = `${d}-${m}-${y}`;
+  }
 
-  // Ultra-minimal format containing ONLY date and visited shops
+  // Ultra-minimal format containing ONLY Date and numbered list of Shop Names (strictly no town, area, location or remarks)
   let text = `*Date: ${displayDate}*\n`;
   dayVisits.forEach((v, idx) => {
-    const townText = v.town ? ` (${v.town})` : '';
-    text += `${idx + 1}. ${v.shopName}${townText}\n`;
+    const shopName = (v.shopName || 'Shop').trim();
+    text += `${idx + 1}. ${shopName}\n`;
   });
+  text = text.trim();
 
   // Mark day report as submitted/sent
   dailyReports[targetDate] = {
@@ -13639,16 +13838,15 @@ function exportDailyWhatsAppReport() {
   renderDailyReportAnalytics();
 
   // Copy to clipboard
+  const successMsg = '✓ WhatsApp Report copied! Marked as Sent 🟢';
   if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
     navigator.clipboard.writeText(text).then(() => {
-      showNotification(`✓ WhatsApp Report copied! Marked as Sent 🟢`);
+      showNotification(successMsg);
     }).catch(() => {
-      fallbackCopyText(text);
-      showNotification(`✓ WhatsApp Report copied! Marked as Sent 🟢`);
+      fallbackCopyText(text, successMsg);
     });
   } else {
-    fallbackCopyText(text);
-    showNotification(`✓ WhatsApp Report copied! Marked as Sent 🟢`);
+    fallbackCopyText(text, successMsg);
   }
 
   // Also prompt to open WhatsApp directly
@@ -13724,6 +13922,7 @@ function handleQuickAddShopSubmit(event) {
 }
 
 // Window Exports for Daily Report
+window.standardizeDateString = standardizeDateString;
 window.loadDailyReportDataFromStorage = loadDailyReportDataFromStorage;
 window.saveDailyReportDataToStorage = saveDailyReportDataToStorage;
 window.mergeIncomingCloudVisits = mergeIncomingCloudVisits;
@@ -13771,6 +13970,6 @@ window.triggerNewOrderAlertInMainApp = triggerNewOrderAlertInMainApp;
 window.triggerOrderUpdatedAlertInMainApp = triggerOrderUpdatedAlertInMainApp;
 window.markOrderAsViewed = markOrderAsViewed;
 window.markDeliveryAsViewed = markDeliveryAsViewed;
-window.getOrderBadgeState = getOrderBadgeState;
+if (typeof getOrderBadgeState !== 'undefined') window.getOrderBadgeState = getOrderBadgeState;
 window.getOrderDeliveredBadgeState = getOrderDeliveredBadgeState;
 window.highlightDeliveredOrderInTable = highlightDeliveredOrderInTable;
