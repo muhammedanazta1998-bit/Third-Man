@@ -115,6 +115,17 @@
   <select id="lhTypeSelect"></select>
   <input type="text" id="lhReasonInput" />
   <button id="btnRemoveLeaveHoliday" class="hidden"></button>
+
+  <!-- Delivery Live Alerts Notification Fixtures -->
+  <div id="deliveryAlertBellContainer">
+    <button type="button" id="btnDeliveryAlertBell" onclick="toggleDeliveryAlertMenu()"></button>
+    <span id="deliveryAlertBadge" class="hidden"></span>
+    <div id="deliveryAlertDropdown" class="hidden">
+      <div class="delivery-alert-header"></div>
+      <div id="deliveryAlertList"></div>
+      <div class="delivery-alert-footer"></div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -830,6 +841,45 @@ window.onerror = function(msg, url, line, col, err) {
   assert(exportOutput.includes('1. Aluva Grand Traders Lead'), "Report contains clean numbered list with shop name ONLY");
   assert(!exportOutput.includes('(Aluva)') && !exportOutput.includes('('), "Report strictly removes town, area, and location in parentheses");
   assert(!exportOutput.includes('Turnover') && !exportOutput.includes('Total Bags'), "WhatsApp report has zero clutter or stats");
+
+  // ==========================================
+  // TEST 15: Live Delivery Updates Popover Alignment & Compact Sizing
+  // ==========================================
+  log("\n--- TEST 15: Live Delivery Updates Notification Popover ---");
+
+  const dropdownEl = document.getElementById('deliveryAlertDropdown');
+  const alertListEl = document.getElementById('deliveryAlertList');
+  assert(dropdownEl !== null, "Delivery alert dropdown fixture exists in DOM");
+  assert(dropdownEl.classList.contains('hidden'), "Delivery alert dropdown starts hidden by default");
+
+  // Open menu
+  toggleDeliveryAlertMenu();
+  assert(!dropdownEl.classList.contains('hidden'), "toggleDeliveryAlertMenu() reveals the dropdown panel");
+
+  // Record a delivery event
+  recordDeliveryEvent({
+    id: 'ORD-7701',
+    customer: 'Royal Supermarket',
+    deliveryNote: 'Handed over to manager • Cash collected',
+    deliveredAt: new Date().toISOString()
+  });
+
+  renderDeliveryAlertList();
+  const alertItem = alertListEl.querySelector('.delivery-alert-item');
+  assert(alertItem !== null, "renderDeliveryAlertList renders .delivery-alert-item element");
+  const custEl = alertListEl.querySelector('.delivery-alert-customer');
+  assert(custEl !== null && custEl.textContent.includes('Royal Supermarket'), "Customer name 'Royal Supermarket' rendered cleanly with .delivery-alert-customer");
+  const orderIdEl = alertListEl.querySelector('.delivery-alert-orderid');
+  assert(orderIdEl !== null && orderIdEl.textContent.includes('ORD-7701'), "Order ID 'ORD-7701' rendered with .delivery-alert-orderid");
+
+  // Close menu
+  closeDeliveryAlertMenu();
+  assert(dropdownEl.classList.contains('hidden'), "closeDeliveryAlertMenu() successfully hides the dropdown");
+
+  // Clear history
+  clearDeliveryAlertHistory();
+  const historyAfterClear = getDeliveredHistory();
+  assert(historyAfterClear.length === 0, "clearDeliveryAlertHistory() cleans up history store");
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

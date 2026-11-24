@@ -2100,8 +2100,8 @@ function renderDeliveryAlertList() {
   const history = getDeliveredHistory();
   if (history.length === 0) {
     listEl.innerHTML = `
-      <div class="py-6 px-4 text-center text-slate-400">
-        <i data-lucide="package-check" class="w-8 h-8 mx-auto text-slate-300 mb-2"></i>
+      <div class="py-5 px-3 text-center text-slate-400">
+        <i data-lucide="package-check" class="w-7 h-7 mx-auto text-slate-300 mb-1.5"></i>
         <p class="font-semibold text-xs text-slate-700">No recent deliveries recorded</p>
         <p class="text-[11px] text-slate-400 mt-0.5">Live delivery confirmations will appear here.</p>
       </div>
@@ -2113,15 +2113,15 @@ function renderDeliveryAlertList() {
   listEl.innerHTML = history.map(item => {
     const timeStr = item.deliveredAt ? new Date(item.deliveredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
     return `
-      <div onclick="highlightDeliveredOrderInTable('${item.id}')" class="p-2.5 hover:bg-emerald-50/70 transition rounded-xl flex items-start justify-between gap-2 cursor-pointer" title="Click to view delivery in table">
+      <div onclick="highlightDeliveredOrderInTable('${item.id}')" class="delivery-alert-item p-2.5 hover:bg-emerald-50/70 transition rounded-xl flex items-start justify-between gap-2 cursor-pointer" title="Click to view delivery in table">
         <div class="min-w-0">
           <div class="flex items-center gap-1.5 flex-wrap">
-            <span class="font-black text-slate-900">${escapeHtml(item.customer)}</span>
-            <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">${escapeHtml(item.id)}</span>
+            <span class="delivery-alert-customer font-black text-slate-900 text-xs sm:text-sm leading-tight">${escapeHtml(item.customer)}</span>
+            <span class="delivery-alert-orderid text-[10px] font-mono font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">${escapeHtml(item.id)}</span>
           </div>
-          ${item.note ? `<p class="text-[11px] text-amber-700 font-semibold mt-0.5">📝 ${escapeHtml(item.note)}</p>` : ''}
+          ${item.note ? `<p class="delivery-alert-note text-[11px] text-amber-700 font-semibold mt-0.5 leading-snug">📝 ${escapeHtml(item.note)}</p>` : ''}
         </div>
-        <span class="text-[10px] font-bold text-slate-400 shrink-0 mt-0.5">${timeStr}</span>
+        <span class="delivery-alert-time text-[10px] font-bold text-slate-400 shrink-0 mt-0.5">${timeStr}</span>
       </div>
     `;
   }).join('');

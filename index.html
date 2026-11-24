@@ -151,6 +151,62 @@
       button, a, input, select, textarea {
         touch-action: manipulation;
       }
+
+      /* Mobile Live Delivery Updates Notification Dropdown Alignment & Sizing */
+      #deliveryAlertDropdown {
+        position: fixed !important;
+        left: 12px !important;
+        right: 12px !important;
+        width: auto !important;
+        max-width: 360px !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        top: calc(env(safe-area-inset-top, 0px) + 95px) !important;
+        bottom: auto !important;
+        max-height: calc(100vh - 120px) !important;
+        z-index: 60 !important;
+        box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.25), 0 8px 10px -6px rgba(0, 0, 0, 0.25) !important;
+      }
+
+      #deliveryAlertDropdown .delivery-alert-header {
+        padding: 10px 12px !important;
+      }
+
+      #deliveryAlertList {
+        max-height: 260px !important;
+        max-height: min(260px, 45vh) !important;
+        overflow-y: auto !important;
+        -webkit-overflow-scrolling: touch;
+        padding: 4px 6px !important;
+      }
+
+      #deliveryAlertList .delivery-alert-item {
+        padding: 8px 10px !important;
+      }
+
+      #deliveryAlertList .delivery-alert-customer {
+        font-size: 12px !important;
+        line-height: 1.25 !important;
+      }
+
+      #deliveryAlertList .delivery-alert-orderid {
+        font-size: 10px !important;
+        padding: 2px 4px !important;
+      }
+
+      #deliveryAlertList .delivery-alert-note {
+        font-size: 11px !important;
+        line-height: 1.25 !important;
+      }
+
+      #deliveryAlertList .delivery-alert-time {
+        font-size: 10px !important;
+      }
+
+      #deliveryAlertDropdown .delivery-alert-footer {
+        padding: 8px 12px !important;
+        font-size: 11px !important;
+      }
     }
 
     /* 5 Vibrant Metric Card Gradients matching the reference photo */
@@ -701,7 +757,7 @@
 
             <!-- Delivery Live Alert Dropdown Menu -->
             <div id="deliveryAlertDropdown" class="hidden absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden transform transition-all duration-200">
-              <div class="p-3 bg-slate-900 text-white flex items-center justify-between">
+              <div class="delivery-alert-header p-3 bg-slate-900 text-white flex items-center justify-between">
                 <div class="flex items-center gap-2">
                   <i data-lucide="truck" class="w-4 h-4 text-emerald-400"></i>
                   <h4 class="font-extrabold text-xs tracking-wide">Live Delivery Updates</h4>
@@ -720,7 +776,7 @@
                 <!-- Rendered dynamically -->
               </div>
 
-              <div class="p-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px]">
+              <div class="delivery-alert-footer p-2.5 bg-slate-50 border-t border-slate-100 flex items-center justify-between text-[11px]">
                 <button type="button" onclick="requestBrowserNotificationPermission()" class="text-blue-600 hover:underline font-bold flex items-center gap-1">
                   <i data-lucide="shield-alert" class="w-3.5 h-3.5"></i>
                   <span>Enable Desktop Popups</span>
