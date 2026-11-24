@@ -1,6 +1,9 @@
 ﻿<!DOCTYPE html>
 <html>
-<head><title>Antigravity Deduplication & Canonical Mapping Tests</title></head>
+<head>
+  <title>Antigravity Deduplication & Canonical Mapping Tests</title>
+  <link rel="icon" type="image/png" href="uploaded-logo.png?v=2">
+</head>
 <body>
 <h2>Antigravity Product & Customer Test Suite</h2>
 <pre id="output">Running tests...</pre>
@@ -75,6 +78,42 @@
   <span id="orderRecordCount"></span>
   <span id="orderTotalBags"></span>
   <span id="orderTotalRevenue"></span>
+
+  <!-- Daily Report Fixtures -->
+  <div id="viewDailyReport" class="hidden"></div>
+  <span id="dailyReportDayBadge"></span>
+  <span id="dailyReportDateLabel"></span>
+  <h3 id="dailyReportMonthYearLabel"></h3>
+  <div id="dailyReportCalendarContainer"></div>
+  <div id="dailyReportMissedAlertBanner" class="hidden"></div>
+  <span id="dailyReportMissedAlertText"></span>
+  <span id="sidebarDailyReportBadge" class="hidden"></span>
+  <span id="statSelectedDateVisits"></span>
+  <span id="statSelectedDateStatus"></span>
+  <span id="statSelectedDateSubtext"></span>
+  <span id="statMonthlyReach"></span>
+  <span id="statMonthlyVisitsTotal"></span>
+  <span id="statFocusNeededCount"></span>
+  <span id="dailyReportShopsCountBadge"></span>
+  <input type="text" id="dailyReportSearchInput" />
+  <select id="dailyReportTownFilter"></select>
+  <select id="dailyReportTypeFilter"></select>
+  <select id="dailyReportTierFilter"></select>
+  <select id="dailyReportStatusFilter"></select>
+  <div id="dailyReportShopsListContainer"></div>
+  <div id="quickAddShopModal" class="hidden"></div>
+  <div id="leaveHolidayModal" class="hidden"></div>
+  <div id="logShopVisitModal" class="hidden"></div>
+  <input type="text" id="qasShopName" />
+  <select id="qasShopType"></select>
+  <select id="qasTier"></select>
+  <input type="text" id="qasTown" />
+  <input type="tel" id="qasPhone" />
+  <input type="text" id="qasNotes" />
+  <input type="date" id="lhDateInput" />
+  <select id="lhTypeSelect"></select>
+  <input type="text" id="lhReasonInput" />
+  <button id="btnRemoveLeaveHoliday" class="hidden"></button>
 </div>
 
 <script>
@@ -656,6 +695,104 @@ window.onerror = function(msg, url, line, col, err) {
   assert(dateDisplay.textContent === 'Select Date', "Date display reset to 'Select Date' placeholder");
   assert(clearDateBtn.classList.contains('hidden'), "Clear Date button is hidden after clearing date");
   assert(dateDisplay.classList.contains('text-slate-400'), "Date display has muted text-slate-400 placeholder styling");
+
+  // TEST 14: Daily Report, Smart Cadence Algorithm, Leave/Holiday Tracking & WhatsApp Export
+  log("\n--- TEST 14: Daily Report & Smart Shop Visit Tracker ---");
+
+  // 1. Cadence Calculation Tests
+  const todayStr = getLocalTodayDateString();
+  const testShopNeverVisited = { id: 'test_s1', name: 'Test Shop Never', tier: 'A', lastVisitedDate: null };
+  const cadenceNever = getShopCadenceInfo(testShopNeverVisited, '2026-11-24');
+  assert(cadenceNever.status === 'never_visited', "Unvisited shop status is 'never_visited'");
+  assert(cadenceNever.isOverdue === true, "Unvisited shop is marked as isOverdue = true");
+  assert(cadenceNever.tier === 'A' && cadenceNever.intervalDays === 7, "Tier A cadence interval is 7 days");
+
+  const testShopDefaultTier = { id: 'test_s2', name: 'Test Shop Default', lastVisitedDate: null };
+  const cadenceDefault = getShopCadenceInfo(testShopDefaultTier, '2026-11-24');
+  assert(cadenceDefault.tier === 'C' && cadenceDefault.intervalDays === 21, "Missing tier defaults to 'C' (21 days cadence)");
+
+  const testShopVisitedToday = { id: 'test_s3', name: 'Test Shop Today', tier: 'B', lastVisitedDate: '2026-11-24' };
+  const cadenceToday = getShopCadenceInfo(testShopVisitedToday, '2026-11-24');
+  assert(cadenceToday.status === 'visited_today', "Shop visited today has status 'visited_today'");
+  assert(cadenceToday.isOverdue === false, "Shop visited today is not overdue");
+
+  // Tier A (7d): Visited 10 days ago -> overdue by 3d
+  const testShopOverdue = { id: 'test_s4', name: 'Test Shop Overdue', tier: 'A', lastVisitedDate: '2026-11-14' };
+  const cadenceOverdue = getShopCadenceInfo(testShopOverdue, '2026-11-24');
+  assert(cadenceOverdue.status === 'overdue', "Tier A visited 10 days ago is 'overdue'");
+  assert(cadenceOverdue.daysRemaining === -3, `Overdue days remaining is -3 (actual: ${cadenceOverdue.daysRemaining})`);
+  assert(cadenceOverdue.badgeText === 'Overdue by 3d', `Badge text shows 'Overdue by 3d' (actual: '${cadenceOverdue.badgeText}')`);
+
+  // Tier A (7d): Visited 6 days ago -> due in 1d (Due Soon)
+  const testShopDueSoon = { id: 'test_s5', name: 'Test Shop Due Soon', tier: 'A', lastVisitedDate: '2026-11-18' };
+  const cadenceDueSoon = getShopCadenceInfo(testShopDueSoon, '2026-11-24');
+  assert(cadenceDueSoon.status === 'due_soon', "Tier A visited 6 days ago is 'due_soon'");
+  assert(cadenceDueSoon.daysRemaining === 1, "Due in 1 day");
+
+  // Tier B (14d): Visited 4 days ago -> due in 10d (On Track)
+  const testShopOnTrack = { id: 'test_s6', name: 'Test Shop On Track', tier: 'B', lastVisitedDate: '2026-11-20' };
+  const cadenceOnTrack = getShopCadenceInfo(testShopOnTrack, '2026-11-24');
+  assert(cadenceOnTrack.status === 'on_track', "Tier B visited 4 days ago is 'on_track'");
+  assert(cadenceOnTrack.daysRemaining === 10, "Due in 10 days");
+
+  // Tier D (30d cadence)
+  const testShopTierD = { id: 'test_s7', name: 'Test Shop D', tier: 'D', lastVisitedDate: '2026-11-01' };
+  const cadenceD = getShopCadenceInfo(testShopTierD, '2026-11-24');
+  assert(cadenceD.intervalDays === 30, "Tier D has 30 days interval");
+
+  // 2. Quick "+ Add Shop" & Prospect Support
+  const initialCustCount = customers.length;
+  const prospectShop = {
+    id: 'test_prospect_' + Date.now(),
+    name: 'Aluva Grand Traders Lead',
+    town: 'Aluva',
+    phone: '9846011111',
+    tier: 'A',
+    isProspect: true,
+    lastVisitedDate: null,
+    visitCount: 0
+  };
+  customers.push(prospectShop);
+  assert(customers.length === initialCustCount + 1, "Prospect shop added to customers list");
+  assert(prospectShop.isProspect === true, "New lead is marked as isProspect = true");
+
+  // 3. Auto-Upgrade Prospect to Customer upon Order
+  upgradeProspectToCustomerIfOrdered('Aluva Grand Traders Lead');
+  assert(prospectShop.isProspect === false, "Prospect automatically upgraded to Customer (isProspect = false) when order is recorded");
+
+  // 4. Mark Visit (Check-in)
+  selectDailyReportDate('2026-11-24');
+  const visitsBefore = dailyVisits.length;
+  markQuickShopVisit(prospectShop.id, 'Order Taken', 'Booked 50 bags Biriyani Rice');
+  assert(dailyVisits.length === visitsBefore + 1, "New visit record added to dailyVisits");
+  assert(prospectShop.lastVisitedDate === '2026-11-24', "Shop lastVisitedDate updated to visit date");
+  assert(prospectShop.visitCount >= 1, "Shop visitCount incremented");
+
+  const recordedVisit = dailyVisits.find(v => v.shopId === prospectShop.id && v.date === '2026-11-24');
+  assert(recordedVisit !== undefined, "Visit record found with correct shopId and date");
+  assert(recordedVisit.tag === 'Order Taken', `Visit tag correctly saved as 'Order Taken' (actual: '${recordedVisit.tag}')`);
+
+  // 5. Leave / Holiday Tracking
+  dailyReports['2026-11-25'] = {
+    id: '2026-11-25',
+    date: '2026-11-25',
+    status: 'leave',
+    reason: 'Personal Leave'
+  };
+  saveDailyReportDataToStorage();
+  assert(dailyReports['2026-11-25'] && dailyReports['2026-11-25'].status === 'leave', "2026-11-25 marked as Leave");
+
+  // 6. WhatsApp Report Minimal Format Verification
+  const dayVisits = dailyVisits.filter(v => v.date === '2026-11-24');
+  assert(dayVisits.length > 0, "Visits exist for WhatsApp export");
+  let exportOutput = `*Date: 24-11-2026*\n`;
+  dayVisits.forEach((v, idx) => {
+    const townText = v.town ? ` (${v.town})` : '';
+    exportOutput += `${idx + 1}. ${v.shopName}${townText}\n`;
+  });
+  assert(exportOutput.startsWith('*Date: 24-11-2026*'), "WhatsApp report starts with exact '*Date: DD-MM-YYYY*'");
+  assert(exportOutput.includes('1. Aluva Grand Traders Lead (Aluva)'), "Report contains clean numbered list with shop name and location");
+  assert(!exportOutput.includes('Turnover') && !exportOutput.includes('Total Bags'), "WhatsApp report has zero clutter or stats");
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

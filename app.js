@@ -871,6 +871,11 @@ function initApp() {
     // Load and apply App Brand Logo
     loadAppLogo();
 
+    // Initialize Real-time Delivery Alerts UI
+    updateMainDeliverySoundToggleUI();
+    updateDeliveryAlertBadge();
+    renderDeliveryAlertList();
+
     // Restore or initialize active view (overview vs sales-register)
     try {
       const savedActiveView = localStorage.getItem('biriyani_rice_active_view') || 'overview';
@@ -1184,6 +1189,9 @@ function loadDataFromStorage() {
     try {
       localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
     } catch (e) {}
+    if (typeof loadDailyReportDataFromStorage === 'function') {
+      loadDailyReportDataFromStorage();
+    }
   } catch (e) {
     console.error('Error loading localStorage data:', e);
     orders = [];
@@ -1205,6 +1213,9 @@ function saveDataToStorage() {
     localStorage.setItem('biriyani_rice_bag_sizes_fresh_v2', JSON.stringify(bagSizes));
     localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
     localStorage.setItem(STORAGE_LAST_BAG_SIZE, String(defaultRememberedBagSize));
+    if (typeof saveDailyReportDataToStorage === 'function') {
+      saveDailyReportDataToStorage();
+    }
   } catch (e) {
     console.error('Error saving data to localStorage:', e);
   }
@@ -1542,6 +1553,301 @@ function processIncomingCloudCustomers(remoteCustomers) {
   }
 }
 
+// ==================== REAL-TIME DELIVERY ALERTS & NOTIFICATION ENGINE ====================
+let isInitialOrdersListenerRun = true;
+const knownOrderDeliveryStatuses = new Map();
+const STORAGE_MAIN_DELIVERY_SOUND = 'thirdman_main_delivery_sound';
+const STORAGE_DELIVERED_HISTORY = 'thirdman_recent_delivered_history';
+let mainDeliveryAudioCtx = null;
+let unreadDeliveryAlertsCount = 0;
+
+function getMainDeliveryAudioContext() {
+  if (!mainDeliveryAudioCtx) {
+    const AudioCtx = window.AudioContext || window.webkitAudioContext;
+    if (AudioCtx) mainDeliveryAudioCtx = new AudioCtx();
+  }
+  if (mainDeliveryAudioCtx && mainDeliveryAudioCtx.state === 'suspended') {
+    mainDeliveryAudioCtx.resume().catch(() => {});
+  }
+  return mainDeliveryAudioCtx;
+}
+
+['click', 'touchstart', 'keydown'].forEach(evt => {
+  document.addEventListener(evt, () => {
+    if (mainDeliveryAudioCtx && mainDeliveryAudioCtx.state === 'suspended') {
+      mainDeliveryAudioCtx.resume().catch(() => {});
+    }
+  }, { passive: true });
+});
+
+function isMainDeliverySoundEnabled() {
+  const val = localStorage.getItem(STORAGE_MAIN_DELIVERY_SOUND);
+  return val === null ? true : val === 'true'; // Enabled by default
+}
+
+function playOrderDeliveredSound() {
+  if (!isMainDeliverySoundEnabled()) return;
+  try {
+    const ctx = getMainDeliveryAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Pleasant warm confirmation chord: F5 (698Hz) -> A5 (880Hz) -> High C6 (1046Hz) with smooth decay
+    const notes = [
+      { freq: 698.46, start: 0.00, dur: 0.20 },
+      { freq: 880.00, start: 0.08, dur: 0.22 },
+      { freq: 1046.50, start: 0.18, dur: 0.38 }
+    ];
+    notes.forEach(n => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle'; // warmer tone for delivery success
+      osc.frequency.setValueAtTime(n.freq, now + n.start);
+      gain.gain.setValueAtTime(0.0001, now + n.start);
+      gain.gain.exponentialRampToValueAtTime(0.24, now + n.start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + n.start);
+      osc.stop(now + n.start + n.dur + 0.05);
+    });
+  } catch (e) {
+    console.warn('Delivered audio notice:', e);
+  }
+}
+
+function showOrderDeliveredToast(order) {
+  const container = document.getElementById('orderDeliveredToastContainer');
+  if (!container) return;
+
+  const custName = getCustomerName(order.customer) || order.customerName || 'Customer';
+  const noteText = order.deliveryNote || '';
+  const orderId = order.id || '';
+
+  const toast = document.createElement('div');
+  toast.className = 'bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border-2 border-emerald-500/80 pointer-events-auto flex items-start justify-between gap-3 transform translate-x-12 opacity-0 transition-all duration-300';
+  toast.innerHTML = `
+    <div class="flex items-start gap-2.5 min-w-0">
+      <div class="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0 border border-emerald-400/30 mt-0.5">
+        <i data-lucide="check-circle-2" class="w-4 h-4 text-emerald-400"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-emerald-500 text-slate-950 uppercase">DELIVERED</span>
+          <span class="text-xs font-mono font-bold text-emerald-400">${escapeHtml(orderId)}</span>
+        </div>
+        <h5 class="text-xs font-black text-white truncate mt-0.5">${escapeHtml(custName)}</h5>
+        ${noteText ? `<p class="text-[11px] text-amber-300 font-semibold mt-0.5 flex items-center gap-1"><span class="shrink-0">📝</span><span class="truncate">${escapeHtml(noteText)}</span></p>` : ''}
+      </div>
+    </div>
+    <button type="button" class="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer" onclick="this.closest('.bg-slate-900').remove()">✕</button>
+  `;
+
+  container.appendChild(toast);
+  if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+
+  requestAnimationFrame(() => {
+    toast.classList.remove('translate-x-12', 'opacity-0');
+  });
+
+  setTimeout(() => {
+    toast.classList.add('translate-x-12', 'opacity-0');
+    setTimeout(() => toast.remove(), 300);
+  }, 9000);
+}
+
+function triggerBrowserDeliveredNotification(order) {
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const custName = getCustomerName(order.customer) || order.customerName || 'Customer';
+      const noteText = order.deliveryNote ? ` (${order.deliveryNote})` : '';
+      new Notification(`✅ Order Delivered: ${custName}`, {
+        body: `${order.id}${noteText} — Delivered successfully!`,
+        icon: 'uploaded-logo.png?v=2'
+      });
+    }
+  } catch (e) {}
+}
+
+function getDeliveredHistory() {
+  try {
+    const raw = localStorage.getItem(STORAGE_DELIVERED_HISTORY);
+    return raw ? JSON.parse(raw) : [];
+  } catch (e) {
+    return [];
+  }
+}
+
+function recordDeliveryEvent(order) {
+  const history = getDeliveredHistory();
+  const custName = getCustomerName(order.customer) || order.customerName || 'Customer';
+  const entry = {
+    id: order.id,
+    customer: custName,
+    note: order.deliveryNote || '',
+    deliveredAt: order.deliveredAt || new Date().toISOString(),
+    timestamp: Date.now()
+  };
+  history.unshift(entry);
+  if (history.length > 25) history.pop();
+  try {
+    localStorage.setItem(STORAGE_DELIVERED_HISTORY, JSON.stringify(history));
+  } catch (e) {}
+
+  unreadDeliveryAlertsCount++;
+  updateDeliveryAlertBadge();
+  renderDeliveryAlertList();
+}
+
+function updateDeliveryAlertBadge() {
+  const badge = document.getElementById('deliveryAlertBadge');
+  if (!badge) return;
+  if (unreadDeliveryAlertsCount > 0) {
+    badge.textContent = unreadDeliveryAlertsCount > 9 ? '9+' : unreadDeliveryAlertsCount;
+    badge.classList.remove('hidden');
+    badge.classList.add('flex');
+  } else {
+    badge.classList.add('hidden');
+    badge.classList.remove('flex');
+  }
+}
+
+function renderDeliveryAlertList() {
+  const listEl = document.getElementById('deliveryAlertList');
+  if (!listEl) return;
+  const history = getDeliveredHistory();
+  if (history.length === 0) {
+    listEl.innerHTML = `
+      <div class="py-6 px-4 text-center text-slate-400">
+        <i data-lucide="package-check" class="w-8 h-8 mx-auto text-slate-300 mb-2"></i>
+        <p class="font-semibold text-xs text-slate-700">No recent deliveries recorded</p>
+        <p class="text-[11px] text-slate-400 mt-0.5">Live delivery confirmations will appear here.</p>
+      </div>
+    `;
+    if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    return;
+  }
+
+  listEl.innerHTML = history.map(item => {
+    const timeStr = item.deliveredAt ? new Date(item.deliveredAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '';
+    return `
+      <div class="p-2.5 hover:bg-slate-50 transition rounded-xl flex items-start justify-between gap-2">
+        <div class="min-w-0">
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-black text-slate-900">${escapeHtml(item.customer)}</span>
+            <span class="text-[10px] font-mono font-bold px-1.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded">${escapeHtml(item.id)}</span>
+          </div>
+          ${item.note ? `<p class="text-[11px] text-amber-700 font-semibold mt-0.5">📝 ${escapeHtml(item.note)}</p>` : ''}
+        </div>
+        <span class="text-[10px] font-bold text-slate-400 shrink-0 mt-0.5">${timeStr}</span>
+      </div>
+    `;
+  }).join('');
+
+  if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+}
+
+function toggleDeliveryAlertMenu() {
+  const menu = document.getElementById('deliveryAlertDropdown');
+  if (!menu) return;
+  const isHidden = menu.classList.contains('hidden');
+  if (isHidden) {
+    menu.classList.remove('hidden');
+    unreadDeliveryAlertsCount = 0;
+    updateDeliveryAlertBadge();
+    renderDeliveryAlertList();
+    getMainDeliveryAudioContext();
+  } else {
+    menu.classList.add('hidden');
+  }
+}
+
+function closeDeliveryAlertMenu() {
+  const menu = document.getElementById('deliveryAlertDropdown');
+  if (menu) menu.classList.add('hidden');
+}
+
+function clearDeliveryAlertHistory() {
+  try {
+    localStorage.removeItem(STORAGE_DELIVERED_HISTORY);
+  } catch (e) {}
+  unreadDeliveryAlertsCount = 0;
+  updateDeliveryAlertBadge();
+  renderDeliveryAlertList();
+  if (typeof showNotification === 'function') {
+    showNotification('Delivered history cleared');
+  }
+}
+
+function toggleMainDeliveryAlertSound() {
+  const current = isMainDeliverySoundEnabled();
+  const next = !current;
+  try {
+    localStorage.setItem(STORAGE_MAIN_DELIVERY_SOUND, String(next));
+  } catch (e) {}
+  updateMainDeliverySoundToggleUI();
+  getMainDeliveryAudioContext();
+  if (next) {
+    playOrderDeliveredSound();
+    if (typeof showNotification === 'function') {
+      showNotification('🔔 Delivery sound alerts enabled');
+    }
+  } else {
+    if (typeof showNotification === 'function') {
+      showNotification('🔕 Delivery sound alerts muted');
+    }
+  }
+}
+
+function updateMainDeliverySoundToggleUI() {
+  const icon = document.getElementById('mainDeliverySoundIcon');
+  const label = document.getElementById('mainDeliverySoundLabel');
+  if (!icon || !label) return;
+  const enabled = isMainDeliverySoundEnabled();
+  if (enabled) {
+    icon.setAttribute('data-lucide', 'volume-2');
+    icon.className = 'w-3 h-3 text-emerald-400';
+    label.textContent = 'Sound ON';
+  } else {
+    icon.setAttribute('data-lucide', 'volume-x');
+    icon.className = 'w-3 h-3 text-slate-400';
+    label.textContent = 'Muted';
+  }
+  if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+}
+
+function requestBrowserNotificationPermission() {
+  if ('Notification' in window) {
+    Notification.requestPermission().then(perm => {
+      if (perm === 'granted') {
+        if (typeof showNotification === 'function') {
+          showNotification('✓ Desktop notifications enabled!');
+        }
+      } else {
+        if (typeof showNotification === 'function') {
+          showNotification('Desktop notifications denied or blocked.');
+        }
+      }
+    });
+  } else {
+    alert('Browser notifications not supported on this browser.');
+  }
+}
+
+function triggerOrderDeliveredAlert(order) {
+  if (!order || !order.id) return;
+  playOrderDeliveredSound();
+  showOrderDeliveredToast(order);
+  triggerBrowserDeliveredNotification(order);
+  recordDeliveryEvent(order);
+}
+
+document.addEventListener('click', (e) => {
+  const bellContainer = document.getElementById('deliveryAlertBellContainer');
+  if (bellContainer && !bellContainer.contains(e.target)) {
+    closeDeliveryAlertMenu();
+  }
+});
+
 function setupFirestoreRealtimeListeners() {
   if (!db) return;
 
@@ -1554,6 +1860,32 @@ function setupFirestoreRealtimeListeners() {
     }
 
     if (!snapshot.empty) {
+      if (isInitialOrdersListenerRun) {
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d && d.id) {
+            const status = (d.date && d.date <= '2026-11-21') ? 'Delivered' : (d.dispatchStatus || 'Pending');
+            knownOrderDeliveryStatuses.set(d.id, status);
+          }
+        });
+        isInitialOrdersListenerRun = false;
+      } else {
+        // Detect real-time transitions to 'Delivered'
+        snapshot.docChanges().forEach(change => {
+          if (change.type === 'modified' || change.type === 'added') {
+            const ord = change.doc.data();
+            if (ord && ord.id) {
+              const prevStatus = knownOrderDeliveryStatuses.get(ord.id);
+              const newStatus = ord.dispatchStatus;
+              if (prevStatus && prevStatus !== 'Delivered' && newStatus === 'Delivered') {
+                triggerOrderDeliveredAlert(ord);
+              }
+              knownOrderDeliveryStatuses.set(ord.id, newStatus || 'Pending');
+            }
+          }
+        });
+      }
+
       isReceivingCloudOrders = true;
       const remoteOrders = [];
       snapshot.forEach(doc => {
@@ -1728,6 +2060,43 @@ function setupFirestoreRealtimeListeners() {
     }
   }, err => {
     console.warn('Settings snapshot error:', err);
+  });
+
+  // 4. Daily Visits Realtime Listener
+  db.collection('dailyVisits').onSnapshot(snapshot => {
+    if (!snapshot.empty) {
+      const remoteVisits = [];
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d && d.id) remoteVisits.push(d);
+      });
+      if (typeof mergeIncomingCloudVisits === 'function') {
+        mergeIncomingCloudVisits(remoteVisits);
+      }
+    }
+  }, err => {
+    console.warn('dailyVisits snapshot error:', err);
+  });
+
+  // 5. Daily Reports & Holiday Status Realtime Listener
+  db.collection('dailyReports').onSnapshot(snapshot => {
+    if (!snapshot.empty) {
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (d && d.date) {
+          dailyReports[d.date] = d;
+        }
+      });
+      if (typeof saveDailyReportDataToStorage === 'function') {
+        saveDailyReportDataToStorage();
+      }
+      if (currentMainView === 'daily-report') {
+        if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
+        if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
+      }
+    }
+  }, err => {
+    console.warn('dailyReports snapshot error:', err);
   });
 }
 
@@ -4594,6 +4963,9 @@ function handleSaveOrder(event) {
     };
 
     orders.unshift(newOrder);
+    if (typeof upgradeProspectToCustomerIfOrdered === 'function') {
+      upgradeProspectToCustomerIfOrdered(newOrder.customer);
+    }
     saveDataToStorage();
     syncCloudOrder(newOrder);
     closeOrderModal();
@@ -6112,6 +6484,7 @@ function switchMainView(viewName, subTab) {
     'viewOverview',
     'viewSalesRegister',
     'viewCustomers',
+    'viewDailyReport',
     'viewIncentives',
     'viewMonthlyHistory',
     'viewLeaderboard',
@@ -6128,6 +6501,7 @@ function switchMainView(viewName, subTab) {
     'overview': 'viewOverview',
     'sales-register': 'viewSalesRegister',
     'customers': 'viewCustomers',
+    'daily-report': 'viewDailyReport',
     'incentives': 'viewIncentives',
     'monthly-history': 'viewMonthlyHistory',
     'leaderboard': 'viewLeaderboard',
@@ -6148,6 +6522,7 @@ function switchMainView(viewName, subTab) {
     'overview': { title: 'OVERVIEW', subtitle: 'Performance at a Glance' },
     'sales-register': { title: 'SALES REGISTER', subtitle: 'Order Entries & Dispatch Ledger' },
     'customers': { title: 'CUSTOMERS DIRECTORY', subtitle: 'Wholesale Buyers & Contact Management' },
+    'daily-report': { title: 'DAILY REPORT', subtitle: 'Shop Visits & Smart Cadence Tracker' },
     'incentives': { title: 'INCENTIVE SCHEME', subtitle: 'Slab Unlocks & Turnover Calculations' },
     'monthly-history': { title: 'MONTHLY SALES & INCENTIVES', subtitle: 'Multi-Month Performance & Annual Ledger' },
     'leaderboard': { title: 'SALES LEADERBOARDS', subtitle: 'Live Rankings & Category Champions' },
@@ -6192,6 +6567,7 @@ function switchMainView(viewName, subTab) {
     { id: 'navBtnOverview', view: 'overview' },
     { id: 'navBtnSalesRegister', view: 'sales-register' },
     { id: 'navBtnCustomers', view: 'customers' },
+    { id: 'navBtnDailyReport', view: 'daily-report' },
     { id: 'navBtnLeaderboard', view: 'leaderboard' },
     { id: 'navBtnMonthlyHistory', view: 'monthly-history' },
     { id: 'navBtnProducts', view: 'settings', subTab: 'products' },
@@ -6236,6 +6612,8 @@ function switchMainView(viewName, subTab) {
   } else if (currentMainView === 'customers') {
     cancelEditCustomer();
     renderCustomersList();
+  } else if (currentMainView === 'daily-report') {
+    renderDailyReportView();
   } else if (currentMainView === 'monthly-history') {
     populateFilterYearSelect();
     const historyYearSelect = document.getElementById('historyYearSelect');
@@ -11074,45 +11452,9 @@ document.addEventListener('keydown', (e) => {
 // 13. APP BRAND LOGO MANAGEMENT
 // ==========================================
 const STORAGE_APP_LOGO = 'thirdman_app_logo';
-const DEFAULT_LOGO_URL = 'logo.svg';
+const DEFAULT_LOGO_URL = 'uploaded-logo.png?v=2';
 
-const EMBEDDED_DEFAULT_LOGO_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-  <defs>
-    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#1e3a8a"/>
-      <stop offset="100%" stop-color="#09111e"/>
-    </linearGradient>
-    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#fbbf24"/>
-      <stop offset="100%" stop-color="#d97706"/>
-    </linearGradient>
-    <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#38bdf8"/>
-      <stop offset="100%" stop-color="#0284c7"/>
-    </linearGradient>
-    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
-      <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.4"/>
-    </filter>
-  </defs>
-  <rect x="10" y="10" width="180" height="180" rx="42" fill="url(#bgGrad)" stroke="url(#goldGrad)" stroke-width="4" filter="url(#shadow)"/>
-  <g fill="url(#goldGrad)" opacity="0.95">
-    <ellipse cx="44" cy="70" rx="7" ry="13" transform="rotate(-35 44 70)"/>
-    <ellipse cx="36" cy="95" rx="7" ry="13" transform="rotate(-20 36 95)"/>
-    <ellipse cx="38" cy="122" rx="7" ry="13" transform="rotate(10 38 122)"/>
-    <ellipse cx="50" cy="146" rx="7" ry="12" transform="rotate(35 50 146)"/>
-  </g>
-  <g fill="url(#goldGrad)" opacity="0.95">
-    <ellipse cx="156" cy="70" rx="7" ry="13" transform="rotate(35 156 70)"/>
-    <ellipse cx="164" cy="95" rx="7" ry="13" transform="rotate(20 164 95)"/>
-    <ellipse cx="162" cy="122" rx="7" ry="13" transform="rotate(-10 162 122)"/>
-    <ellipse cx="150" cy="146" rx="7" ry="12" transform="rotate(-35 150 146)"/>
-  </g>
-  <circle cx="100" cy="95" r="45" fill="#0b1324" stroke="url(#cyanGrad)" stroke-width="2.5"/>
-  <path d="M86 58 L100 44 L114 58 L107 63 L100 56 L93 63 Z" fill="url(#goldGrad)"/>
-  <text x="100" y="107" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="1">TM</text>
-  <rect x="28" y="152" width="144" height="26" rx="13" fill="url(#goldGrad)"/>
-  <text x="100" y="169" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="11" font-weight="900" fill="#09111e" text-anchor="middle" letter-spacing="1.5">THIRD MAN</text>
-</svg>`);
+const EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=2';
 
 function loadAppLogo() {
   try {
@@ -11120,8 +11462,8 @@ function loadAppLogo() {
     if (customLogo) {
       applyAppLogo(customLogo, true);
     } else {
-      // Use uploaded-logo.png if present, fallback to logo.svg
-      applyAppLogo('uploaded-logo.png', false);
+      // Use official uploaded-logo.png
+      applyAppLogo('uploaded-logo.png?v=2', false);
     }
   } catch (err) {
     console.error('Error loading app logo:', err);
@@ -11136,50 +11478,46 @@ function applyAppLogo(logoUrl, isCustom = false) {
   const invoiceFallback = document.getElementById('invoiceLogoFallback');
   const settingsImg = document.getElementById('settingsLogoPreviewImg');
   const settingsFallback = document.getElementById('settingsLogoFallback');
-  const favicon = document.getElementById('appFavicon');
   const removeBtn = document.getElementById('btnRemoveLogo');
 
   const bindImgFallback = (img) => {
     if (!img) return;
     img.onerror = function() {
-      if (this.src && this.src.indexOf('uploaded-logo.png') !== -1) {
-        this.src = DEFAULT_LOGO_URL;
-      } else {
-        this.onerror = null;
-        this.src = EMBEDDED_DEFAULT_LOGO_SVG;
-      }
+      this.onerror = null;
+      this.src = 'icon-192.png?v=2';
     };
   };
   bindImgFallback(sidebarImg);
   bindImgFallback(invoiceImg);
   bindImgFallback(settingsImg);
 
-  if (logoUrl) {
+  const effectiveLogoUrl = logoUrl || 'uploaded-logo.png?v=2';
+
+  if (effectiveLogoUrl) {
     if (sidebarImg) {
-      sidebarImg.src = logoUrl;
+      sidebarImg.src = effectiveLogoUrl;
       sidebarImg.classList.remove('hidden');
     }
     if (sidebarFallback) sidebarFallback.classList.add('hidden');
 
     if (invoiceImg) {
-      invoiceImg.src = logoUrl;
+      invoiceImg.src = effectiveLogoUrl;
       invoiceImg.classList.remove('hidden');
     }
     if (invoiceFallback) invoiceFallback.classList.add('hidden');
 
     if (settingsImg) {
-      settingsImg.src = logoUrl;
+      settingsImg.src = effectiveLogoUrl;
       settingsImg.classList.remove('hidden');
     }
     if (settingsFallback) settingsFallback.classList.add('hidden');
 
-    if (favicon) {
-      favicon.href = logoUrl;
-    }
+    const favicons = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+    favicons.forEach(link => {
+      link.href = effectiveLogoUrl;
+    });
 
     // Apple Touch Icon for iOS 'Add to Home Screen'
-    // iOS Safari SpringBoard strictly requires a PNG/JPEG URL and completely fails on SVG or data: URIs.
-    // Static apple-touch-icon.png in root provides the actual high-res solid brand photo.
     const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
     if (isCustom && logoUrl && !logoUrl.startsWith('data:') && !logoUrl.endsWith('.svg') && !logoUrl.includes('image/svg+xml')) {
       appleTouchIcons.forEach(link => {
@@ -11187,7 +11525,7 @@ function applyAppLogo(logoUrl, isCustom = false) {
       });
     } else {
       appleTouchIcons.forEach(link => {
-        link.href = 'apple-touch-icon.png';
+        link.href = 'apple-touch-icon.png?v=2';
       });
     }
   } else {
@@ -11200,9 +11538,14 @@ function applyAppLogo(logoUrl, isCustom = false) {
     if (settingsImg) settingsImg.classList.add('hidden');
     if (settingsFallback) settingsFallback.classList.remove('hidden');
 
+    const favicons = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+    favicons.forEach(link => {
+      link.href = 'uploaded-logo.png?v=2';
+    });
+
     const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
     appleTouchIcons.forEach(link => {
-      link.href = 'apple-touch-icon.png';
+      link.href = 'apple-touch-icon.png?v=2';
     });
   }
 
@@ -12052,3 +12395,1022 @@ window.openMobileMoreDrawer = openMobileMoreDrawer;
 window.closeMobileMoreDrawer = closeMobileMoreDrawer;
 window.toggleMobileMoreDrawer = toggleMobileMoreDrawer;
 window.closeAllOpenModals = closeAllOpenModals;
+
+// ==================== DAILY REPORT & SMART SHOP VISIT TRACKER ====================
+
+const STORAGE_DAILY_VISITS = 'third_man_daily_visits_v1';
+const STORAGE_DAILY_REPORTS = 'third_man_daily_reports_v1';
+
+let dailyVisits = [];
+let dailyReports = {};
+
+let dailyReportSelectedDate = '';
+let dailyReportCalendarYear = new Date().getFullYear();
+let dailyReportCalendarMonth = new Date().getMonth();
+
+const VISIT_CADENCE_DAYS = {
+  'A': 7,
+  'B': 14,
+  'C': 21,
+  'D': 30
+};
+
+function getLocalTodayDateString() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function loadDailyReportDataFromStorage() {
+  try {
+    const vRaw = localStorage.getItem(STORAGE_DAILY_VISITS);
+    if (vRaw) dailyVisits = JSON.parse(vRaw) || [];
+  } catch (e) {
+    dailyVisits = [];
+  }
+  try {
+    const rRaw = localStorage.getItem(STORAGE_DAILY_REPORTS);
+    if (rRaw) dailyReports = JSON.parse(rRaw) || {};
+  } catch (e) {
+    dailyReports = {};
+  }
+  if (!dailyReportSelectedDate) {
+    dailyReportSelectedDate = getLocalTodayDateString();
+  }
+}
+
+function saveDailyReportDataToStorage() {
+  try {
+    localStorage.setItem(STORAGE_DAILY_VISITS, JSON.stringify(dailyVisits));
+    localStorage.setItem(STORAGE_DAILY_REPORTS, JSON.stringify(dailyReports));
+  } catch (e) {}
+}
+
+function mergeIncomingCloudVisits(remoteVisits) {
+  if (!Array.isArray(remoteVisits)) return;
+  const visitMap = new Map();
+  dailyVisits.forEach(v => { if (v && v.id) visitMap.set(v.id, v); });
+  remoteVisits.forEach(rv => {
+    if (rv && rv.id) visitMap.set(rv.id, rv);
+  });
+  dailyVisits = Array.from(visitMap.values());
+  saveDailyReportDataToStorage();
+  if (currentMainView === 'daily-report') {
+    renderDailyReportView();
+  }
+}
+
+function syncCloudVisit(visit) {
+  if (!db || !visit || !visit.id) return;
+  db.collection('dailyVisits').doc(visit.id).set(sanitizeForFirestore(visit)).catch(err => {
+    console.warn('Error saving visit to Firestore:', err);
+  });
+}
+
+function deleteCloudVisit(visitId) {
+  if (!db || !visitId) return;
+  db.collection('dailyVisits').doc(visitId).delete().catch(err => {
+    console.warn('Error deleting visit from Firestore:', err);
+  });
+}
+
+function syncCloudDailyReport(report) {
+  if (!db || !report || !report.date) return;
+  db.collection('dailyReports').doc(report.date).set(sanitizeForFirestore(report)).catch(err => {
+    console.warn('Error saving daily report to Firestore:', err);
+  });
+}
+
+function deleteCloudDailyReport(dateStr) {
+  if (!db || !dateStr) return;
+  db.collection('dailyReports').doc(dateStr).delete().catch(err => {
+    console.warn('Error deleting daily report from Firestore:', err);
+  });
+}
+
+function upgradeProspectToCustomerIfOrdered(customerNameOrId) {
+  if (!customerNameOrId || !Array.isArray(customers)) return;
+  const target = String(customerNameOrId).trim().toLowerCase();
+  const cust = customers.find(c => (c.id && c.id === customerNameOrId) || ((c.name || '').trim().toLowerCase() === target));
+  if (cust && cust.isProspect) {
+    cust.isProspect = false;
+    cust.updatedAt = new Date().toISOString();
+    saveDataToStorage();
+    if (typeof syncCloudCustomer === 'function') syncCloudCustomer(cust);
+  }
+}
+
+function getShopCadenceInfo(shop, refDateStr = null) {
+  const today = refDateStr || getLocalTodayDateString();
+  const tier = (shop && shop.tier && VISIT_CADENCE_DAYS[shop.tier]) ? shop.tier : 'C';
+  const intervalDays = VISIT_CADENCE_DAYS[tier] || 21;
+  const lastVisit = (shop && shop.lastVisitedDate) ? shop.lastVisitedDate : null;
+
+  if (!lastVisit) {
+    return {
+      tier,
+      intervalDays,
+      lastVisit: null,
+      daysSinceLastVisit: null,
+      daysRemaining: -9999,
+      status: 'never_visited',
+      badgeText: 'Never Visited',
+      statusClass: 'bg-rose-50 text-rose-700 border-rose-200',
+      isOverdue: true,
+      priorityWeight: 10000 + (tier === 'A' ? 40 : tier === 'B' ? 30 : tier === 'C' ? 20 : 10)
+    };
+  }
+
+  if (lastVisit === today) {
+    return {
+      tier,
+      intervalDays,
+      lastVisit,
+      daysSinceLastVisit: 0,
+      daysRemaining: intervalDays,
+      status: 'visited_today',
+      badgeText: 'Visited Today',
+      statusClass: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      isOverdue: false,
+      priorityWeight: -1000
+    };
+  }
+
+  const [ty, tm, td] = today.split('-').map(Number);
+  const [ly, lm, ld] = lastVisit.split('-').map(Number);
+  const dToday = new Date(ty, tm - 1, td);
+  const dLast = new Date(ly, lm - 1, ld);
+  const diffMs = dToday.getTime() - dLast.getTime();
+  const daysPassed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+  const daysRemaining = intervalDays - daysPassed;
+
+  if (daysRemaining < 0) {
+    const overDays = Math.abs(daysRemaining);
+    return {
+      tier,
+      intervalDays,
+      lastVisit,
+      daysSinceLastVisit: daysPassed,
+      daysRemaining,
+      status: 'overdue',
+      badgeText: `Overdue by ${overDays}d`,
+      statusClass: 'bg-rose-50 text-rose-700 border-rose-200',
+      isOverdue: true,
+      priorityWeight: (overDays * 100) + (tier === 'A' ? 40 : tier === 'B' ? 30 : tier === 'C' ? 20 : 10)
+    };
+  } else if (daysRemaining <= 2) {
+    return {
+      tier,
+      intervalDays,
+      lastVisit,
+      daysSinceLastVisit: daysPassed,
+      daysRemaining,
+      status: 'due_soon',
+      badgeText: daysRemaining === 0 ? 'Due Today' : `Due in ${daysRemaining}d`,
+      statusClass: 'bg-amber-50 text-amber-700 border-amber-200',
+      isOverdue: false,
+      priorityWeight: 500 - (daysRemaining * 10) + (tier === 'A' ? 20 : tier === 'B' ? 10 : 0)
+    };
+  } else {
+    return {
+      tier,
+      intervalDays,
+      lastVisit,
+      daysSinceLastVisit: daysPassed,
+      daysRemaining,
+      status: 'on_track',
+      badgeText: `Due in ${daysRemaining}d`,
+      statusClass: 'bg-slate-50 text-slate-700 border-slate-200',
+      isOverdue: false,
+      priorityWeight: -daysRemaining
+    };
+  }
+}
+
+function renderDailyReportView() {
+  loadDailyReportDataFromStorage();
+
+  const todayStr = getLocalTodayDateString();
+  if (!dailyReportSelectedDate) dailyReportSelectedDate = todayStr;
+
+  // Header Title & Date Label
+  const dateLabel = document.getElementById('dailyReportDateLabel');
+  const dayBadge = document.getElementById('dailyReportDayBadge');
+  if (dateLabel) {
+    const [y, m, d] = dailyReportSelectedDate.split('-').map(Number);
+    const dateObj = new Date(y, m - 1, d);
+    const dayName = dateObj.toLocaleDateString('en-US', { weekday: 'long' });
+    const formattedDate = `${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
+    dateLabel.textContent = `Selected Date: ${dayName}, ${formattedDate}`;
+  }
+  if (dayBadge) {
+    if (dailyReportSelectedDate === todayStr) {
+      dayBadge.textContent = 'Today';
+      dayBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200';
+    } else if (dailyReportSelectedDate < todayStr) {
+      dayBadge.textContent = 'Past Date';
+      dayBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200';
+    } else {
+      dayBadge.textContent = 'Future Date';
+      dayBadge.className = 'px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200';
+    }
+  }
+
+  renderDailyReportCalendar();
+  renderDailyReportAnalytics();
+  populateDailyReportTownFilter();
+  renderDailyReportShopsList();
+
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function navigateDailyReportMonth(delta) {
+  dailyReportCalendarMonth += delta;
+  if (dailyReportCalendarMonth > 11) {
+    dailyReportCalendarMonth = 0;
+    dailyReportCalendarYear++;
+  } else if (dailyReportCalendarMonth < 0) {
+    dailyReportCalendarMonth = 11;
+    dailyReportCalendarYear--;
+  }
+  renderDailyReportCalendar();
+  renderDailyReportAnalytics();
+}
+
+function selectDailyReportDate(target) {
+  if (target === 'today') {
+    dailyReportSelectedDate = getLocalTodayDateString();
+  } else if (target) {
+    dailyReportSelectedDate = target;
+  }
+  const [y, m] = dailyReportSelectedDate.split('-').map(Number);
+  dailyReportCalendarYear = y;
+  dailyReportCalendarMonth = m - 1;
+  renderDailyReportView();
+}
+
+function renderDailyReportCalendar() {
+  const container = document.getElementById('dailyReportCalendarContainer');
+  const monthYearLabel = document.getElementById('dailyReportMonthYearLabel');
+  if (!container) return;
+
+  const monthNames = [
+    'January', 'February', 'March', 'April', 'May', 'June',
+    'July', 'August', 'September', 'October', 'November', 'December'
+  ];
+
+  if (monthYearLabel) {
+    monthYearLabel.textContent = `${monthNames[dailyReportCalendarMonth]} ${dailyReportCalendarYear}`;
+  }
+
+  const todayStr = getLocalTodayDateString();
+  const year = dailyReportCalendarYear;
+  const month = dailyReportCalendarMonth;
+
+  // Calculate days in month and start day (Mon = 0, ..., Sun = 6)
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  const firstDayOfWeek = (new Date(year, month, 1).getDay() + 6) % 7; // Monday-based index
+
+  let missedDaysCount = 0;
+
+  // Build Weekday Headers
+  const weekdays = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let html = `
+    <div class="grid grid-cols-7 gap-1 sm:gap-1.5 text-center mb-1">
+      ${weekdays.map(w => `<div class="text-[10px] sm:text-xs font-bold text-slate-400 uppercase py-1 select-none">${w}</div>`).join('')}
+    </div>
+    <div class="grid grid-cols-7 gap-1 sm:gap-1.5">
+  `;
+
+  // Empty cells for days before the 1st
+  for (let i = 0; i < firstDayOfWeek; i++) {
+    html += `<div class="min-h-[50px] sm:min-h-[58px] rounded-xl bg-slate-50/50 border border-slate-100/60 opacity-40"></div>`;
+  }
+
+  // Days of the month
+  for (let day = 1; day <= daysInMonth; day++) {
+    const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+    const dateObj = new Date(year, month, day);
+    const isSunday = (dateObj.getDay() === 0);
+    const isToday = (dateStr === todayStr);
+    const isSelected = (dateStr === dailyReportSelectedDate);
+    const isPast = (dateStr < todayStr);
+
+    const report = dailyReports[dateStr] || null;
+    const isLeave = (report && (report.status === 'leave' || report.status === 'holiday' || report.status === 'off'));
+    const isSent = (report && report.status === 'submitted');
+
+    const dayVisits = dailyVisits.filter(v => v.date === dateStr);
+    const hasVisits = (dayVisits.length > 0);
+
+    // Indicator resolution
+    let indicatorHtml = '';
+    let dayBgClass = 'bg-slate-50/60 border-slate-200/70 hover:bg-slate-100';
+
+    if (isLeave) {
+      const label = report.status === 'leave' ? 'Leave' : report.status === 'holiday' ? 'Holiday' : 'Off';
+      indicatorHtml = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-700" title="${escapeHtml(report.reason || label)}">${label}</span>`;
+      dayBgClass = 'bg-slate-100/80 border-slate-300/80';
+    } else if (hasVisits || isSent) {
+      indicatorHtml = `<span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 flex items-center gap-0.5">✓ ${dayVisits.length > 0 ? dayVisits.length : 'Sent'}</span>`;
+      dayBgClass = 'bg-emerald-50/50 border-emerald-200';
+    } else if (isPast && !isSunday) {
+      // Missed report alert on past working days
+      missedDaysCount++;
+      indicatorHtml = `<span class="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-300" title="Missed Report">Missed</span>`;
+      dayBgClass = 'bg-rose-50/60 border-rose-200';
+    } else if (isSunday) {
+      indicatorHtml = `<span class="text-[9px] text-slate-400 font-semibold select-none">Sun</span>`;
+      dayBgClass = 'bg-slate-50/40 border-slate-100';
+    }
+
+    if (isSelected) {
+      dayBgClass += ' ring-2 ring-blue-600 bg-blue-50/80 border-blue-400';
+    }
+
+    html += `
+      <button type="button" onclick="selectDailyReportDate('${dateStr}')" class="p-1 sm:p-2 rounded-xl flex flex-col items-center justify-between min-h-[50px] sm:min-h-[58px] border transition cursor-pointer select-none ${dayBgClass}">
+        <div class="flex items-center justify-between w-full px-0.5">
+          <span class="text-xs font-black ${isToday ? 'text-blue-600' : 'text-slate-800'}">${day}</span>
+          ${isToday ? '<span class="w-1.5 h-1.5 rounded-full bg-blue-600"></span>' : ''}
+        </div>
+        <div class="w-full flex items-center justify-center my-auto">
+          ${indicatorHtml}
+        </div>
+      </button>
+    `;
+  }
+
+  html += `</div>`;
+  container.innerHTML = html;
+
+  // Update Missed Report Banner and Sidebar Badge
+  const banner = document.getElementById('dailyReportMissedAlertBanner');
+  const alertText = document.getElementById('dailyReportMissedAlertText');
+  const sidebarBadge = document.getElementById('sidebarDailyReportBadge');
+
+  if (banner && alertText) {
+    if (missedDaysCount > 0) {
+      banner.classList.remove('hidden');
+      alertText.textContent = `You have ${missedDaysCount} missed daily report${missedDaysCount > 1 ? 's' : ''} this month.`;
+    } else {
+      banner.classList.add('hidden');
+    }
+  }
+
+  if (sidebarBadge) {
+    if (missedDaysCount > 0) {
+      sidebarBadge.textContent = missedDaysCount;
+      sidebarBadge.classList.remove('hidden');
+    } else {
+      sidebarBadge.classList.add('hidden');
+    }
+  }
+}
+
+function renderDailyReportAnalytics() {
+  const statSelected = document.getElementById('statSelectedDateVisits');
+  const statSelectedStatus = document.getElementById('statSelectedDateStatus');
+  const statReach = document.getElementById('statMonthlyReach');
+  const statTotalVisits = document.getElementById('statMonthlyVisitsTotal');
+  const statFocus = document.getElementById('statFocusNeededCount');
+
+  const selectedVisits = dailyVisits.filter(v => v.date === dailyReportSelectedDate);
+  const rep = dailyReports[dailyReportSelectedDate] || null;
+
+  if (statSelected) statSelected.textContent = selectedVisits.length;
+  if (statSelectedStatus) {
+    if (rep && (rep.status === 'leave' || rep.status === 'holiday' || rep.status === 'off')) {
+      statSelectedStatus.textContent = rep.status === 'leave' ? 'Leave' : 'Holiday';
+      statSelectedStatus.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-200 text-slate-700';
+    } else if (rep && rep.status === 'submitted') {
+      statSelectedStatus.textContent = 'Report Sent 🟢';
+      statSelectedStatus.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800';
+    } else if (selectedVisits.length > 0) {
+      statSelectedStatus.textContent = 'Logged (Not Sent) 🟡';
+      statSelectedStatus.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800';
+    } else {
+      statSelectedStatus.textContent = 'Pending ⏳';
+      statSelectedStatus.className = 'px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600';
+    }
+  }
+
+  // Monthly Reach
+  const monthPrefix = `${dailyReportCalendarYear}-${String(dailyReportCalendarMonth + 1).padStart(2, '0')}`;
+  const monthVisits = dailyVisits.filter(v => v.date && v.date.startsWith(monthPrefix));
+  const uniqueShops = new Set(monthVisits.map(v => v.shopId || v.shopName)).size;
+
+  if (statReach) statReach.textContent = uniqueShops;
+  if (statTotalVisits) statTotalVisits.textContent = `${monthVisits.length} visits total`;
+
+  // Focus Needed (Overdue & Never Visited shops)
+  const todayStr = getLocalTodayDateString();
+  let overdueCount = 0;
+  if (Array.isArray(customers)) {
+    customers.forEach(shop => {
+      const cadence = getShopCadenceInfo(shop, todayStr);
+      if (cadence.isOverdue) overdueCount++;
+    });
+  }
+  if (statFocus) statFocus.textContent = overdueCount;
+}
+
+function populateDailyReportTownFilter() {
+  const select = document.getElementById('dailyReportTownFilter');
+  if (!select) return;
+
+  const currentVal = select.value || 'all';
+  const towns = new Set();
+  if (Array.isArray(customers)) {
+    customers.forEach(c => {
+      const t = c.town || c.area || c.location;
+      if (t && typeof t === 'string' && t.trim()) towns.add(t.trim());
+    });
+  }
+  const sorted = Array.from(towns).sort((a, b) => a.localeCompare(b));
+
+  let opts = '<option value="all">All Towns</option>';
+  sorted.forEach(t => {
+    opts += `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`;
+  });
+  select.innerHTML = opts;
+  select.value = currentVal;
+}
+
+function setDailyReportFilterStatus(status) {
+  const select = document.getElementById('dailyReportStatusFilter');
+  if (select) {
+    select.value = status;
+    renderDailyReportShopsList();
+  }
+}
+
+function renderDailyReportShopsList() {
+  const container = document.getElementById('dailyReportShopsListContainer');
+  const countBadge = document.getElementById('dailyReportShopsCountBadge');
+  if (!container) return;
+
+  const searchQuery = (document.getElementById('dailyReportSearchInput')?.value || '').trim().toLowerCase();
+  const townFilter = document.getElementById('dailyReportTownFilter')?.value || 'all';
+  const typeFilter = document.getElementById('dailyReportTypeFilter')?.value || 'all';
+  const tierFilter = document.getElementById('dailyReportTierFilter')?.value || 'all';
+  const statusFilter = document.getElementById('dailyReportStatusFilter')?.value || 'all';
+
+  if (!Array.isArray(customers) || customers.length === 0) {
+    container.innerHTML = `
+      <div class="p-8 text-center text-slate-400 text-xs">
+        <i data-lucide="store" class="w-8 h-8 mx-auto text-slate-300 mb-2"></i>
+        <p class="font-bold">No shops or customers available</p>
+        <button type="button" onclick="openQuickAddShopModal()" class="mt-2 text-blue-600 hover:underline font-bold">+ Add First Shop</button>
+      </div>
+    `;
+    if (countBadge) countBadge.textContent = '0 shops';
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  // Filter and compute cadence for all shops
+  const list = [];
+  const todayStr = getLocalTodayDateString();
+
+  customers.forEach(shop => {
+    if (!shop || !shop.name) return;
+    const name = (shop.name || '').toLowerCase();
+    const town = (shop.town || shop.area || '').toLowerCase();
+    const phone = (shop.ownerPhone || shop.phone || '').toLowerCase();
+
+    // 1. Search Query
+    if (searchQuery) {
+      if (!name.includes(searchQuery) && !town.includes(searchQuery) && !phone.includes(searchQuery)) {
+        return;
+      }
+    }
+
+    // 2. Town Filter
+    if (townFilter !== 'all') {
+      if ((shop.town || shop.area || '').toLowerCase() !== townFilter.toLowerCase()) {
+        return;
+      }
+    }
+
+    // 3. Shop Type Filter
+    if (typeFilter === 'customers' && shop.isProspect) return;
+    if (typeFilter === 'prospects' && !shop.isProspect) return;
+
+    // Cadence calculation
+    const cadence = getShopCadenceInfo(shop, dailyReportSelectedDate);
+
+    // 4. Tier Filter
+    if (tierFilter !== 'all' && cadence.tier !== tierFilter) return;
+
+    // Check if visited on dailyReportSelectedDate
+    const isVisitedOnDate = dailyVisits.some(v => v.shopId === shop.id && v.date === dailyReportSelectedDate);
+
+    // 5. Status Filter
+    if (statusFilter === 'overdue' && !cadence.isOverdue) return;
+    if (statusFilter === 'due_soon' && cadence.status !== 'due_soon') return;
+    if (statusFilter === 'visited_today' && !isVisitedOnDate) return;
+    if (statusFilter === 'on_track' && (cadence.status !== 'on_track' && !isVisitedOnDate)) return;
+
+    list.push({ shop, cadence, isVisitedOnDate });
+  });
+
+  // Sorting: Overdue & Never Visited sorted to the TOP by default!
+  list.sort((a, b) => {
+    // If one is visited on selected date, push visited to bottom so pending visits are in focus
+    if (a.isVisitedOnDate && !b.isVisitedOnDate) return 1;
+    if (!a.isVisitedOnDate && b.isVisitedOnDate) return -1;
+    return b.cadence.priorityWeight - a.cadence.priorityWeight;
+  });
+
+  if (countBadge) countBadge.textContent = `${list.length} shop${list.length === 1 ? '' : 's'}`;
+
+  if (list.length === 0) {
+    container.innerHTML = `
+      <div class="p-8 text-center text-slate-400 text-xs">
+        <i data-lucide="search-x" class="w-8 h-8 mx-auto text-slate-300 mb-2"></i>
+        <p class="font-bold">No shops match the selected filters</p>
+        <p class="text-[11px] text-slate-400 mt-1">Try resetting filters or click below to add as a new shop</p>
+        <button type="button" onclick="openQuickAddShopModal('${escapeHtml(searchQuery)}')" class="mt-3 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-100 font-bold inline-flex items-center gap-1.5 border border-blue-200">
+          <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+          <span>+ Add "${escapeHtml(searchQuery || 'New Shop')}"</span>
+        </button>
+      </div>
+    `;
+    if (window.lucide) lucide.createIcons();
+    return;
+  }
+
+  let html = '';
+  list.forEach(({ shop, cadence, isVisitedOnDate }) => {
+    const isProspect = !!shop.isProspect;
+    const phone = shop.ownerPhone || shop.phone || '';
+    const town = shop.town || shop.area || 'Ernakulam';
+
+    let lastVisitSubtext = 'Never visited yet • 0 visits';
+    if (shop.lastVisitedDate) {
+      const [ly, lm, ld] = shop.lastVisitedDate.split('-').map(Number);
+      const diffMs = new Date().getTime() - new Date(ly, lm - 1, ld).getTime();
+      const daysAgo = Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+      const formatted = `${String(ld).padStart(2, '0')}-${String(lm).padStart(2, '0')}-${ly}`;
+      lastVisitSubtext = `Last visited: ${formatted} (${daysAgo === 0 ? 'Today' : `${daysAgo}d ago`}) • ${shop.visitCount || 1} total visit${(shop.visitCount || 1) === 1 ? '' : 's'}`;
+    }
+
+    html += `
+      <div class="p-3.5 sm:p-4 hover:bg-slate-50/80 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+        
+        <!-- Shop Info -->
+        <div class="min-w-0 flex-1">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h4 class="font-black text-slate-900 text-sm truncate">${escapeHtml(shop.name)}</h4>
+            
+            <!-- Customer vs Prospect Badge -->
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold ${isProspect ? 'bg-purple-100 text-purple-800 border border-purple-200' : 'bg-blue-100 text-blue-800 border border-blue-200'}">
+              ${isProspect ? 'Prospect (Lead)' : 'Customer'}
+            </span>
+
+            <!-- Town Badge -->
+            <span class="px-2 py-0.5 rounded-md text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+              ${escapeHtml(town)}
+            </span>
+
+            <!-- Cadence Status Pill -->
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold border ${cadence.statusClass}">
+              ${isVisitedOnDate ? 'Visited on Date ✓' : cadence.badgeText}
+            </span>
+          </div>
+
+          <div class="flex items-center gap-3 text-[11px] text-slate-500 mt-1 flex-wrap">
+            <span>${lastVisitSubtext}</span>
+            ${phone ? `
+              <a href="tel:${phone}" class="text-blue-600 hover:underline flex items-center gap-1 font-semibold">
+                <i data-lucide="phone" class="w-3 h-3"></i>
+                <span>${escapeHtml(phone)}</span>
+              </a>
+            ` : ''}
+          </div>
+        </div>
+
+        <!-- Tier Selector & Actions -->
+        <div class="flex items-center gap-2 shrink-0 flex-wrap sm:flex-nowrap">
+          
+          <!-- Quick Tier Dropdown -->
+          <div class="relative" title="Change visit priority tier">
+            <select onchange="quickSetShopTier('${shop.id}', this.value, event)" class="h-8 text-[11px] bg-slate-100 hover:bg-white border border-slate-200 rounded-lg px-2 font-bold text-slate-700 cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500">
+              <option value="A" ${cadence.tier === 'A' ? 'selected' : ''}>Tier A (7d)</option>
+              <option value="B" ${cadence.tier === 'B' ? 'selected' : ''}>Tier B (14d)</option>
+              <option value="C" ${cadence.tier === 'C' ? 'selected' : ''}>Tier C (21d)</option>
+              <option value="D" ${cadence.tier === 'D' ? 'selected' : ''}>Tier D (30d)</option>
+            </select>
+          </div>
+
+          <!-- Mark Visit Action Button -->
+          ${isVisitedOnDate ? `
+            <div class="flex items-center gap-1">
+              <span class="h-8 px-3 rounded-lg bg-emerald-100 text-emerald-800 font-bold text-xs inline-flex items-center gap-1.5 border border-emerald-200 select-none">
+                <i data-lucide="check" class="w-3.5 h-3.5 text-emerald-600"></i>
+                <span>Visited</span>
+              </span>
+              <button type="button" onclick="removeShopVisitForDate('${shop.id}', '${dailyReportSelectedDate}')" class="h-8 px-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition" title="Undo / Delete visit for this date">
+                <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+          ` : `
+            <button type="button" onclick="openLogShopVisitModal('${shop.id}')" class="h-8 px-3.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-xs transition flex items-center gap-1.5 active:scale-95">
+              <i data-lucide="map-pin" class="w-3.5 h-3.5"></i>
+              <span>Mark Visit</span>
+            </button>
+          `}
+
+        </div>
+
+      </div>
+    `;
+  });
+
+  container.innerHTML = html;
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function quickSetShopTier(shopId, newTier, event) {
+  if (event) event.stopPropagation();
+  if (!shopId || !newTier) return;
+  const shop = customers.find(c => c.id === shopId);
+  if (!shop) return;
+
+  shop.tier = newTier;
+  shop.updatedAt = new Date().toISOString();
+  saveDataToStorage();
+  syncCloudCustomer(shop);
+
+  renderDailyReportShopsList();
+  renderDailyReportAnalytics();
+  showNotification(`Tier updated to ${newTier} for ${shop.name} (${VISIT_CADENCE_DAYS[newTier]}d cadence)`);
+}
+
+let activeVisitModalShopId = null;
+
+function openLogShopVisitModal(shopId) {
+  const shop = customers.find(c => c.id === shopId);
+  if (!shop) return;
+
+  activeVisitModalShopId = shop.id;
+  const modal = document.getElementById('logShopVisitModal');
+  const title = document.getElementById('lsvmShopTitle');
+  const details = document.getElementById('lsvmShopDetails');
+  const dateLabel = document.getElementById('lsvmVisitDateLabel');
+  const hiddenId = document.getElementById('lsvmShopId');
+  const notes = document.getElementById('lsvmNotes');
+  const selectedTag = document.getElementById('lsvmSelectedTag');
+
+  if (title) title.textContent = `Mark Visit: ${shop.name}`;
+  if (details) details.textContent = `${shop.name} • ${shop.town || shop.area || 'Ernakulam'}`;
+  if (dateLabel) {
+    const [y, m, d] = dailyReportSelectedDate.split('-').map(Number);
+    dateLabel.textContent = `Visit Date: ${String(d).padStart(2, '0')}-${String(m).padStart(2, '0')}-${y}`;
+  }
+  if (hiddenId) hiddenId.value = shop.id;
+  if (notes) notes.value = '';
+  if (selectedTag) selectedTag.value = 'General Visit';
+
+  // Reset tag button styles
+  document.querySelectorAll('.visit-tag-btn').forEach(btn => {
+    btn.className = 'visit-tag-btn p-2 rounded-lg border border-slate-200 text-center font-bold text-slate-700 hover:border-blue-500 hover:bg-blue-50 transition';
+  });
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeLogShopVisitModal() {
+  const modal = document.getElementById('logShopVisitModal');
+  if (modal) modal.classList.add('hidden');
+  activeVisitModalShopId = null;
+}
+
+function selectVisitTag(tag) {
+  const selectedTag = document.getElementById('lsvmSelectedTag');
+  if (selectedTag) selectedTag.value = tag;
+
+  document.querySelectorAll('.visit-tag-btn').forEach(btn => {
+    if (btn.textContent.includes(tag)) {
+      btn.className = 'visit-tag-btn p-2 rounded-lg border border-blue-600 bg-blue-50 text-center font-extrabold text-blue-700 transition ring-1 ring-blue-500';
+    } else {
+      btn.className = 'visit-tag-btn p-2 rounded-lg border border-slate-200 text-center font-bold text-slate-700 hover:border-blue-500 hover:bg-blue-50 transition';
+    }
+  });
+}
+
+function handleLogShopVisitSubmit(event) {
+  event.preventDefault();
+  const shopId = document.getElementById('lsvmShopId')?.value || activeVisitModalShopId;
+  const tag = document.getElementById('lsvmSelectedTag')?.value || 'General Visit';
+  const notes = document.getElementById('lsvmNotes')?.value || '';
+
+  markQuickShopVisit(shopId, tag, notes);
+  closeLogShopVisitModal();
+}
+
+function markQuickShopVisit(shopId, tag = 'General Visit', notes = '') {
+  if (!shopId) return;
+  const shop = customers.find(c => c.id === shopId);
+  if (!shop) return;
+
+  const targetDate = dailyReportSelectedDate || getLocalTodayDateString();
+
+  // Check if visit already exists for this shop & date
+  let visit = dailyVisits.find(v => v.shopId === shop.id && v.date === targetDate);
+  if (visit) {
+    visit.tag = tag;
+    visit.notes = notes;
+    visit.timestamp = new Date().toISOString();
+  } else {
+    visit = {
+      id: 'v_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+      shopId: shop.id,
+      shopName: shop.name,
+      town: shop.town || shop.area || 'Ernakulam',
+      date: targetDate,
+      timestamp: new Date().toISOString(),
+      tier: shop.tier || 'C',
+      notes: notes || '',
+      tag: tag || 'General Visit',
+      isProspect: !!shop.isProspect
+    };
+    dailyVisits.push(visit);
+  }
+
+  // Update shop record: update lastVisitedDate and visitCount
+  shop.lastVisitedDate = targetDate;
+  shop.visitCount = (shop.visitCount || 0) + 1;
+  shop.updatedAt = new Date().toISOString();
+
+  saveDailyReportDataToStorage();
+  saveDataToStorage();
+
+  syncCloudVisit(visit);
+  syncCloudCustomer(shop);
+
+  renderDailyReportView();
+  showNotification(`✓ Visit recorded for ${shop.name}!`);
+}
+
+function removeShopVisitForDate(shopId, dateStr) {
+  if (!shopId || !dateStr) return;
+  const shop = customers.find(c => c.id === shopId);
+  const vIndex = dailyVisits.findIndex(v => v.shopId === shopId && v.date === dateStr);
+  if (vIndex < 0) return;
+
+  const removed = dailyVisits[vIndex];
+  dailyVisits.splice(vIndex, 1);
+  saveDailyReportDataToStorage();
+  deleteCloudVisit(removed.id);
+
+  // Recalculate lastVisitedDate for shop
+  if (shop) {
+    const shopRemainingVisits = dailyVisits.filter(v => v.shopId === shopId).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+    shop.lastVisitedDate = shopRemainingVisits.length > 0 ? shopRemainingVisits[0].date : null;
+    shop.visitCount = Math.max(0, (shop.visitCount || 1) - 1);
+    saveDataToStorage();
+    syncCloudCustomer(shop);
+  }
+
+  renderDailyReportView();
+  showNotification(`Visit removed for ${shop ? shop.name : 'shop'}.`);
+}
+
+function openLeaveHolidayModal() {
+  const modal = document.getElementById('leaveHolidayModal');
+  const dateInput = document.getElementById('lhDateInput');
+  const typeSelect = document.getElementById('lhTypeSelect');
+  const reasonInput = document.getElementById('lhReasonInput');
+  const removeBtn = document.getElementById('btnRemoveLeaveHoliday');
+
+  if (dateInput) dateInput.value = dailyReportSelectedDate || getLocalTodayDateString();
+
+  const currentReport = dailyReports[dateInput.value];
+  if (currentReport && (currentReport.status === 'leave' || currentReport.status === 'holiday' || currentReport.status === 'off')) {
+    if (typeSelect) typeSelect.value = currentReport.status;
+    if (reasonInput) reasonInput.value = currentReport.reason || '';
+    if (removeBtn) removeBtn.classList.remove('hidden');
+  } else {
+    if (typeSelect) typeSelect.value = 'leave';
+    if (reasonInput) reasonInput.value = '';
+    if (removeBtn) removeBtn.classList.add('hidden');
+  }
+
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeLeaveHolidayModal() {
+  const modal = document.getElementById('leaveHolidayModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function handleLeaveHolidaySubmit(event) {
+  event.preventDefault();
+  const dateInput = document.getElementById('lhDateInput');
+  const typeSelect = document.getElementById('lhTypeSelect');
+  const reasonInput = document.getElementById('lhReasonInput');
+  if (!dateInput || !dateInput.value) return;
+
+  const date = dateInput.value;
+  const status = typeSelect?.value || 'leave';
+  const reason = reasonInput?.value || '';
+
+  dailyReports[date] = {
+    id: date,
+    date: date,
+    status: status,
+    reason: reason,
+    updatedAt: new Date().toISOString()
+  };
+
+  saveDailyReportDataToStorage();
+  syncCloudDailyReport(dailyReports[date]);
+
+  closeLeaveHolidayModal();
+  renderDailyReportView();
+  showNotification(`✓ ${date} marked as ${status === 'leave' ? 'Leave' : 'Holiday'} (Missed alert cleared)`);
+}
+
+function removeLeaveHoliday() {
+  const dateInput = document.getElementById('lhDateInput');
+  if (!dateInput || !dateInput.value) return;
+  const date = dateInput.value;
+
+  delete dailyReports[date];
+  saveDailyReportDataToStorage();
+  deleteCloudDailyReport(date);
+
+  closeLeaveHolidayModal();
+  renderDailyReportView();
+  showNotification(`Leave / Holiday cleared for ${date}.`);
+}
+
+function exportDailyWhatsAppReport() {
+  const targetDate = dailyReportSelectedDate || getLocalTodayDateString();
+  const dayVisits = dailyVisits.filter(v => v.date === targetDate);
+
+  if (dayVisits.length === 0) {
+    showNotification('No visits logged yet for this date. Click "Mark Visit" on shops first!');
+    return;
+  }
+
+  // Format date as DD-MM-YYYY
+  const [y, m, d] = targetDate.split('-');
+  const displayDate = `${d}-${m}-${y}`;
+
+  // Ultra-minimal format containing ONLY date and visited shops
+  let text = `*Date: ${displayDate}*\n`;
+  dayVisits.forEach((v, idx) => {
+    const townText = v.town ? ` (${v.town})` : '';
+    text += `${idx + 1}. ${v.shopName}${townText}\n`;
+  });
+
+  // Mark day report as submitted/sent
+  dailyReports[targetDate] = {
+    id: targetDate,
+    date: targetDate,
+    status: 'submitted',
+    visitCount: dayVisits.length,
+    sentAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString()
+  };
+  saveDailyReportDataToStorage();
+  syncCloudDailyReport(dailyReports[targetDate]);
+
+  renderDailyReportCalendar();
+  renderDailyReportAnalytics();
+
+  // Copy to clipboard
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(text).then(() => {
+      showNotification(`✓ WhatsApp Report copied! Marked as Sent 🟢`);
+    }).catch(() => {
+      fallbackCopyText(text);
+      showNotification(`✓ WhatsApp Report copied! Marked as Sent 🟢`);
+    });
+  } else {
+    fallbackCopyText(text);
+    showNotification(`✓ WhatsApp Report copied! Marked as Sent 🟢`);
+  }
+
+  // Also prompt to open WhatsApp directly
+  setTimeout(() => {
+    showConfirmModal({
+      title: 'WhatsApp Report Copied!',
+      message: `Daily report for <strong>${displayDate}</strong> with <strong>${dayVisits.length} visits</strong> copied to clipboard.<br><br>Would you like to open WhatsApp now to paste and send it?`,
+      hint: text.replace(/\n/g, '<br>'),
+      confirmText: 'Open WhatsApp',
+      confirmClass: 'bg-emerald-600 hover:bg-emerald-700 text-white',
+      onConfirm: () => {
+        const waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+        window.open(waUrl, '_blank');
+      }
+    });
+  }, 300);
+}
+
+function openQuickAddShopModal(prefillName = '') {
+  const modal = document.getElementById('quickAddShopModal');
+  const nameInput = document.getElementById('qasShopName');
+  const form = document.getElementById('quickAddShopForm');
+  if (form) form.reset();
+  if (nameInput && prefillName) nameInput.value = prefillName;
+  if (modal) modal.classList.remove('hidden');
+}
+
+function closeQuickAddShopModal() {
+  const modal = document.getElementById('quickAddShopModal');
+  if (modal) modal.classList.add('hidden');
+}
+
+function handleQuickAddShopSubmit(event) {
+  event.preventDefault();
+  const name = document.getElementById('qasShopName')?.value.trim();
+  const shopType = document.getElementById('qasShopType')?.value || 'prospect';
+  const tier = document.getElementById('qasTier')?.value || 'C';
+  const town = document.getElementById('qasTown')?.value.trim() || 'Ernakulam';
+  const phone = document.getElementById('qasPhone')?.value.trim() || '';
+  const notes = document.getElementById('qasNotes')?.value.trim() || '';
+
+  if (!name) return;
+
+  const newShop = {
+    id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+    name: name,
+    category: 'Wholesaler',
+    district: 'Ernakulam',
+    town: town,
+    area: town,
+    location: town,
+    phone: phone,
+    ownerPhone: phone,
+    tier: tier,
+    isProspect: (shopType === 'prospect'),
+    lastVisitedDate: null,
+    visitCount: 0,
+    notes: notes,
+    createdAt: new Date().toISOString()
+  };
+
+  customers.push(newShop);
+  saveDataToStorage();
+  syncCloudCustomer(newShop);
+
+  if (typeof populateSavedAreasDatalists === 'function') {
+    populateSavedAreasDatalists();
+  }
+
+  closeQuickAddShopModal();
+  renderDailyReportView();
+  showNotification(`✓ New ${shopType === 'prospect' ? 'Prospect lead' : 'Customer'} "${name}" added successfully!`);
+}
+
+// Window Exports for Daily Report
+window.loadDailyReportDataFromStorage = loadDailyReportDataFromStorage;
+window.saveDailyReportDataToStorage = saveDailyReportDataToStorage;
+window.mergeIncomingCloudVisits = mergeIncomingCloudVisits;
+window.syncCloudVisit = syncCloudVisit;
+window.deleteCloudVisit = deleteCloudVisit;
+window.syncCloudDailyReport = syncCloudDailyReport;
+window.deleteCloudDailyReport = deleteCloudDailyReport;
+window.upgradeProspectToCustomerIfOrdered = upgradeProspectToCustomerIfOrdered;
+window.getShopCadenceInfo = getShopCadenceInfo;
+window.renderDailyReportView = renderDailyReportView;
+window.renderDailyReportCalendar = renderDailyReportCalendar;
+window.navigateDailyReportMonth = navigateDailyReportMonth;
+window.selectDailyReportDate = selectDailyReportDate;
+window.renderDailyReportAnalytics = renderDailyReportAnalytics;
+window.populateDailyReportTownFilter = populateDailyReportTownFilter;
+window.renderDailyReportShopsList = renderDailyReportShopsList;
+window.setDailyReportFilterStatus = setDailyReportFilterStatus;
+window.quickSetShopTier = quickSetShopTier;
+window.openLogShopVisitModal = openLogShopVisitModal;
+window.closeLogShopVisitModal = closeLogShopVisitModal;
+window.selectVisitTag = selectVisitTag;
+window.handleLogShopVisitSubmit = handleLogShopVisitSubmit;
+window.markQuickShopVisit = markQuickShopVisit;
+window.removeShopVisitForDate = removeShopVisitForDate;
+window.openLeaveHolidayModal = openLeaveHolidayModal;
+window.closeLeaveHolidayModal = closeLeaveHolidayModal;
+window.handleLeaveHolidaySubmit = handleLeaveHolidaySubmit;
+window.removeLeaveHoliday = removeLeaveHoliday;
+window.exportDailyWhatsAppReport = exportDailyWhatsAppReport;
+window.openQuickAddShopModal = openQuickAddShopModal;
+window.closeQuickAddShopModal = closeQuickAddShopModal;
+window.handleQuickAddShopSubmit = handleQuickAddShopSubmit;
+window.getLocalTodayDateString = getLocalTodayDateString;
+window.toggleDeliveryAlertMenu = toggleDeliveryAlertMenu;
+window.closeDeliveryAlertMenu = closeDeliveryAlertMenu;
+window.clearDeliveryAlertHistory = clearDeliveryAlertHistory;
+window.toggleMainDeliveryAlertSound = toggleMainDeliveryAlertSound;
+window.requestBrowserNotificationPermission = requestBrowserNotificationPermission;
+window.playOrderDeliveredSound = playOrderDeliveredSound;
+window.triggerOrderDeliveredAlert = triggerOrderDeliveredAlert;
