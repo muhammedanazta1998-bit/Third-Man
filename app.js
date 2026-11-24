@@ -3586,7 +3586,7 @@ function updateTownDatalists() {
       });
     }
 
-    let opts = `<option value="all">🏙️ All Towns (${customers.length})</option>`;
+    let opts = `<option value="all">All Towns (${customers.length})</option>`;
     townsToShow.forEach(t => {
       const count = townCounts[t.toLowerCase()] || 0;
       opts += `<option value="${escapeHtml(t)}">${escapeHtml(t)}${count > 0 ? ` (${count})` : ''}</option>`;
@@ -9549,6 +9549,114 @@ function setCustomerCategoryFilter(cat) {
   renderCustomersList();
 }
 
+function toggleCustomerFiltersPanel() {
+  const panel = document.getElementById('custFiltersPanel');
+  const chevron = document.getElementById('custFiltersChevron');
+  if (!panel) return;
+  const isHidden = panel.classList.contains('hidden');
+  if (isHidden) {
+    panel.classList.remove('hidden');
+    if (chevron) chevron.style.transform = 'rotate(180deg)';
+  } else {
+    panel.classList.add('hidden');
+    if (chevron) chevron.style.transform = 'rotate(0deg)';
+  }
+}
+
+function clearCustomerSearch() {
+  const searchInput = document.getElementById('custDirectorySearchInput');
+  if (searchInput) {
+    searchInput.value = '';
+    searchInput.focus();
+  }
+  renderCustomersList();
+}
+
+function resetCustomerFilters() {
+  customerDistrictFilter = 'all';
+  customerTownFilter = 'all';
+  customerAreaFilter = 'all';
+  customerCategoryFilter = 'all';
+
+  const distSelect = document.getElementById('custDistrictFilterSelect');
+  if (distSelect) distSelect.value = 'all';
+
+  const townSelect = document.getElementById('custTownFilterSelect');
+  if (townSelect) townSelect.value = 'all';
+
+  const searchInput = document.getElementById('custDirectorySearchInput');
+  if (searchInput) searchInput.value = '';
+
+  const pillBtns = document.querySelectorAll('.cust-cat-pill');
+  pillBtns.forEach(btn => {
+    btn.classList.remove('bg-blue-600', 'text-white', 'shadow-xs');
+    btn.classList.add('bg-slate-100', 'text-slate-600');
+  });
+  const allBtn = document.getElementById('custCatBtn-all');
+  if (allBtn) {
+    allBtn.classList.remove('bg-slate-100', 'text-slate-600');
+    allBtn.classList.add('bg-blue-600', 'text-white', 'shadow-xs');
+  }
+
+  updateTownDatalists();
+  renderCustomersList();
+}
+
+function updateCustomerActiveFilterUI() {
+  const badge = document.getElementById('custActiveFiltersBadge');
+  const toggleBtn = document.getElementById('btnToggleCustFilters');
+  const resetBtn = document.getElementById('btnResetCustFilters');
+  const clearSearchBtn = document.getElementById('btnCustSearchClear');
+  const searchInput = document.getElementById('custDirectorySearchInput');
+
+  // Search clear button
+  if (clearSearchBtn && searchInput) {
+    if (searchInput.value.trim().length > 0) {
+      clearSearchBtn.classList.remove('hidden');
+    } else {
+      clearSearchBtn.classList.add('hidden');
+    }
+  }
+
+  // Active filters calculation
+  let activeCount = 0;
+  if (customerDistrictFilter && customerDistrictFilter !== 'all') activeCount++;
+  if ((customerTownFilter && customerTownFilter !== 'all') || (customerAreaFilter && customerAreaFilter !== 'all')) activeCount++;
+  if (customerCategoryFilter && customerCategoryFilter !== 'all') activeCount++;
+
+  if (badge) {
+    if (activeCount > 0) {
+      badge.textContent = activeCount;
+      badge.classList.remove('hidden');
+      badge.classList.add('flex');
+    } else {
+      badge.classList.add('hidden');
+      badge.classList.remove('flex');
+    }
+  }
+
+  if (toggleBtn) {
+    if (activeCount > 0) {
+      toggleBtn.classList.remove('bg-slate-50', 'text-slate-700', 'border-slate-200');
+      toggleBtn.classList.add('bg-blue-50', 'text-blue-700', 'border-blue-400/80', 'ring-2', 'ring-blue-500/20');
+    } else {
+      toggleBtn.classList.remove('bg-blue-50', 'text-blue-700', 'border-blue-400/80', 'ring-2', 'ring-blue-500/20');
+      toggleBtn.classList.add('bg-slate-50', 'text-slate-700', 'border-slate-200');
+    }
+  }
+
+  if (resetBtn) {
+    const hasSearch = searchInput && searchInput.value.trim().length > 0;
+    if (activeCount > 0 || hasSearch) {
+      resetBtn.classList.remove('hidden');
+      resetBtn.classList.add('inline-flex');
+    } else {
+      resetBtn.classList.add('hidden');
+      resetBtn.classList.remove('inline-flex');
+    }
+  }
+}
+
 function openCustomersModal() {
   switchMainView('customers');
 }
@@ -10027,13 +10135,15 @@ function renderCustomersList() {
 
   if (countBadge) countBadge.textContent = customers.length;
   if (filteredBadge) {
-    const isFilterActive = (customerDistrictFilter !== 'all' || customerTownFilter !== 'all' || customerAreaFilter !== 'all' || customerCategoryFilter !== 'all');
+    const isFilterActive = (customerDistrictFilter !== 'all' || customerTownFilter !== 'all' || customerAreaFilter !== 'all' || customerCategoryFilter !== 'all' || Boolean(search));
     if (!isFilterActive) {
-      filteredBadge.textContent = `${uniqueFiltered.length} customers`;
+      filteredBadge.textContent = `${uniqueFiltered.length} customer${uniqueFiltered.length === 1 ? '' : 's'}`;
     } else {
-      filteredBadge.textContent = `${uniqueFiltered.length} of ${customers.length}`;
+      filteredBadge.textContent = `Showing ${uniqueFiltered.length} of ${customers.length}`;
     }
   }
+
+  updateCustomerActiveFilterUI();
 
   container.innerHTML = '';
 
@@ -14651,3 +14761,7 @@ window.markDeliveryAsViewed = markDeliveryAsViewed;
 if (typeof getOrderBadgeState !== 'undefined') window.getOrderBadgeState = getOrderBadgeState;
 window.getOrderDeliveredBadgeState = getOrderDeliveredBadgeState;
 window.highlightDeliveredOrderInTable = highlightDeliveredOrderInTable;
+window.toggleCustomerFiltersPanel = toggleCustomerFiltersPanel;
+window.clearCustomerSearch = clearCustomerSearch;
+window.resetCustomerFilters = resetCustomerFilters;
+window.updateCustomerActiveFilterUI = updateCustomerActiveFilterUI;

@@ -132,6 +132,32 @@
       <div class="delivery-alert-footer"></div>
     </div>
   </div>
+
+  <!-- Customers Directory Standardized Toolbar & Collapsible Filter Fixtures -->
+  <div id="customersListContainer"></div>
+  <span id="custCountBadge"></span>
+  <span id="custFilteredCountBadge"></span>
+  <input type="text" id="custDirectorySearchInput" />
+  <button type="button" id="btnCustSearchClear" class="hidden"></button>
+  <button type="button" id="btnToggleCustFilters"></button>
+  <span id="custActiveFiltersBadge" class="hidden"></span>
+  <i id="custFiltersChevron"></i>
+  <div id="custFiltersPanel" class="hidden"></div>
+  <select id="custDistrictFilterSelect">
+    <option value="all">All Districts</option>
+    <option value="Ernakulam">Ernakulam</option>
+  </select>
+  <select id="custTownFilterSelect">
+    <option value="all">All Towns</option>
+  </select>
+  <select id="custAreaFilterSelect" class="hidden"></select>
+  <button type="button" id="custCatBtn-all" class="cust-cat-pill"></button>
+  <button type="button" id="custCatBtn-Caterer" class="cust-cat-pill"></button>
+  <button type="button" id="custCatBtn-Hotel" class="cust-cat-pill"></button>
+  <button type="button" id="custCatBtn-Wholesaler" class="cust-cat-pill"></button>
+  <button type="button" id="custCatBtn-Retailer" class="cust-cat-pill"></button>
+  <button type="button" id="custCatBtn-Other" class="cust-cat-pill"></button>
+  <button type="button" id="btnResetCustFilters" class="hidden"></button>
 </div>
 
 <script>
@@ -928,6 +954,59 @@ window.onerror = function(msg, url, line, col, err) {
   clearDeliveryAlertHistory();
   const historyAfterClear = getDeliveredHistory();
   assert(historyAfterClear.length === 0, "clearDeliveryAlertHistory() cleans up history store");
+
+  // ==========================================
+  // TEST 16: Customer Directory Standardized Filter & Search Controls
+  // ==========================================
+  log("\n--- TEST 16: Customer Directory Standardized Filter & Search Controls ---");
+
+  const custFiltersPanel = document.getElementById('custFiltersPanel');
+  const custFiltersChevron = document.getElementById('custFiltersChevron');
+  const custActiveFiltersBadge = document.getElementById('custActiveFiltersBadge');
+  const btnToggleCustFilters = document.getElementById('btnToggleCustFilters');
+  const btnResetCustFilters = document.getElementById('btnResetCustFilters');
+  const custSearchInput = document.getElementById('custDirectorySearchInput');
+  const btnCustSearchClear = document.getElementById('btnCustSearchClear');
+
+  assert(custFiltersPanel !== null, "Customer filters panel fixture exists in DOM");
+  assert(custFiltersPanel.classList.contains('hidden'), "Customer filters panel starts collapsed/hidden by default");
+
+  // 1. Toggle filter panel
+  toggleCustomerFiltersPanel();
+  assert(!custFiltersPanel.classList.contains('hidden'), "toggleCustomerFiltersPanel() expands the filters panel");
+  assert(custFiltersChevron.style.transform === 'rotate(180deg)', "Chevron rotates 180deg when filters panel expands");
+
+  toggleCustomerFiltersPanel();
+  assert(custFiltersPanel.classList.contains('hidden'), "toggleCustomerFiltersPanel() collapses the filters panel back");
+  assert(custFiltersChevron.style.transform === 'rotate(0deg)', "Chevron rotates 0deg when filters panel collapses");
+
+  // 2. Active filter count badge
+  setCustomerDistrictFilter('Ernakulam');
+  assert(customerDistrictFilter === 'Ernakulam', "District filter successfully set to 'Ernakulam'");
+  assert(!custActiveFiltersBadge.classList.contains('hidden'), "Active filter count badge is shown when district filter is active");
+  assert(custActiveFiltersBadge.textContent === '1', "Active filter badge shows '1' when 1 filter is active");
+
+  setCustomerCategoryFilter('Caterer');
+  assert(customerCategoryFilter === 'Caterer', "Category filter successfully set to 'Caterer'");
+  assert(custActiveFiltersBadge.textContent === '2', "Active filter badge shows '2' when district + category are active");
+  assert(!btnResetCustFilters.classList.contains('hidden'), "Reset filters button is visible when filters are active");
+
+  // 3. Search clear button
+  custSearchInput.value = 'Basmati';
+  renderCustomersList();
+  assert(!btnCustSearchClear.classList.contains('hidden'), "Search clear '✕' button is visible when search input has text");
+
+  clearCustomerSearch();
+  assert(custSearchInput.value === '', "clearCustomerSearch() successfully empties search input");
+  assert(btnCustSearchClear.classList.contains('hidden'), "Search clear '✕' button is hidden after clearing search");
+
+  // 4. Reset all customer filters
+  resetCustomerFilters();
+  assert(customerDistrictFilter === 'all', "resetCustomerFilters() resets district filter to 'all'");
+  assert(customerTownFilter === 'all', "resetCustomerFilters() resets town filter to 'all'");
+  assert(customerCategoryFilter === 'all', "resetCustomerFilters() resets category filter to 'all'");
+  assert(custActiveFiltersBadge.classList.contains('hidden'), "Active filter badge is hidden after reset");
+  assert(btnResetCustFilters.classList.contains('hidden'), "Reset filters button is hidden after reset");
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

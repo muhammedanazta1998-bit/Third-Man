@@ -1351,26 +1351,30 @@
       <div id="customersDirectoryContainer" class="space-y-6">
 
         <!-- View Header Card -->
-        <div class="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div class="flex items-center gap-3">
-          <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center shrink-0 shadow-inner">
-            <i data-lucide="users" class="w-5 h-5"></i>
-          </div>
-          <div>
-            <div class="flex items-center gap-2">
-              <h2 class="font-black text-base sm:text-lg text-slate-900 leading-tight">Customer Directory</h2>
-              <span id="custCountBadge" class="bg-blue-100 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">0</span>
+        <div class="bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 shadow-xs flex items-center justify-between gap-3">
+          <div class="flex items-center gap-3 min-w-0">
+            <div class="w-10 h-10 rounded-xl bg-purple-50 text-purple-600 border border-purple-200 flex items-center justify-center shrink-0 shadow-inner">
+              <i data-lucide="users" class="w-5 h-5"></i>
             </div>
-            <p class="text-xs text-slate-500">Manage wholesale buyers, catering teams, hotels &amp; contacts</p>
+            <div class="min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <h2 class="font-black text-base sm:text-lg text-slate-900 leading-tight">Customer Directory</h2>
+                <span id="custCountBadge" class="bg-purple-100 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-full text-[11px] font-bold">0</span>
+              </div>
+              <p class="text-xs text-slate-500 truncate hidden sm:block">Manage wholesale buyers, catering teams, hotels &amp; contacts</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 shrink-0">
+            <button type="button" onclick="runManualCustomerDeduplication()" class="px-2.5 py-2 text-xs font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-xl transition active:scale-95 shadow-2xs flex items-center gap-1.5" title="Merge &amp; Remove Duplicate Customers">
+              <i data-lucide="sparkles" class="w-3.5 h-3.5 text-amber-600"></i>
+              <span class="hidden md:inline">Clean Duplicates</span>
+            </button>
+            <button type="button" onclick="openAddCustomerForm()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl transition inline-flex items-center gap-1.5 shadow-sm active:scale-95">
+              <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
+              <span>+ Add Customer</span>
+            </button>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <button type="button" onclick="openAddCustomerForm()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3.5 py-2 rounded-xl transition inline-flex items-center gap-1.5 shadow-sm active:scale-95">
-            <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
-            <span>+ Add Customer</span>
-          </button>
-        </div>
-      </div>
 
         <!-- Collapsible Add / Edit Customer Form Card (Hidden by default) -->
         <div id="customerFormCard" class="hidden bg-white p-4 sm:p-6 rounded-2xl border-2 border-blue-400/80 shadow-md transition-all">
@@ -1529,88 +1533,87 @@
               </form>
             </div>
 
-        <!-- Full-Width Customers Directory List & Search Card -->
-        <div class="w-full bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
-          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 pb-3 border-b border-slate-100">
-            <div class="flex items-center gap-2 flex-wrap">
-              <h4 class="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                <i data-lucide="contact" class="w-4 h-4 text-blue-600"></i>
-                <span>Customer Directory List</span>
-              </h4>
-              <button type="button" onclick="runManualCustomerDeduplication()" class="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg transition active:scale-95 shadow-2xs" title="Merge &amp; Remove Duplicate Customers">
-                <i data-lucide="sparkles" class="w-3 h-3 text-amber-600"></i>
-                <span>Clean Duplicates</span>
-              </button>
+        <!-- Standardized Compact Customer Directory Toolbar Card -->
+        <div id="customersDirectoryToolbarCard" class="w-full bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+          
+          <!-- Unified Search & Filter Header Row -->
+          <div class="flex items-center gap-2">
+            <!-- Search Bar -->
+            <div class="relative flex-1 min-w-0">
+              <i data-lucide="search" class="w-4 h-4 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+              <input type="text" id="custDirectorySearchInput" oninput="renderCustomersList()" placeholder="Search customer, town, phone, notes..." class="w-full text-xs pl-9 pr-8 py-2 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 rounded-xl focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition font-medium text-slate-800 placeholder:text-slate-400 shadow-2xs">
+              <button type="button" id="btnCustSearchClear" onclick="clearCustomerSearch()" class="hidden absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400 hover:text-slate-600 text-xs font-bold flex items-center justify-center transition" title="Clear search">✕</button>
             </div>
-            <div class="flex items-center gap-2 flex-1 sm:justify-end">
-              <button type="button" onclick="openAddCustomerForm()" class="text-xs bg-blue-600 hover:bg-blue-700 text-white font-bold px-3 py-1.5 rounded-xl transition inline-flex items-center gap-1.5 shadow-sm active:scale-95 shrink-0">
-                <i data-lucide="user-plus" class="w-3.5 h-3.5"></i>
-                <span>+ Add New Customer</span>
-              </button>
-              <div class="relative flex-1 sm:w-64 sm:flex-none">
-                <i data-lucide="search" class="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
-                <input type="text" id="custDirectorySearchInput" oninput="renderCustomersList()" placeholder="Search name, town, landmark, panchayath, phone..." class="w-full text-xs pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition">
+
+            <!-- Sleek "Filters" Toggle Button with Active Badge -->
+            <button type="button" id="btnToggleCustFilters" onclick="toggleCustomerFiltersPanel()" class="px-3 py-2 rounded-xl bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 shadow-2xs flex items-center gap-1.5 transition active:scale-95 shrink-0 cursor-pointer" title="Toggle Search Filters">
+              <i data-lucide="sliders-horizontal" class="w-3.5 h-3.5 text-slate-600"></i>
+              <span>Filters</span>
+              <span id="custActiveFiltersBadge" class="hidden min-w-[18px] h-[18px] px-1 rounded-full bg-blue-600 text-white text-[10px] font-black items-center justify-center shadow-xs">0</span>
+              <i data-lucide="chevron-down" id="custFiltersChevron" class="w-3 h-3 text-slate-400 transition-transform duration-200"></i>
+            </button>
+          </div>
+
+          <!-- Collapsible Filters Drawer / Panel (Collapsed by default) -->
+          <div id="custFiltersPanel" class="hidden pt-2.5 border-t border-slate-100 space-y-2.5">
+            
+            <!-- District & Town Selectors (2-column compact grid on mobile, flex row on desktop) -->
+            <div class="grid grid-cols-2 sm:flex sm:items-center gap-2">
+              <!-- District Select -->
+              <div class="relative flex-1">
+                <select id="custDistrictFilterSelect" onchange="setCustomerDistrictFilter(this.value)" class="w-full text-xs bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-lg px-2.5 py-1.5 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition truncate cursor-pointer shadow-2xs">
+                  <option value="all">All Districts</option>
+                  <option value="Ernakulam">Ernakulam</option>
+                  <option value="Thrissur">Thrissur</option>
+                  <option value="Palakkad">Palakkad</option>
+                  <option value="Malappuram">Malappuram</option>
+                  <option value="Kozhikode">Kozhikode</option>
+                  <option value="Wayanad">Wayanad</option>
+                  <option value="Kannur">Kannur</option>
+                  <option value="Kasaragod">Kasaragod</option>
+                  <option value="Kottayam">Kottayam</option>
+                  <option value="Alappuzha">Alappuzha</option>
+                  <option value="Idukki">Idukki</option>
+                  <option value="Pathanamthitta">Pathanamthitta</option>
+                  <option value="Kollam">Kollam</option>
+                  <option value="Thiruvananthapuram">Thiruvananthapuram</option>
+                </select>
               </div>
+
+              <!-- Town Select -->
+              <div class="relative flex-1">
+                <select id="custTownFilterSelect" onchange="setCustomerTownFilter(this.value)" class="w-full text-xs bg-slate-50 hover:bg-slate-100/70 border border-slate-200 rounded-lg px-2.5 py-1.5 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition truncate cursor-pointer shadow-2xs">
+                  <option value="all">All Towns</option>
+                </select>
+                <select id="custAreaFilterSelect" onchange="setCustomerTownFilter(this.value)" class="hidden"></select>
+              </div>
+            </div>
+
+            <!-- Category Filter Pills Row -->
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 text-xs">
+              <button type="button" onclick="setCustomerCategoryFilter('all')" id="custCatBtn-all" class="cust-cat-pill px-3 py-1 rounded-lg text-xs font-bold bg-blue-600 text-white shadow-xs transition shrink-0">All</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Caterer')" id="custCatBtn-Caterer" class="cust-cat-pill px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0">Caterers</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Hotel / Restaurant')" id="custCatBtn-Hotel" class="cust-cat-pill px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0">Hotels</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Wholesaler')" id="custCatBtn-Wholesaler" class="cust-cat-pill px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0">Wholesalers</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Retailer')" id="custCatBtn-Retailer" class="cust-cat-pill px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0">Retailers</button>
+              <button type="button" onclick="setCustomerCategoryFilter('Other')" id="custCatBtn-Other" class="cust-cat-pill px-3 py-1 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-600 transition shrink-0">Others</button>
+            </div>
+
+            <!-- Active Filters Status Bar & Clear Button -->
+            <div class="pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+              <span id="custFilteredCountBadge" class="font-semibold text-[11px] text-slate-500">All customers</span>
+              <button type="button" id="btnResetCustFilters" onclick="resetCustomerFilters()" class="hidden text-xs text-rose-600 hover:text-rose-700 font-bold hover:underline transition flex items-center gap-1">
+                <i data-lucide="rotate-ccw" class="w-3 h-3"></i>
+                <span>Reset Filters</span>
+              </button>
             </div>
           </div>
 
-            <!-- District & Town Filter Bar -->
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200/80">
-              <div class="flex items-center gap-2 flex-wrap flex-1 min-w-0">
-                <!-- District Filter -->
-                <div class="flex items-center gap-1">
-                  <span class="text-[11px] font-bold text-slate-700 flex items-center gap-1 shrink-0">
-                    <i data-lucide="map" class="w-3.5 h-3.5 text-blue-600"></i>
-                    <span>District:</span>
-                  </span>
-                  <select id="custDistrictFilterSelect" onchange="setCustomerDistrictFilter(this.value)" class="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-                    <option value="all">🌍 All Districts</option>
-                    <option value="Ernakulam">Ernakulam</option>
-                    <option value="Thrissur">Thrissur</option>
-                    <option value="Palakkad">Palakkad</option>
-                    <option value="Malappuram">Malappuram</option>
-                    <option value="Kozhikode">Kozhikode</option>
-                    <option value="Wayanad">Wayanad</option>
-                    <option value="Kannur">Kannur</option>
-                    <option value="Kasaragod">Kasaragod</option>
-                    <option value="Kottayam">Kottayam</option>
-                    <option value="Alappuzha">Alappuzha</option>
-                    <option value="Idukki">Idukki</option>
-                    <option value="Pathanamthitta">Pathanamthitta</option>
-                    <option value="Kollam">Kollam</option>
-                    <option value="Thiruvananthapuram">Thiruvananthapuram</option>
-                  </select>
-                </div>
-
-                <!-- Town Filter -->
-                <div class="flex items-center gap-1">
-                  <span class="text-[11px] font-bold text-slate-700 flex items-center gap-1 shrink-0">
-                    <i data-lucide="map-pin" class="w-3.5 h-3.5 text-rose-500"></i>
-                    <span>Town:</span>
-                  </span>
-                  <select id="custTownFilterSelect" onchange="setCustomerTownFilter(this.value)" class="text-xs bg-white border border-slate-200 rounded-lg px-2.5 py-1 font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500/30">
-                    <option value="all">🏙️ All Towns</option>
-                  </select>
-                  <select id="custAreaFilterSelect" onchange="setCustomerTownFilter(this.value)" class="hidden"></select>
-                </div>
-              </div>
-              <span id="custFilteredCountBadge" class="text-[10px] text-slate-500 font-semibold px-2 py-0.5 bg-white border border-slate-200 rounded-md shrink-0">All towns</span>
-            </div>
-
-            <!-- Category Filter Pills -->
-            <div class="flex items-center gap-1.5 overflow-x-auto pb-1 text-xs">
-              <button type="button" onclick="setCustomerCategoryFilter('all')" id="custCatBtn-all" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-bold bg-blue-600 text-white shadow-xs transition">All</button>
-              <button type="button" onclick="setCustomerCategoryFilter('Caterer')" id="custCatBtn-Caterer" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">👨‍🍳 Caterers</button>
-              <button type="button" onclick="setCustomerCategoryFilter('Hotel / Restaurant')" id="custCatBtn-Hotel" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">🏨 Hotels</button>
-              <button type="button" onclick="setCustomerCategoryFilter('Wholesaler')" id="custCatBtn-Wholesaler" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">📦 Wholesalers</button>
-              <button type="button" onclick="setCustomerCategoryFilter('Retailer')" id="custCatBtn-Retailer" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">🏪 Retailers</button>
-              <button type="button" onclick="setCustomerCategoryFilter('Other')" id="custCatBtn-Other" class="cust-cat-pill px-3 py-1.5 rounded-xl text-[11px] font-medium bg-slate-100 text-slate-600 hover:bg-slate-200 transition">🏷️ Others</button>
-            </div>
-
-            <div id="customersListContainer" class="space-y-2">
-              <!-- Rendered dynamically -->
-            </div>
+          <!-- Customer Cards Dynamic List Container -->
+          <div id="customersListContainer" class="space-y-2 pt-1">
+            <!-- Rendered dynamically -->
           </div>
+        </div>
       </div>
       <!-- /#customersDirectoryContainer -->
 
