@@ -2880,17 +2880,146 @@ function extractCustomersFromOrdersIfMissing(syncToCloud = false) {
   }
 }
 
-function syncCloudOrder(order) {
-  if (!db || !order || !order.id) return;
-  if (isOrderTombstoned(order.id)) return;
-  updateCloudSyncStatus('syncing', 'Saving to Cloud...');
-  const docRef = db.collection('orders').doc(order._firestoreDocId || order.id);
-  docRef.set(sanitizeForFirestore(order)).then(() => {
-    updateCloudSyncStatus('synced', 'Live Synced 🟢');
-  }).catch(err => {
-    console.warn('Error saving order to Firestore:', err);
-    updateCloudSyncStatus('offline', 'Saved Locally (Offline)');
+function sanitizeOrderForFirestore(order) {
+  if (!order || typeof order !== 'object') return {};
+
+  const nowIso = new Date().toISOString();
+  const rawCust = order.customer || {};
+
+  const cleanCustomer = {
+    id: String(rawCust.id || ('c_' + Date.now())),
+    name: String(rawCust.name || 'Customer').trim(),
+    category: String(rawCust.category || 'Caterer'),
+    district: String(rawCust.district || 'Ernakulam'),
+    town: String(rawCust.town || '').trim(),
+    landmark: String(rawCust.landmark || '').trim(),
+    panchayath: String(rawCust.panchayath || '').trim(),
+    area: String(rawCust.area || rawCust.town || '').trim(),
+    place: String(rawCust.place || rawCust.landmark || rawCust.town || '').trim(),
+    location: String(rawCust.location || 'Ernakulam').trim(),
+    ownerName: String(rawCust.ownerName || '').trim(),
+    ownerPhone: String(rawCust.ownerPhone || '').trim(),
+    staffName: String(rawCust.staffName || '').trim(),
+    staffRole: String(rawCust.staffRole || 'Chef / Cook'),
+    staffPhone: String(rawCust.staffPhone || '').trim(),
+    phone: String(rawCust.phone || 'Nil').trim()
+  };
+
+  const rawItems = Array.isArray(order.items) && order.items.length > 0
+    ? order.items
+    : [{
+        productId: order.product?.id || 'p1',
+        productName: order.product?.name || order.productName || 'Biriyani Rice',
+        category: order.category || 'Kaima',
+        bagSize: parseFloat(order.bagSize) || 25,
+        bagQty: parseFloat(order.bagQty) || 1,
+        totalKg: parseFloat(order.totalKg) || (parseFloat(order.bagSize) || 25),
+        perKgRate: parseFloat(order.perKgRate) || 95,
+        totalAmount: parseFloat(order.totalAmount) || 0
+      }];
+
+  const cleanItems = rawItems.map(it => {
+    const size = parseFloat(it?.bagSize) || 25;
+    const qty = parseFloat(it?.bagQty) || 1;
+    const rate = parseFloat(it?.perKgRate) || 95;
+    const weight = parseFloat(it?.totalKg) || (size * qty);
+    const amount = parseFloat(it?.totalAmount) || Math.round(weight * rate);
+    return {
+      productId: String(it?.productId || 'p1'),
+      productName: String(it?.productName || 'Biriyani Rice'),
+      category: String(it?.category || 'Kaima'),
+      bagSize: size,
+      bagQty: qty,
+      perKgRate: rate,
+      totalKg: weight,
+      totalAmount: Math.round(amount)
+    };
   });
+
+  const totalBags = cleanItems.reduce((sum, it) => sum + (parseFloat(it.bagQty) || 0), 0);
+  const totalKg = cleanItems.reduce((sum, it) => sum + (parseFloat(it.totalKg) || 0), 0);
+  const totalAmount = cleanItems.reduce((sum, it) => sum + (parseFloat(it.totalAmount) || 0), 0);
+  const avgRate = totalKg > 0 ? Math.round((totalAmount / totalKg) * 100) / 100 : (cleanItems[0]?.perKgRate || 95);
+
+  const firstProd = cleanItems[0] || { productId: 'p1', productName: 'Biriyani Rice', bagSize: 25 };
+  const primaryProductDisplay = cleanItems.length === 1
+    ? firstProd.productName
+    : `${firstProd.productName} (+${cleanItems.length - 1} more)`;
+
+  const clean = {
+    id: String(order.id),
+    date: String(order.date || nowIso.split('T')[0]),
+    deliveryStatus: String(order.deliveryStatus || 'Normal'),
+    dispatchStatus: String(order.dispatchStatus || 'Pending'),
+    deliveryNote: String(order.deliveryNote || ''),
+    deliveredAt: order.deliveredAt ? String(order.deliveredAt) : null,
+    customer: cleanCustomer,
+    items: cleanItems,
+    product: {
+      id: String(firstProd.productId || 'p1'),
+      name: primaryProductDisplay
+    },
+    bagSize: firstProd.bagSize || 25,
+    bagQty: totalBags,
+    totalKg: totalKg,
+    perKgRate: avgRate,
+    totalAmount: Math.round(totalAmount),
+    paidAmount: parseFloat(order.paidAmount) || 0,
+    balanceDue: (order.balanceDue !== undefined && order.balanceDue !== null) ? parseFloat(order.balanceDue) : Math.round(totalAmount),
+    paymentMode: String(order.paymentMode || 'Cash'),
+    notes: String(order.notes || ''),
+    createdAt: String(order.createdAt || nowIso),
+    updatedAt: String(order.updatedAt || nowIso)
+  };
+
+  if (order._firestoreDocId) {
+    clean._firestoreDocId = String(order._firestoreDocId);
+  }
+
+  // Recursive pass through general sanitizeForFirestore to guarantee zero undefined fields
+  return sanitizeForFirestore(clean);
+}
+
+async function syncCloudOrder(order) {
+  if (!order || !order.id) {
+    const err = new Error('Invalid order payload: Missing order object or order ID.');
+    err.code = 'invalid-order';
+    throw err;
+  }
+
+  // Active or newly saved orders must NEVER be tombstoned
+  removeOrderTombstone(order.id);
+
+  let currentDb = db || (typeof window !== 'undefined' ? window.db : null);
+  if (!currentDb && typeof firebase !== 'undefined' && typeof firebase.firestore === 'function') {
+    if (!firebase.apps || !firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    db = firebase.firestore();
+    currentDb = db;
+  }
+
+  if (!currentDb) {
+    const err = new Error('Cloud database is currently offline or uninitialized.');
+    err.code = 'unavailable';
+    throw err;
+  }
+
+  updateCloudSyncStatus('syncing', 'Saving to Cloud...');
+
+  const cleanOrder = sanitizeOrderForFirestore(order);
+  const docId = String(order._firestoreDocId || order.id).trim();
+  const docRef = currentDb.collection('orders').doc(docId);
+
+  try {
+    await docRef.set(cleanOrder, { merge: true });
+    updateCloudSyncStatus('synced', 'Live Synced 🟢');
+    return cleanOrder;
+  } catch (err) {
+    console.error('CRITICAL: Error saving order to Firestore doc [' + docId + ']:', err);
+    updateCloudSyncStatus('offline', 'Sync Error: ' + (err.code || err.message));
+    throw err;
+  }
 }
 
 async function deleteCloudOrder(orderId, firestoreDocId = null) {
@@ -4126,17 +4255,56 @@ function runManualCustomerDeduplication() {
 
 function generateNextOrderId() {
   let maxNum = 1000;
-  orders.forEach(o => {
-    if (o && o.id) {
-      const match = String(o.id).match(/^ORD-(\d+)$/);
-      if (match) {
-        const num = parseInt(match[1], 10);
-        if (!isNaN(num) && num > maxNum) {
-          maxNum = num;
+
+  // 1. Scan in-memory orders
+  if (Array.isArray(orders)) {
+    orders.forEach(o => {
+      if (o && o.id) {
+        const match = String(o.id).match(/^ORD-(\d+)$/i);
+        if (match) {
+          const num = parseInt(match[1], 10);
+          if (!isNaN(num) && num > maxNum) maxNum = num;
         }
       }
+    });
+  }
+
+  // 2. Scan deletedOrderTombstones so we NEVER reuse an ID that was deleted or tombstoned
+  if (Array.isArray(deletedOrderTombstones)) {
+    deletedOrderTombstones.forEach(t => {
+      const tid = typeof t === 'string' ? t : (t?.id || '');
+      const match = String(tid).match(/^ORD-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+  }
+
+  // 3. Scan trashList
+  if (Array.isArray(trashList)) {
+    trashList.forEach(item => {
+      const itemId = item?.id || item?.data?.id || '';
+      const match = String(itemId).match(/^ORD-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
+    });
+  }
+
+  // 4. Scan known delivery orders map/set
+  if (typeof knownOrderDeliveryStatuses !== 'undefined' && knownOrderDeliveryStatuses) {
+    const keys = knownOrderDeliveryStatuses instanceof Map ? knownOrderDeliveryStatuses.keys() : Object.keys(knownOrderDeliveryStatuses);
+    for (const key of keys) {
+      const match = String(key).match(/^ORD-(\d+)$/i);
+      if (match) {
+        const num = parseInt(match[1], 10);
+        if (!isNaN(num) && num > maxNum) maxNum = num;
+      }
     }
-  });
+  }
+
   return 'ORD-' + (maxNum + 1);
 }
 
@@ -5284,8 +5452,10 @@ function refreshItemRatesForCustomer(customerName) {
 
 // ==================== SAVE ORDER ====================
 
-function handleSaveOrder(event) {
-  event.preventDefault();
+async function handleSaveOrder(event) {
+  if (event && typeof event.preventDefault === 'function') {
+    event.preventDefault();
+  }
 
   let customerName = document.getElementById('customerName')?.value.trim();
   const customerCategory = document.getElementById('customerCategory')?.value || 'Caterer';
@@ -5327,7 +5497,7 @@ function handleSaveOrder(event) {
   const customerStaffRole = document.getElementById('customerStaffRole')?.value || 'Chef / Cook';
   const customerStaffPhoneRaw = document.getElementById('customerStaffPhone')?.value.trim() || '';
   const customerPhoneRaw = document.getElementById('customerPhone')?.value.trim() || '';
-  const orderDate = document.getElementById('orderDate')?.value;
+  const orderDate = document.getElementById('orderDate')?.value || new Date().toISOString().split('T')[0];
   const deliveryStatus = document.getElementById('orderDeliveryStatus')?.value || 'Normal';
   const notes = document.getElementById('orderNotes')?.value.trim() || '';
 
@@ -5363,154 +5533,215 @@ function handleSaveOrder(event) {
     return;
   }
 
-  // Save/update customer in directory if requested
-  const saveCustCheck = document.getElementById('saveCustomerCheckbox');
-  const shouldSaveCust = saveCustCheck ? saveCustCheck.checked : true;
-  let activeCustomerId = document.getElementById('selectedCustomerId')?.value || '';
-  let existingIndex = -1;
+  // UI Button Loading State & Anti-double-submit lock
+  const submitBtn = document.getElementById('btnSubmitOrder');
+  const submitBtnText = document.getElementById('btnSubmitOrderText');
+  const originalBtnContent = submitBtnText ? submitBtnText.textContent : 'Save Order';
+  if (submitBtn) submitBtn.disabled = true;
+  if (submitBtnText) submitBtnText.textContent = 'Saving to Firebase...';
 
-  if (customerName) {
-    const cleanLower = customerName.trim().toLowerCase();
-    const aliasInfo = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[cleanLower];
-    if (aliasInfo) {
-      customerName = aliasInfo.canonicalName;
-      if (!customerTown || customerTown === 'Ernakulam' || customerTown === 'Local') {
-        customerTown = aliasInfo.town;
+  try {
+    // Save/update customer in directory if requested
+    const saveCustCheck = document.getElementById('saveCustomerCheckbox');
+    const shouldSaveCust = saveCustCheck ? saveCustCheck.checked : true;
+    let activeCustomerId = document.getElementById('selectedCustomerId')?.value || '';
+    let existingIndex = -1;
+
+    if (customerName) {
+      const cleanLower = customerName.trim().toLowerCase();
+      const aliasInfo = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[cleanLower];
+      if (aliasInfo) {
+        customerName = aliasInfo.canonicalName;
+        if (!customerTown || customerTown === 'Ernakulam' || customerTown === 'Local') {
+          customerTown = aliasInfo.town;
+        }
       }
     }
-  }
 
-  if (activeCustomerId) {
-    existingIndex = customers.findIndex(c => c.id === activeCustomerId);
-  }
-  if (existingIndex === -1 && customerName) {
-    const cleanLower = customerName.trim().toLowerCase();
-    existingIndex = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === cleanLower);
-  }
-  if (existingIndex === -1 && (cleanOwnerPhone || cleanStaffPhone)) {
-    existingIndex = customers.findIndex(c => {
-      const cOwn = cleanPhoneNumber(c.ownerPhone);
-      const cStf = cleanPhoneNumber(c.staffPhone);
-      const cPh = cleanPhoneNumber(c.phone);
-      return (cleanOwnerPhone && (cOwn === cleanOwnerPhone || cPh === cleanOwnerPhone)) ||
-             (cleanStaffPhone && (cStf === cleanStaffPhone || cPh === cleanStaffPhone));
-    });
-  }
-
-  let finalCustomerId = activeCustomerId;
-
-  if (existingIndex === -1) {
-    if (shouldSaveCust && customerName) {
-      finalCustomerId = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
-      const newCust = {
-        id: finalCustomerId,
-        name: customerName,
-        category: customerCategory,
-        district: customerDistrict,
-        town: customerTown,
-        landmark: customerLandmark,
-        panchayath: customerPanchayath,
-        area: customerArea,
-        place: customerPlace,
-        ownerName: customerOwnerName,
-        ownerPhone: cleanOwnerPhone,
-        staffName: customerStaffName,
-        staffRole: customerStaffRole,
-        staffPhone: cleanStaffPhone,
-        phone: primaryPhone,
-        location: customerLocation || 'Ernakulam',
-        notes: 'Added from order'
-      };
-      removeCustomerTombstone(customerName);
-      customers.push(newCust);
-      saveDataToStorage();
-      syncCloudCustomer(newCust);
-      populateCustomerDropdown();
-      populateSavedAreasDatalists();
+    if (activeCustomerId) {
+      existingIndex = customers.findIndex(c => c.id === activeCustomerId);
     }
-  } else {
-    finalCustomerId = customers[existingIndex].id;
-    if (shouldSaveCust) {
-      let changed = false;
-      const target = customers[existingIndex];
-      if (customerDistrict && (!target.district || target.district === 'Ernakulam')) { target.district = customerDistrict; changed = true; }
-      if (customerTown && !target.town) { target.town = customerTown; target.area = customerTown; changed = true; }
-      if (customerLandmark && !target.landmark) { target.landmark = customerLandmark; target.place = customerLandmark; changed = true; }
-      if (customerPanchayath && !target.panchayath) { target.panchayath = customerPanchayath; changed = true; }
-      if (!target.ownerName && customerOwnerName) { target.ownerName = customerOwnerName; changed = true; }
-      if (!target.ownerPhone && cleanOwnerPhone) { target.ownerPhone = cleanOwnerPhone; changed = true; }
-      if (!target.staffName && customerStaffName) { target.staffName = customerStaffName; changed = true; }
-      if ((!target.staffRole || target.staffRole === 'Chef / Cook') && customerStaffRole) { target.staffRole = customerStaffRole; changed = true; }
-      if (!target.staffPhone && cleanStaffPhone) { target.staffPhone = cleanStaffPhone; changed = true; }
-      if (!target.phone && primaryPhone) { target.phone = primaryPhone; changed = true; }
-      if (customerArea && !target.area) { target.area = customerArea; changed = true; }
-      if (customerPlace && !target.place) { target.place = customerPlace; changed = true; }
-      if ((!target.location || target.location === 'Local' || target.location === 'Ernakulam') && customerLocation) {
-        target.location = customerLocation;
-        changed = true;
-      }
-      if (!target.category && customerCategory) {
-        target.category = customerCategory;
-        changed = true;
-      }
-      if (changed) {
+    if (existingIndex === -1 && customerName) {
+      const cleanLower = customerName.trim().toLowerCase();
+      existingIndex = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === cleanLower);
+    }
+    if (existingIndex === -1 && (cleanOwnerPhone || cleanStaffPhone)) {
+      existingIndex = customers.findIndex(c => {
+        const cOwn = cleanPhoneNumber(c.ownerPhone);
+        const cStf = cleanPhoneNumber(c.staffPhone);
+        const cPh = cleanPhoneNumber(c.phone);
+        return (cleanOwnerPhone && (cOwn === cleanOwnerPhone || cPh === cleanOwnerPhone)) ||
+               (cleanStaffPhone && (cStf === cleanStaffPhone || cPh === cleanStaffPhone));
+      });
+    }
+
+    let finalCustomerId = activeCustomerId;
+
+    if (existingIndex === -1) {
+      if (shouldSaveCust && customerName) {
+        finalCustomerId = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+        const newCust = {
+          id: finalCustomerId,
+          name: customerName,
+          category: customerCategory,
+          district: customerDistrict,
+          town: customerTown,
+          landmark: customerLandmark,
+          panchayath: customerPanchayath,
+          area: customerArea,
+          place: customerPlace,
+          ownerName: customerOwnerName,
+          ownerPhone: cleanOwnerPhone,
+          staffName: customerStaffName,
+          staffRole: customerStaffRole,
+          staffPhone: cleanStaffPhone,
+          phone: primaryPhone,
+          location: customerLocation || 'Ernakulam',
+          notes: 'Added from order'
+        };
+        removeCustomerTombstone(customerName);
+        customers.push(newCust);
         saveDataToStorage();
-        syncCloudCustomer(target);
+        syncCloudCustomer(newCust);
+        populateCustomerDropdown();
         populateSavedAreasDatalists();
       }
+    } else {
+      finalCustomerId = customers[existingIndex].id;
+      if (shouldSaveCust) {
+        let changed = false;
+        const target = customers[existingIndex];
+        if (customerDistrict && (!target.district || target.district === 'Ernakulam')) { target.district = customerDistrict; changed = true; }
+        if (customerTown && !target.town) { target.town = customerTown; target.area = customerTown; changed = true; }
+        if (customerLandmark && !target.landmark) { target.landmark = customerLandmark; target.place = customerLandmark; changed = true; }
+        if (customerPanchayath && !target.panchayath) { target.panchayath = customerPanchayath; changed = true; }
+        if (!target.ownerName && customerOwnerName) { target.ownerName = customerOwnerName; changed = true; }
+        if (!target.ownerPhone && cleanOwnerPhone) { target.ownerPhone = cleanOwnerPhone; changed = true; }
+        if (!target.staffName && customerStaffName) { target.staffName = customerStaffName; changed = true; }
+        if ((!target.staffRole || target.staffRole === 'Chef / Cook') && customerStaffRole) { target.staffRole = customerStaffRole; changed = true; }
+        if (!target.staffPhone && cleanStaffPhone) { target.staffPhone = cleanStaffPhone; changed = true; }
+        if (!target.phone && primaryPhone) { target.phone = primaryPhone; changed = true; }
+        if (customerArea && !target.area) { target.area = customerArea; changed = true; }
+        if (customerPlace && !target.place) { target.place = customerPlace; changed = true; }
+        if ((!target.location || target.location === 'Local' || target.location === 'Ernakulam') && customerLocation) {
+          target.location = customerLocation;
+          changed = true;
+        }
+        if (!target.category && customerCategory) {
+          target.category = customerCategory;
+          changed = true;
+        }
+        if (changed) {
+          saveDataToStorage();
+          syncCloudCustomer(target);
+          populateSavedAreasDatalists();
+        }
+      }
     }
-  }
 
-  // Calculate order totals
-  let totalBags = 0;
-  let totalKg = 0;
-  let totalAmount = 0;
+    // Calculate order totals
+    let totalBags = 0;
+    let totalKg = 0;
+    let totalAmount = 0;
 
-  const sanitizedItems = orderItems.map(item => {
-    const size = parseFloat(item.bagSize) || 25;
-    const qty = parseFloat(item.bagQty) || 1;
-    const rate = parseFloat(item.perKgRate) || 95;
-    const weight = size * qty;
-    const amount = weight * rate;
+    const sanitizedItems = orderItems.map(item => {
+      const size = parseFloat(item.bagSize) || 25;
+      const qty = parseFloat(item.bagQty) || 1;
+      const rate = parseFloat(item.perKgRate) || 95;
+      const weight = size * qty;
+      const amount = weight * rate;
 
-    totalBags += qty;
-    totalKg += weight;
-    totalAmount += amount;
+      totalBags += qty;
+      totalKg += weight;
+      totalAmount += amount;
 
-    const prod = products.find(p => p.id === item.productId) ||
-                 products.find(p => item.productName && (p.name || '').trim().toLowerCase() === item.productName.trim().toLowerCase()) ||
-                 { name: item.productName || 'Biriyani Rice' };
+      const prod = products.find(p => p.id === item.productId) ||
+                   products.find(p => item.productName && (p.name || '').trim().toLowerCase() === item.productName.trim().toLowerCase()) ||
+                   { name: item.productName || 'Biriyani Rice', category: 'Kaima' };
 
-    return {
-      productId: item.productId || prod.id || 'p1',
-      productName: prod.name,
-      bagSize: size,
-      bagQty: qty,
-      perKgRate: rate,
-      totalKg: weight,
-      totalAmount: Math.round(amount)
-    };
-  });
+      return {
+        productId: item.productId || prod.id || 'p1',
+        productName: prod.name || item.productName || 'Biriyani Rice',
+        category: prod.category || item.category || 'Kaima',
+        bagSize: size,
+        bagQty: qty,
+        perKgRate: rate,
+        totalKg: weight,
+        totalAmount: Math.round(amount)
+      };
+    });
 
-  const firstProd = sanitizedItems[0];
-  const primaryProductDisplay = sanitizedItems.length === 1
-    ? firstProd.productName
-    : `${firstProd.productName} (+${sanitizedItems.length - 1} more)`;
+    const firstProd = sanitizedItems[0];
+    const primaryProductDisplay = sanitizedItems.length === 1
+      ? firstProd.productName
+      : `${firstProd.productName} (+${sanitizedItems.length - 1} more)`;
 
-  const averagePerKgRate = totalKg > 0 ? (totalAmount / totalKg) : (firstProd.perKgRate || 95);
+    const averagePerKgRate = totalKg > 0 ? (totalAmount / totalKg) : (firstProd.perKgRate || 95);
 
-  if (editingOrderId) {
-    const existingIndex = orders.findIndex(o => o.id === editingOrderId);
-    if (existingIndex !== -1) {
-      const prevOrder = orders[existingIndex];
+    let savedOrderId = null;
+
+    if (editingOrderId) {
+      const existingIndex = orders.findIndex(o => o.id === editingOrderId);
+      if (existingIndex !== -1) {
+        const prevOrder = orders[existingIndex];
+        const nowIso = new Date().toISOString();
+        const updatedOrder = {
+          ...prevOrder,
+          id: editingOrderId,
+          date: orderDate,
+          deliveryStatus: deliveryStatus,
+          customer: {
+            id: finalCustomerId || (prevOrder.customer && prevOrder.customer.id) || ('c_' + Date.now()),
+            name: customerName,
+            category: customerCategory,
+            district: customerDistrict,
+            town: customerTown,
+            landmark: customerLandmark,
+            panchayath: customerPanchayath,
+            area: customerArea,
+            place: customerPlace,
+            location: customerLocation || 'Ernakulam',
+            ownerName: customerOwnerName,
+            ownerPhone: cleanOwnerPhone,
+            staffName: customerStaffName,
+            staffRole: customerStaffRole,
+            staffPhone: cleanStaffPhone,
+            phone: primaryPhone || 'Nil'
+          },
+          items: sanitizedItems,
+          product: { id: firstProd.productId, name: primaryProductDisplay },
+          bagSize: firstProd.bagSize,
+          bagQty: totalBags,
+          totalKg: totalKg,
+          perKgRate: Math.round(averagePerKgRate * 100) / 100,
+          totalAmount: Math.round(totalAmount),
+          notes: notes,
+          createdAt: prevOrder.createdAt || (prevOrder.date ? prevOrder.date + 'T00:00:00.000Z' : nowIso),
+          updatedAt: nowIso
+        };
+
+        // Explicitly write to Cloud Firestore before closing
+        await syncCloudOrder(updatedOrder);
+
+        markOrderAsViewed(editingOrderId, nowIso);
+        orders[existingIndex] = updatedOrder;
+        saveDataToStorage();
+        savedOrderId = editingOrderId;
+
+        closeOrderModal();
+        updateDashboard();
+        showNotification(`✓ Order ${editingOrderId} updated successfully in Firebase!`);
+        showOrderSuccessWhatsAppModal(editingOrderId);
+      }
+    } else {
+      const newId = generateNextOrderId();
       const nowIso = new Date().toISOString();
-      const updatedOrder = {
-        ...prevOrder,
-        id: editingOrderId,
+      const newOrder = {
+        id: newId,
         date: orderDate,
         deliveryStatus: deliveryStatus,
         customer: {
-          id: finalCustomerId || (prevOrder.customer && prevOrder.customer.id) || ('c_' + Date.now()),
+          id: finalCustomerId || ('c_' + Date.now()),
           name: customerName,
           category: customerCategory,
           district: customerDistrict,
@@ -5535,69 +5766,43 @@ function handleSaveOrder(event) {
         perKgRate: Math.round(averagePerKgRate * 100) / 100,
         totalAmount: Math.round(totalAmount),
         notes: notes,
-        createdAt: prevOrder.createdAt || (prevOrder.date ? prevOrder.date + 'T00:00:00.000Z' : nowIso),
+        dispatchStatus: 'Pending',
+        deliveryNote: '',
+        deliveredAt: null,
+        createdAt: nowIso,
         updatedAt: nowIso
       };
-      markOrderAsViewed(editingOrderId, nowIso);
-      orders[existingIndex] = updatedOrder;
+
+      // Explicitly write to Cloud Firestore before closing
+      await syncCloudOrder(newOrder);
+
+      markOrderAsViewed(newId, nowIso);
+      orders.unshift(newOrder);
+      if (typeof upgradeProspectToCustomerIfOrdered === 'function') {
+        upgradeProspectToCustomerIfOrdered(newOrder.customer);
+      }
       saveDataToStorage();
-      syncCloudOrder(updatedOrder);
+      savedOrderId = newId;
+
       closeOrderModal();
       updateDashboard();
-      showNotification(`Order ${editingOrderId} updated successfully!`);
-      showOrderSuccessWhatsAppModal(editingOrderId);
+      showNotification(`✓ New order ${newId} saved to Firebase! (${totalKg.toLocaleString('en-IN')} kg - ₹${Math.round(totalAmount).toLocaleString('en-IN')})`);
+      showOrderSuccessWhatsAppModal(newId);
     }
-  } else {
-    const newId = generateNextOrderId();
-    const nowIso = new Date().toISOString();
-    const newOrder = {
-      id: newId,
-      date: orderDate,
-      deliveryStatus: deliveryStatus,
-      customer: {
-        id: finalCustomerId || ('c_' + Date.now()),
-        name: customerName,
-        category: customerCategory,
-        district: customerDistrict,
-        town: customerTown,
-        landmark: customerLandmark,
-        panchayath: customerPanchayath,
-        area: customerArea,
-        place: customerPlace,
-        location: customerLocation || 'Ernakulam',
-        ownerName: customerOwnerName,
-        ownerPhone: cleanOwnerPhone,
-        staffName: customerStaffName,
-        staffRole: customerStaffRole,
-        staffPhone: cleanStaffPhone,
-        phone: primaryPhone || 'Nil'
-      },
-      items: sanitizedItems,
-      product: { id: firstProd.productId, name: primaryProductDisplay },
-      bagSize: firstProd.bagSize,
-      bagQty: totalBags,
-      totalKg: totalKg,
-      perKgRate: Math.round(averagePerKgRate * 100) / 100,
-      totalAmount: Math.round(totalAmount),
-      notes: notes,
-      dispatchStatus: 'Pending',
-      deliveryNote: '',
-      deliveredAt: null,
-      createdAt: nowIso,
-      updatedAt: nowIso
-    };
+  } catch (err) {
+    console.error('ERROR in handleSaveOrder while writing to Firestore:', err);
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitBtnText) submitBtnText.textContent = originalBtnContent;
 
-    markOrderAsViewed(newId, nowIso);
-    orders.unshift(newOrder);
-    if (typeof upgradeProspectToCustomerIfOrdered === 'function') {
-      upgradeProspectToCustomerIfOrdered(newOrder.customer);
+    const errCode = err?.code || 'unknown-error';
+    const errMsg = err?.message || String(err);
+    alert(`⚠️ Failed to save order to Firebase Cloud!\n\nError Code: ${errCode}\nDetails: ${errMsg}\n\nThe order was NOT saved. Please check your network connection or permissions and try again.`);
+    showNotification(`❌ Firebase Write Error: [${errCode}] ${errMsg}`, null, 7000);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+    if (submitBtnText && submitBtnText.textContent === 'Saving to Firebase...') {
+      submitBtnText.textContent = originalBtnContent;
     }
-    saveDataToStorage();
-    syncCloudOrder(newOrder);
-    closeOrderModal();
-    updateDashboard();
-    showNotification(`New order ${newId} recorded! (${totalKg.toLocaleString('en-IN')} kg - ₹${Math.round(totalAmount).toLocaleString('en-IN')})`);
-    showOrderSuccessWhatsAppModal(newId);
   }
 }
 

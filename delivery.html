@@ -465,6 +465,17 @@
       });
     }
 
+    function removeOrderTombstone(orderId) {
+      if (!orderId) return;
+      const cleanId = String(orderId).trim().toLowerCase();
+      if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
+      deletedOrderTombstones = deletedOrderTombstones.filter(t => {
+        const tid = typeof t === 'string' ? t : (t.id || '');
+        return String(tid).trim().toLowerCase() !== cleanId;
+      });
+      saveDeletedOrderTombstones();
+    }
+
     function mergeDeletedOrderTombstones(incoming) {
       if (!Array.isArray(incoming)) return;
       if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
