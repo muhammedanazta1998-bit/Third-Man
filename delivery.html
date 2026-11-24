@@ -9,28 +9,55 @@
   <meta name="apple-mobile-web-app-title" content="Third Man Delivery">
   <meta name="theme-color" content="#0f172a">
   <title>Third Man - Staff Delivery & Dispatch Portal</title>
-  <link rel="manifest" href="manifest.json?v=3">
-  <link rel="icon" type="image/png" sizes="32x32" href="uploaded-logo.png?v=3">
-  <link rel="icon" type="image/png" sizes="192x192" href="uploaded-logo.png?v=3">
-  <link rel="icon" type="image/png" sizes="512x512" href="uploaded-logo.png?v=3">
-  <link rel="shortcut icon" type="image/png" href="uploaded-logo.png?v=3">
-  <link id="deliveryAppleTouchIcon" rel="apple-touch-icon" href="uploaded-logo.png?v=3">
-  <link id="deliveryAppleTouchIcon180" rel="apple-touch-icon" sizes="180x180" href="uploaded-logo.png?v=3">
-  <link rel="apple-touch-icon" sizes="152x152" href="uploaded-logo.png?v=3">
-  <link rel="apple-touch-icon" sizes="167x167" href="uploaded-logo.png?v=3">
-  <link rel="apple-touch-icon-precomposed" href="uploaded-logo.png?v=3">
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="uploaded-logo.png?v=3">
+  <link rel="manifest" href="manifest.json?v=4">
+  <link rel="icon" type="image/x-icon" href="favicon.ico?v=4">
+  <link rel="icon" type="image/png" sizes="16x16" href="uploaded-logo.png?v=4">
+  <link rel="icon" type="image/png" sizes="32x32" href="uploaded-logo.png?v=4">
+  <link rel="icon" type="image/png" sizes="48x48" href="uploaded-logo.png?v=4">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=4">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png?v=4">
+  <link rel="shortcut icon" type="image/png" href="uploaded-logo.png?v=4">
+  <link rel="shortcut icon" type="image/x-icon" href="favicon.ico?v=4">
+  <link id="deliveryAppleTouchIcon" rel="apple-touch-icon" href="apple-touch-icon.png?v=4">
+  <link id="deliveryAppleTouchIcon180" rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=4">
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon.png?v=4">
+  <link rel="apple-touch-icon" sizes="167x167" href="apple-touch-icon.png?v=4">
+  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png?v=4">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png?v=4">
   <script>
-    window.EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=3';
+    window.EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=4';
 
     (function() {
       try {
         var customLogo = localStorage.getItem('thirdman_app_logo');
-        var logoToApply = customLogo || 'uploaded-logo.png?v=3';
-        var favs = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
-        favs.forEach(function(link) {
-          link.href = logoToApply;
-        });
+        if (customLogo && (customLogo.indexOf('data:image/svg') !== -1 || customLogo.indexOf('<svg') !== -1 || customLogo.indexOf('logo.svg') !== -1 || customLogo.indexOf('TM') !== -1)) {
+          localStorage.removeItem('thirdman_app_logo');
+          customLogo = null;
+        }
+
+        var logoToApply = (customLogo && customLogo.trim()) ? customLogo : 'uploaded-logo.png?v=4';
+
+        // Force browser / Chrome to redraw tab favicon immediately by replacing DOM nodes
+        var head = document.head || document.getElementsByTagName('head')[0];
+        if (head) {
+          var oldIcons = head.querySelectorAll('link[rel*="icon"]');
+          oldIcons.forEach(function(el) {
+            if (el.parentNode) el.parentNode.removeChild(el);
+          });
+
+          var newIcon = document.createElement('link');
+          newIcon.rel = 'icon';
+          newIcon.type = 'image/png';
+          newIcon.href = logoToApply;
+          head.appendChild(newIcon);
+
+          var newShortcut = document.createElement('link');
+          newShortcut.rel = 'shortcut icon';
+          newShortcut.type = 'image/png';
+          newShortcut.href = logoToApply;
+          head.appendChild(newShortcut);
+        }
+
         var atIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
         atIcons.forEach(function(link) {
           link.href = logoToApply;
@@ -1892,6 +1919,10 @@
           if (doc && doc.exists) {
             const cfg = doc.data();
             if (cfg && cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
+              if (cfg.appLogo.indexOf('data:image/svg') !== -1 || cfg.appLogo.indexOf('<svg') !== -1 || cfg.appLogo.indexOf('logo.svg') !== -1 || cfg.appLogo.indexOf('TM') !== -1) {
+                // Ignore legacy blue TM SVG
+                return;
+              }
               try {
                 localStorage.setItem('thirdman_app_logo', cfg.appLogo);
               } catch (e) {}
@@ -2247,11 +2278,15 @@
       initQuickRemarksDelegation();
       renderQuickRemarkChips();
       try {
-        const customLogo = localStorage.getItem('thirdman_app_logo');
+        let customLogo = localStorage.getItem('thirdman_app_logo');
+        if (customLogo && (customLogo.indexOf('data:image/svg') !== -1 || customLogo.indexOf('<svg') !== -1 || customLogo.indexOf('logo.svg') !== -1 || customLogo.indexOf('TM') !== -1)) {
+          localStorage.removeItem('thirdman_app_logo');
+          customLogo = null;
+        }
         const logoEl = document.getElementById('deliveryHeaderLogo');
         if (logoEl) {
           if (customLogo) logoEl.src = customLogo;
-          else logoEl.src = 'uploaded-logo.png?v=3';
+          else logoEl.src = 'uploaded-logo.png?v=4';
         }
       } catch (e) {}
       initFirebase();

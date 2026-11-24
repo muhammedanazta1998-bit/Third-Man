@@ -2415,11 +2415,18 @@ function setupFirestoreRealtimeListeners() {
         }
       }
       if (cfg.appLogo !== undefined) {
-        if (cfg.appLogo) {
-          try {
-            localStorage.setItem(STORAGE_APP_LOGO, cfg.appLogo);
-          } catch (e) {}
-          applyAppLogo(cfg.appLogo, true);
+        if (cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
+          if (cfg.appLogo.indexOf('data:image/svg') !== -1 || cfg.appLogo.indexOf('<svg') !== -1 || cfg.appLogo.indexOf('logo.svg') !== -1 || cfg.appLogo.indexOf('TM') !== -1) {
+            try {
+              localStorage.removeItem(STORAGE_APP_LOGO);
+            } catch (e) {}
+            applyAppLogo(DEFAULT_LOGO_URL, false);
+          } else {
+            try {
+              localStorage.setItem(STORAGE_APP_LOGO, cfg.appLogo);
+            } catch (e) {}
+            applyAppLogo(cfg.appLogo, true);
+          }
         } else {
           try {
             localStorage.removeItem(STORAGE_APP_LOGO);
@@ -2779,7 +2786,7 @@ function syncCloudConfig(immediate = false) {
       deletedCustomerTombstones: deletedCustomerTombstones || [],
       defaultRememberedBagSize: defaultRememberedBagSize || 26,
       incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01',
-      appLogo: currentLogo
+      appLogo: (currentLogo && (currentLogo.indexOf('data:image/svg') !== -1 || currentLogo.indexOf('<svg') !== -1 || currentLogo.indexOf('logo.svg') !== -1 || currentLogo.indexOf('TM') !== -1)) ? null : currentLogo
     }), { merge: true }).catch(err => console.warn('Config sync error:', err));
   };
 
@@ -11877,18 +11884,22 @@ document.addEventListener('keydown', (e) => {
 // 13. APP BRAND LOGO MANAGEMENT
 // ==========================================
 const STORAGE_APP_LOGO = 'thirdman_app_logo';
-const DEFAULT_LOGO_URL = 'uploaded-logo.png?v=2';
+const DEFAULT_LOGO_URL = 'uploaded-logo.png?v=4';
 
-const EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=2';
+const EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=4';
 
 function loadAppLogo() {
   try {
-    const customLogo = localStorage.getItem(STORAGE_APP_LOGO);
+    let customLogo = localStorage.getItem(STORAGE_APP_LOGO);
+    if (customLogo && (customLogo.indexOf('data:image/svg') !== -1 || customLogo.indexOf('<svg') !== -1 || customLogo.indexOf('logo.svg') !== -1 || customLogo.indexOf('TM') !== -1)) {
+      localStorage.removeItem(STORAGE_APP_LOGO);
+      customLogo = null;
+    }
     if (customLogo) {
       applyAppLogo(customLogo, true);
     } else {
       // Use official uploaded-logo.png
-      applyAppLogo('uploaded-logo.png?v=2', false);
+      applyAppLogo('uploaded-logo.png?v=4', false);
     }
   } catch (err) {
     console.error('Error loading app logo:', err);
@@ -11909,14 +11920,14 @@ function applyAppLogo(logoUrl, isCustom = false) {
     if (!img) return;
     img.onerror = function() {
       this.onerror = null;
-      this.src = 'icon-192.png?v=2';
+      this.src = 'icon-192.png?v=4';
     };
   };
   bindImgFallback(sidebarImg);
   bindImgFallback(invoiceImg);
   bindImgFallback(settingsImg);
 
-  const effectiveLogoUrl = logoUrl || 'uploaded-logo.png?v=2';
+  const effectiveLogoUrl = logoUrl || 'uploaded-logo.png?v=4';
 
   if (effectiveLogoUrl) {
     if (sidebarImg) {
@@ -11937,10 +11948,25 @@ function applyAppLogo(logoUrl, isCustom = false) {
     }
     if (settingsFallback) settingsFallback.classList.add('hidden');
 
-    const favicons = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
-    favicons.forEach(link => {
-      link.href = effectiveLogoUrl;
-    });
+    // Force browser to redraw tab favicon
+    const head = document.head || document.getElementsByTagName('head')[0];
+    if (head) {
+      const oldIcons = head.querySelectorAll('link[rel*="icon"]');
+      oldIcons.forEach(el => {
+        if (el.parentNode) el.parentNode.removeChild(el);
+      });
+      const newIcon = document.createElement('link');
+      newIcon.rel = 'icon';
+      newIcon.type = 'image/png';
+      newIcon.href = effectiveLogoUrl;
+      head.appendChild(newIcon);
+
+      const newShortcut = document.createElement('link');
+      newShortcut.rel = 'shortcut icon';
+      newShortcut.type = 'image/png';
+      newShortcut.href = effectiveLogoUrl;
+      head.appendChild(newShortcut);
+    }
 
     // Apple Touch Icon for iOS 'Add to Home Screen'
     const appleTouchIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
@@ -11950,7 +11976,7 @@ function applyAppLogo(logoUrl, isCustom = false) {
       });
     } else {
       appleTouchIcons.forEach(link => {
-        link.href = 'apple-touch-icon.png?v=2';
+        link.href = 'apple-touch-icon.png?v=4';
       });
     }
   } else {
