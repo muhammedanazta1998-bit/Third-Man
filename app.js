@@ -305,6 +305,7 @@ const STORAGE_TRASH = 'third_man_trash_v2';
 const STORAGE_SAFETY_SNAPSHOT = 'third_man_safety_snapshot';
 const STORAGE_INCENTIVE_EFFECTIVE_DATE = 'biriyani_rice_scheme_effective_date_v1';
 const STORAGE_DELETED_CUSTOMERS = 'third_man_deleted_customers_v1';
+const STORAGE_DELETED_ORDERS = 'third_man_deleted_orders_v1';
 const STORAGE_PERMANENTLY_DELETED_TRASH_IDS = 'third_man_permanently_deleted_trash_ids_v1';
 
 // Permanently Deleted Trash Registry (Ensures emptied/deleted trash stays permanently deleted across cloud syncs)
@@ -435,8 +436,163 @@ function mergeDeletedCustomerTombstones(incoming) {
   }
 }
 
+// Deleted Orders Tombstone & Purge System (Permanently blocks deleted orders from resurrecting)
+let deletedOrderTombstones = [];
+
+function loadDeletedOrderTombstones() {
+  try {
+    const raw = localStorage.getItem(STORAGE_DELETED_ORDERS);
+    deletedOrderTombstones = raw ? JSON.parse(raw) : [];
+    if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
+  } catch (e) {
+    deletedOrderTombstones = [];
+  }
+}
+
+function saveDeletedOrderTombstones() {
+  try {
+    localStorage.setItem(STORAGE_DELETED_ORDERS, JSON.stringify(deletedOrderTombstones));
+  } catch (e) {}
+}
+
+function isOrderTombstoned(orderId) {
+  if (!orderId) return false;
+  const cleanId = String(orderId).trim().toLowerCase();
+  return (Array.isArray(deletedOrderTombstones) ? deletedOrderTombstones : []).some(t => {
+    const tid = typeof t === 'string' ? t : (t.id || '');
+    return tid && String(tid).trim().toLowerCase() === cleanId;
+  });
+}
+
+function addOrderTombstone(orderId) {
+  if (!orderId) return;
+  const cleanId = String(orderId).trim();
+  if (!isOrderTombstoned(cleanId)) {
+    if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
+    deletedOrderTombstones.push({
+      id: cleanId,
+      deletedAt: new Date().toISOString()
+    });
+    saveDeletedOrderTombstones();
+  }
+}
+
+function removeOrderTombstone(orderId) {
+  if (!orderId) return;
+  const cleanId = String(orderId).trim().toLowerCase();
+  if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
+  deletedOrderTombstones = deletedOrderTombstones.filter(t => {
+    const tid = typeof t === 'string' ? t : (t.id || '');
+    return String(tid).trim().toLowerCase() !== cleanId;
+  });
+  saveDeletedOrderTombstones();
+}
+
+function mergeDeletedOrderTombstones(incoming) {
+  if (!Array.isArray(incoming)) return;
+  if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
+  let added = false;
+  incoming.forEach(t => {
+    if (!t) return;
+    const tId = (typeof t === 'string' ? t : (t.id || '')).trim();
+    if (tId && !isOrderTombstoned(tId)) {
+      deletedOrderTombstones.push({
+        id: tId,
+        deletedAt: (typeof t === 'object' && t.deletedAt) ? t.deletedAt : new Date().toISOString()
+      });
+      added = true;
+    }
+  });
+  if (added) {
+    saveDeletedOrderTombstones();
+    const prevCount = orders.length;
+    orders = orders.filter(o => o && o.id && !isOrderTombstoned(o.id));
+    if (orders.length !== prevCount) {
+      saveDataToStorage();
+      updateDashboard();
+    }
+  }
+}
+
+function purgeOrderFromLocalCaches(orderId) {
+  if (!orderId) return;
+  const cleanId = String(orderId).trim();
+
+  // 1. In-memory arrays
+  orders = orders.filter(o => o && o.id !== cleanId);
+  if (knownOrderDeliveryStatuses && typeof knownOrderDeliveryStatuses.delete === 'function') {
+    knownOrderDeliveryStatuses.delete(cleanId);
+  }
+  if (typeof mainOrdersStateMap !== 'undefined' && mainOrdersStateMap) {
+    delete mainOrdersStateMap[cleanId];
+  }
+
+  // 2. Storage keys
+  const keysToClean = [
+    STORAGE_ORDERS,
+    'biriyani_rice_orders_fresh_v2',
+    'thirdman_delivery_orders_cache',
+    'biriyani_rice_orders_v1',
+    'biriyani_rice_orders',
+    'orders'
+  ];
+
+  keysToClean.forEach(key => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const arr = JSON.parse(raw);
+        if (Array.isArray(arr)) {
+          const filtered = arr.filter(o => o && o.id !== cleanId);
+          if (filtered.length !== arr.length) {
+            localStorage.setItem(key, JSON.stringify(filtered));
+          }
+        }
+      }
+    } catch (e) {}
+  });
+
+  // 3. Delivered history & viewed maps
+  try {
+    const rawHist = localStorage.getItem(STORAGE_DELIVERED_HISTORY);
+    if (rawHist) {
+      const arr = JSON.parse(rawHist);
+      if (Array.isArray(arr)) {
+        const filtered = arr.filter(h => h && h.id !== cleanId);
+        localStorage.setItem(STORAGE_DELIVERED_HISTORY, JSON.stringify(filtered));
+      }
+    }
+  } catch (e) {}
+
+  try {
+    const rawMap = localStorage.getItem(STORAGE_VIEWED_DELIVERIES_MAP);
+    if (rawMap) {
+      const map = JSON.parse(rawMap);
+      if (map && map[cleanId]) {
+        delete map[cleanId];
+        localStorage.setItem(STORAGE_VIEWED_DELIVERIES_MAP, JSON.stringify(map));
+      }
+    }
+  } catch (e) {}
+
+  try {
+    const rawVMap = localStorage.getItem('thirdman_viewed_orders_map');
+    if (rawVMap) {
+      const map = JSON.parse(rawVMap);
+      if (map && map[cleanId]) {
+        delete map[cleanId];
+        localStorage.setItem('thirdman_viewed_orders_map', JSON.stringify(map));
+      }
+    }
+  } catch (e) {}
+
+  // 4. Badges in DOM
+  document.querySelectorAll(`[data-delivery-badge-id="${cleanId}"], [data-order-badge-id="${cleanId}"]`).forEach(el => el.remove());
+}
+
 // Immediately load tombstones & permanently deleted trash IDs on script startup
 loadDeletedCustomerTombstones();
+loadDeletedOrderTombstones();
 loadPermanentlyDeletedTrashIds();
 
 // Global App State
@@ -909,6 +1065,7 @@ if (document.readyState === 'loading') {
 function loadDataFromStorage() {
   try {
     loadDeletedCustomerTombstones();
+    loadDeletedOrderTombstones();
     // 1. Load orders (try fresh_v2, then fallback to historical v1/unversioned orders without purging them)
     let parsedOrders = [];
     const storedOrders = localStorage.getItem(STORAGE_ORDERS);
@@ -923,15 +1080,18 @@ function loadDataFromStorage() {
           try {
             const pl = JSON.parse(legacy);
             if (Array.isArray(pl) && pl.length > 0) {
-              parsedOrders = pl;
-              try { localStorage.setItem(STORAGE_ORDERS, JSON.stringify(pl)); } catch (e) {}
-              break;
+              const cleanPl = pl.filter(o => o && o.id && !isOrderTombstoned(o.id));
+              if (cleanPl.length > 0) {
+                parsedOrders = cleanPl;
+                try { localStorage.setItem(STORAGE_ORDERS, JSON.stringify(cleanPl)); } catch (e) {}
+                break;
+              }
             }
           } catch (e) {}
         }
       }
     }
-    orders = Array.isArray(parsedOrders) ? parsedOrders.filter(Boolean) : [];
+    orders = Array.isArray(parsedOrders) ? parsedOrders.filter(Boolean).filter(o => o && o.id && !isOrderTombstoned(o.id)) : [];
 
     // Normalize each order to avoid any undefined access bugs
     orders = orders.map(o => {
@@ -2203,6 +2363,11 @@ function setupFirestoreRealtimeListeners() {
         snapshot.forEach(doc => {
           const d = doc.data();
           if (d && d.id) {
+            if (isOrderTombstoned(d.id)) {
+              deleteCloudOrder(d.id, doc.id);
+              return;
+            }
+            d._firestoreDocId = doc.id;
             const status = (d.date && d.date <= '2026-11-21') ? 'Delivered' : (d.dispatchStatus || 'Pending');
             knownOrderDeliveryStatuses.set(d.id, status);
             mainOrdersStateMap[d.id] = {
@@ -2223,6 +2388,10 @@ function setupFirestoreRealtimeListeners() {
           if (!ord || !ord.id) return;
 
           if (change.type === 'added') {
+            if (isOrderTombstoned(ord.id)) {
+              deleteCloudOrder(ord.id, change.doc.id);
+              return;
+            }
             if (!knownOrderDeliveryStatuses.has(ord.id)) {
               const status = ord.dispatchStatus || 'Pending';
               knownOrderDeliveryStatuses.set(ord.id, status);
@@ -2236,6 +2405,10 @@ function setupFirestoreRealtimeListeners() {
               };
             }
           } else if (change.type === 'modified') {
+            if (isOrderTombstoned(ord.id)) {
+              deleteCloudOrder(ord.id, change.doc.id);
+              return;
+            }
             const prevStatus = knownOrderDeliveryStatuses.get(ord.id);
             const newStatus = ord.dispatchStatus || 'Pending';
             if (prevStatus && prevStatus !== 'Delivered' && newStatus === 'Delivered') {
@@ -2251,6 +2424,9 @@ function setupFirestoreRealtimeListeners() {
               notes: ord.notes || '',
               rate: ord.perKgRate || 0
             };
+          } else if (change.type === 'removed') {
+            purgeOrderFromLocalCaches(ord.id);
+            updateDashboard();
           }
         });
       }
@@ -2260,6 +2436,11 @@ function setupFirestoreRealtimeListeners() {
       snapshot.forEach(doc => {
         const d = doc.data();
         if (d && d.id) {
+          if (isOrderTombstoned(d.id)) {
+            deleteCloudOrder(d.id, doc.id);
+            return;
+          }
+          d._firestoreDocId = doc.id;
           remoteOrders.push(d);
         }
       });
@@ -2386,6 +2567,9 @@ function setupFirestoreRealtimeListeners() {
       if (Array.isArray(cfg.deletedCustomerTombstones) && typeof mergeDeletedCustomerTombstones === 'function') {
         mergeDeletedCustomerTombstones(cfg.deletedCustomerTombstones);
       }
+      if (Array.isArray(cfg.deletedOrderTombstones) && typeof mergeDeletedOrderTombstones === 'function') {
+        mergeDeletedOrderTombstones(cfg.deletedOrderTombstones);
+      }
       if (Array.isArray(cfg.trashList)) {
         const cleanTrash = cfg.trashList.filter(item => {
           if (!item || !item.trashId) return false;
@@ -2501,12 +2685,13 @@ function setupFirestoreRealtimeListeners() {
 }
 
 function seedLocalOrdersToCloud() {
-  if (!db || orders.length === 0) return;
+  const validOrders = orders.filter(o => o && o.id && !isOrderTombstoned(o.id));
+  if (!db || validOrders.length === 0) return;
   hasPerformedInitialOrdersCloudSeed = true;
   updateCloudSyncStatus('syncing', 'Uploading Local Orders...');
   
   // Ensure all historical orders up to now are marked Delivered before seeding
-  orders.forEach(o => {
+  validOrders.forEach(o => {
     if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
       o.dispatchStatus = 'Delivered';
       o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
@@ -2514,13 +2699,13 @@ function seedLocalOrdersToCloud() {
   });
 
   const CHUNK_SIZE = 400;
-  for (let i = 0; i < orders.length; i += CHUNK_SIZE) {
-    const chunk = orders.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < validOrders.length; i += CHUNK_SIZE) {
+    const chunk = validOrders.slice(i, i + CHUNK_SIZE);
     try {
       const batch = db.batch();
       chunk.forEach(order => {
-        if (order && order.id) {
-          const ref = db.collection('orders').doc(order.id);
+        if (order && order.id && !isOrderTombstoned(order.id)) {
+          const ref = db.collection('orders').doc(order._firestoreDocId || order.id);
           batch.set(ref, sanitizeForFirestore(order));
         }
       });
@@ -2537,14 +2722,16 @@ function seedLocalOrdersToCloud() {
 
 function batchSyncOrdersDispatchStatus(orderList) {
   if (!db || !Array.isArray(orderList) || orderList.length === 0) return;
+  const validList = orderList.filter(o => o && o.id && !isOrderTombstoned(o.id));
+  if (validList.length === 0) return;
   const CHUNK_SIZE = 400;
-  for (let i = 0; i < orderList.length; i += CHUNK_SIZE) {
-    const chunk = orderList.slice(i, i + CHUNK_SIZE);
+  for (let i = 0; i < validList.length; i += CHUNK_SIZE) {
+    const chunk = validList.slice(i, i + CHUNK_SIZE);
     try {
       const batch = db.batch();
       chunk.forEach(o => {
-        if (o && o.id) {
-          const ref = db.collection('orders').doc(o.id);
+        if (o && o.id && !isOrderTombstoned(o.id)) {
+          const ref = db.collection('orders').doc(o._firestoreDocId || o.id);
           batch.set(ref, {
             dispatchStatus: 'Delivered',
             deliveredAt: o.deliveredAt || new Date().toISOString()
@@ -2695,8 +2882,10 @@ function extractCustomersFromOrdersIfMissing(syncToCloud = false) {
 
 function syncCloudOrder(order) {
   if (!db || !order || !order.id) return;
+  if (isOrderTombstoned(order.id)) return;
   updateCloudSyncStatus('syncing', 'Saving to Cloud...');
-  db.collection('orders').doc(order.id).set(sanitizeForFirestore(order)).then(() => {
+  const docRef = db.collection('orders').doc(order._firestoreDocId || order.id);
+  docRef.set(sanitizeForFirestore(order)).then(() => {
     updateCloudSyncStatus('synced', 'Live Synced 🟢');
   }).catch(err => {
     console.warn('Error saving order to Firestore:', err);
@@ -2704,11 +2893,30 @@ function syncCloudOrder(order) {
   });
 }
 
-function deleteCloudOrder(orderId) {
-  if (!db || !orderId) return;
-  db.collection('orders').doc(orderId).delete().catch(err => {
-    console.warn('Error deleting order from Firestore:', err);
-  });
+async function deleteCloudOrder(orderId, firestoreDocId = null) {
+  const currentDb = db || (typeof window !== 'undefined' ? window.db : null);
+  if (!currentDb || !orderId) return;
+  try {
+    // 1. Direct doc deletion by orderId
+    currentDb.collection('orders').doc(orderId).delete().catch(e => console.warn('Direct order doc delete notice:', e));
+    
+    // 2. Direct doc deletion by firestoreDocId if provided and different
+    if (firestoreDocId && firestoreDocId !== orderId) {
+      currentDb.collection('orders').doc(firestoreDocId).delete().catch(e => console.warn('Firestore doc ID delete notice:', e));
+    }
+
+    // 3. Query delete by field 'id' == orderId to purge any duplicate or auto-ID documents
+    const snap = await currentDb.collection('orders').where('id', '==', orderId).get().catch(() => null);
+    if (snap && !snap.empty) {
+      const batch = currentDb.batch();
+      snap.forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit().catch(e => console.warn('Batch order query delete notice:', e));
+    }
+  } catch (err) {
+    console.warn('Error in deleteCloudOrder:', err);
+  }
 }
 
 function syncCloudCustomer(customer) {
@@ -2784,6 +2992,7 @@ function syncCloudConfig(immediate = false) {
       trashList: sanitizedTrash,
       permanentlyDeletedTrashIds: Array.from(permanentlyDeletedTrashIds),
       deletedCustomerTombstones: deletedCustomerTombstones || [],
+      deletedOrderTombstones: deletedOrderTombstones || [],
       defaultRememberedBagSize: defaultRememberedBagSize || 26,
       incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01',
       appLogo: (currentLogo && (currentLogo.indexOf('data:image/svg') !== -1 || currentLogo.indexOf('<svg') !== -1 || currentLogo.indexOf('logo.svg') !== -1 || currentLogo.indexOf('TM') !== -1)) ? null : currentLogo
@@ -2838,7 +3047,14 @@ function manualTriggerCloudSync(isQuiet = false) {
       const remoteOrders = [];
       snapshot.forEach(doc => {
         const d = doc.data();
-        if (d && d.id) remoteOrders.push(d);
+        if (d && d.id) {
+          if (isOrderTombstoned(d.id)) {
+            deleteCloudOrder(d.id, doc.id);
+            return;
+          }
+          d._firestoreDocId = doc.id;
+          remoteOrders.push(d);
+        }
       });
       remoteOrders.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
       orders = remoteOrders;
@@ -4251,9 +4467,11 @@ function deleteCurrentEditingOrder() {
     confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
     onConfirm: () => {
       const removed = order;
-      orders = orders.filter(o => o.id !== orderId);
+      addOrderTombstone(orderId);
+      purgeOrderFromLocalCaches(orderId);
       saveDataToStorage();
-      deleteCloudOrder(orderId);
+      deleteCloudOrder(orderId, removed._firestoreDocId);
+      syncCloudConfig(true);
       closeOrderModal();
       updateDashboard();
 
@@ -5395,9 +5613,11 @@ function deleteOrder(orderId) {
     confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
     onConfirm: () => {
       const removed = order;
-      orders = orders.filter(o => o.id !== orderId);
+      addOrderTombstone(orderId);
+      purgeOrderFromLocalCaches(orderId);
       saveDataToStorage();
-      deleteCloudOrder(orderId);
+      deleteCloudOrder(orderId, removed._firestoreDocId);
+      syncCloudConfig(true);
       updateDashboard();
 
       const trashEntry = moveToTrash(
@@ -10804,6 +11024,7 @@ function restoreTrashItem(trashId) {
   const item = trashList[idx];
 
   if (item.type === 'order') {
+    removeOrderTombstone(item.data.id);
     const exists = orders.some(o => o.id === item.data.id);
     if (!exists) {
       orders.unshift(item.data);
@@ -10812,6 +11033,8 @@ function restoreTrashItem(trashId) {
       orders.unshift(item.data);
     }
     saveDataToStorage();
+    syncCloudOrder(item.data);
+    syncCloudConfig(true);
     updateDashboard();
     showNotification(`✓ Order ${item.data.id} restored successfully!`);
 
@@ -10871,7 +11094,11 @@ function restoreAllTrash() {
       const toRestore = [...trashList];
       toRestore.forEach(item => {
         if (item.type === 'order') {
-          if (!orders.some(o => o.id === item.data.id)) orders.unshift(item.data);
+          removeOrderTombstone(item.data.id);
+          if (!orders.some(o => o.id === item.data.id)) {
+            orders.unshift(item.data);
+            syncCloudOrder(item.data);
+          }
         } else if (item.type === 'customer') {
           removeCustomerTombstone(item.data.name, item.data.id);
           if (!customers.some(c => c.id === item.data.id || (c.name && c.name.trim().toLowerCase() === (item.data.name || '').trim().toLowerCase()))) {
@@ -10888,6 +11115,7 @@ function restoreAllTrash() {
       trashList = [];
       saveTrashToStorage();
       saveDataToStorage();
+      syncCloudConfig(true);
       if (typeof manualTriggerCloudSync === 'function') manualTriggerCloudSync();
       updateDashboard();
       populateCustomerDropdown();
@@ -10912,12 +11140,16 @@ function deleteTrashPermanently(trashId) {
       if (item && item.type === 'customer' && item.data) {
         addCustomerTombstone(item.data);
         deleteCloudCustomer(item.data.id, item.data.name);
+      } else if (item && item.type === 'order' && item.data) {
+        addOrderTombstone(item.data.id);
+        deleteCloudOrder(item.data.id, item.data._firestoreDocId);
       }
       if (trashId) {
         addPermanentlyDeletedTrashId(trashId);
       }
       trashList = trashList.filter(t => t.trashId !== trashId);
       saveTrashToStorage();
+      syncCloudConfig(true);
       renderTrashList();
       showNotification('Item permanently deleted.');
     }
@@ -10944,10 +11176,14 @@ function emptyTrashPrompt() {
         if (item && item.type === 'customer' && item.data) {
           addCustomerTombstone(item.data);
           deleteCloudCustomer(item.data.id, item.data.name);
+        } else if (item && item.type === 'order' && item.data) {
+          addOrderTombstone(item.data.id);
+          deleteCloudOrder(item.data.id, item.data._firestoreDocId);
         }
       });
       trashList = [];
       saveTrashToStorage();
+      syncCloudConfig(true);
       renderTrashList();
       showNotification('Recycle Bin has been emptied.');
     }
@@ -11010,6 +11246,12 @@ window.closeConfirmModal = closeConfirmModal;
 window.permanentlyDeletedTrashIds = permanentlyDeletedTrashIds;
 window.addPermanentlyDeletedTrashId = addPermanentlyDeletedTrashId;
 window.saveTrashToStorage = saveTrashToStorage;
+window.isOrderTombstoned = isOrderTombstoned;
+window.addOrderTombstone = addOrderTombstone;
+window.removeOrderTombstone = removeOrderTombstone;
+window.mergeDeletedOrderTombstones = mergeDeletedOrderTombstones;
+window.purgeOrderFromLocalCaches = purgeOrderFromLocalCaches;
+window.deletedOrderTombstones = deletedOrderTombstones;
 
 // ==================== GLOBAL WINDOW BINDINGS ====================
 // Guarantees all onclick handlers work in all browser contexts

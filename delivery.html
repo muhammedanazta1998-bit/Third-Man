@@ -419,6 +419,7 @@
 
     const STORAGE_ORDERS = 'biriyani_rice_orders_fresh_v2';
     const STORAGE_DELIVERY_CACHE = 'third_man_delivery_orders_cache';
+    const STORAGE_DELETED_ORDERS = 'third_man_deleted_orders_v1';
     const STORAGE_DELIVERY_ALERT_SOUND = 'thirdman_delivery_alert_sound';
 
     let db = null;
@@ -436,6 +437,66 @@
     let activeBannerOrderId = null;
     let newOrderBannerTimer = null;
 
+    // Deleted Orders Tombstone System in Delivery Portal (Prevents deleted orders from resurrecting)
+    let deletedOrderTombstones = [];
+
+    function loadDeletedOrderTombstones() {
+      try {
+        const raw = localStorage.getItem(STORAGE_DELETED_ORDERS);
+        deletedOrderTombstones = raw ? JSON.parse(raw) : [];
+        if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
+      } catch (e) {
+        deletedOrderTombstones = [];
+      }
+    }
+
+    function saveDeletedOrderTombstones() {
+      try {
+        localStorage.setItem(STORAGE_DELETED_ORDERS, JSON.stringify(deletedOrderTombstones));
+      } catch (e) {}
+    }
+
+    function isOrderTombstoned(orderId) {
+      if (!orderId) return false;
+      const cleanId = String(orderId).trim().toLowerCase();
+      return (Array.isArray(deletedOrderTombstones) ? deletedOrderTombstones : []).some(t => {
+        const tid = typeof t === 'string' ? t : (t.id || '');
+        return tid && String(tid).trim().toLowerCase() === cleanId;
+      });
+    }
+
+    function mergeDeletedOrderTombstones(incoming) {
+      if (!Array.isArray(incoming)) return;
+      if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
+      let added = false;
+      incoming.forEach(t => {
+        if (!t) return;
+        const tId = (typeof t === 'string' ? t : (t.id || '')).trim();
+        if (tId && !isOrderTombstoned(tId)) {
+          deletedOrderTombstones.push({
+            id: tId,
+            deletedAt: (typeof t === 'object' && t.deletedAt) ? t.deletedAt : new Date().toISOString()
+          });
+          added = true;
+        }
+      });
+      if (added) {
+        saveDeletedOrderTombstones();
+        const prevCount = allOrders.length;
+        allOrders = allOrders.filter(o => o && o.id && !isOrderTombstoned(o.id));
+        if (allOrders.length !== prevCount) {
+          try {
+            localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
+          } catch (e) {}
+          populateTownDropdown();
+          updateTabBadges();
+          renderOrders();
+        }
+      }
+    }
+
+    loadDeletedOrderTombstones();
+
     function sortOrders(arr) {
       if (!Array.isArray(arr)) return;
       arr.sort((a, b) => {
@@ -451,7 +512,7 @@
       const needsSync = [];
       const nowIso = new Date().toISOString();
       list.forEach(o => {
-        if (!o) return;
+        if (!o || isOrderTombstoned(o.id)) return;
         // Business rule: All orders placed on or before 2026-11-21 are DELIVERED
         if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
           o.dispatchStatus = 'Delivered';
@@ -473,14 +534,16 @@
 
     function syncOrdersDispatchStatusToFirestore(orderList) {
       if (!db || !Array.isArray(orderList) || orderList.length === 0) return;
+      const validOrders = orderList.filter(o => o && o.id && !isOrderTombstoned(o.id));
+      if (validOrders.length === 0) return;
       const CHUNK_SIZE = 400;
-      for (let i = 0; i < orderList.length; i += CHUNK_SIZE) {
-        const chunk = orderList.slice(i, i + CHUNK_SIZE);
+      for (let i = 0; i < validOrders.length; i += CHUNK_SIZE) {
+        const chunk = validOrders.slice(i, i + CHUNK_SIZE);
         try {
           const batch = db.batch();
           chunk.forEach(o => {
-            if (o && o.id) {
-              const ref = db.collection('orders').doc(o.id);
+            if (o && o.id && !isOrderTombstoned(o.id)) {
+              const ref = db.collection('orders').doc(o._firestoreDocId || o.id);
               batch.set(ref, {
                 dispatchStatus: 'Delivered',
                 deliveredAt: o.deliveredAt || new Date().toISOString()
@@ -818,13 +881,15 @@
 
     function loadInitialOrdersFromCache() {
       try {
+        loadDeletedOrderTombstones();
         const raw = localStorage.getItem(STORAGE_DELIVERY_CACHE) || localStorage.getItem(STORAGE_ORDERS);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            normalizeHistoricalOrders(parsed);
-            allOrders = parsed;
-            parsed.forEach(o => { if (o && o.id) knownDeliveryOrderIds.add(o.id); });
+            const cleanOrders = parsed.filter(o => o && o.id && !isOrderTombstoned(o.id));
+            normalizeHistoricalOrders(cleanOrders);
+            allOrders = cleanOrders;
+            cleanOrders.forEach(o => { if (o && o.id) knownDeliveryOrderIds.add(o.id); });
             sortOrders(allOrders);
             populateTownDropdown();
             updateTabBadges();
@@ -961,10 +1026,15 @@
 
     function processIncomingOrdersSnapshot(snapshot) {
       if (!snapshot) return;
+      loadDeletedOrderTombstones();
       const loaded = [];
       snapshot.forEach(doc => {
         const d = doc.data();
         if (d && d.id) {
+          if (isOrderTombstoned(d.id)) {
+            return;
+          }
+          d._firestoreDocId = doc.id;
           loaded.push(d);
         }
       });
@@ -1008,6 +1078,8 @@
           snapshot.forEach(doc => {
             const d = doc.data();
             if (d && d.id) {
+              if (isOrderTombstoned(d.id)) return;
+              d._firestoreDocId = doc.id;
               knownDeliveryOrderIds.add(d.id);
               previousOrdersStateMap[d.id] = {
                 updatedAt: d.updatedAt || d.createdAt || '',
@@ -1025,6 +1097,7 @@
           snapshot.docChanges().forEach(change => {
             const order = change.doc.data();
             if (!order || !order.id) return;
+            if (isOrderTombstoned(order.id)) return;
 
             if (change.type === 'added') {
               if (!knownDeliveryOrderIds.has(order.id)) {
@@ -1067,6 +1140,16 @@
               if (isContentChanged && order.dispatchStatus !== 'Delivered') {
                 triggerOrderUpdatedAlert(order);
               }
+            } else if (change.type === 'removed') {
+              knownDeliveryOrderIds.delete(order.id);
+              delete previousOrdersStateMap[order.id];
+              allOrders = allOrders.filter(o => o && o.id !== order.id);
+              try {
+                localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
+              } catch (e) {}
+              populateTownDropdown();
+              updateTabBadges();
+              renderOrders();
             }
           });
         }
@@ -1918,6 +2001,9 @@
         db.collection('settings').doc('app_config').onSnapshot(doc => {
           if (doc && doc.exists) {
             const cfg = doc.data();
+            if (Array.isArray(cfg.deletedOrderTombstones)) {
+              mergeDeletedOrderTombstones(cfg.deletedOrderTombstones);
+            }
             if (cfg && cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
               if (cfg.appLogo.indexOf('data:image/svg') !== -1 || cfg.appLogo.indexOf('<svg') !== -1 || cfg.appLogo.indexOf('logo.svg') !== -1 || cfg.appLogo.indexOf('TM') !== -1) {
                 // Ignore legacy blue TM SVG
