@@ -9,24 +9,24 @@
   <meta name="apple-mobile-web-app-title" content="Third Man Delivery">
   <meta name="theme-color" content="#0f172a">
   <title>Third Man - Staff Delivery & Dispatch Portal</title>
-  <link rel="manifest" href="manifest.json?v=2">
-  <link rel="icon" type="image/png" sizes="32x32" href="uploaded-logo.png?v=2">
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=2">
-  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png?v=2">
-  <link rel="shortcut icon" type="image/png" href="uploaded-logo.png?v=2">
-  <link id="deliveryAppleTouchIcon" rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
-  <link id="deliveryAppleTouchIcon180" rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2">
-  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon.png?v=2">
-  <link rel="apple-touch-icon" sizes="167x167" href="apple-touch-icon.png?v=2">
-  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png?v=2">
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png?v=2">
+  <link rel="manifest" href="manifest.json?v=3">
+  <link rel="icon" type="image/png" sizes="32x32" href="uploaded-logo.png?v=3">
+  <link rel="icon" type="image/png" sizes="192x192" href="uploaded-logo.png?v=3">
+  <link rel="icon" type="image/png" sizes="512x512" href="uploaded-logo.png?v=3">
+  <link rel="shortcut icon" type="image/png" href="uploaded-logo.png?v=3">
+  <link id="deliveryAppleTouchIcon" rel="apple-touch-icon" href="uploaded-logo.png?v=3">
+  <link id="deliveryAppleTouchIcon180" rel="apple-touch-icon" sizes="180x180" href="uploaded-logo.png?v=3">
+  <link rel="apple-touch-icon" sizes="152x152" href="uploaded-logo.png?v=3">
+  <link rel="apple-touch-icon" sizes="167x167" href="uploaded-logo.png?v=3">
+  <link rel="apple-touch-icon-precomposed" href="uploaded-logo.png?v=3">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="uploaded-logo.png?v=3">
   <script>
-    window.EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=2';
+    window.EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=3';
 
     (function() {
       try {
         var customLogo = localStorage.getItem('thirdman_app_logo');
-        var logoToApply = customLogo || 'uploaded-logo.png?v=2';
+        var logoToApply = customLogo || 'uploaded-logo.png?v=3';
         var favs = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
         favs.forEach(function(link) {
           link.href = logoToApply;
@@ -120,16 +120,16 @@
     </div>
   </header>
 
-  <!-- FLOATING NEW ORDER ALERT BANNER (REAL-TIME NOTIFICATION) -->
+  <!-- FLOATING REAL-TIME ORDER ALERT BANNER (NEW / UPDATED ORDERS) -->
   <div id="newOrderBannerContainer" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-3 pointer-events-none transition-all duration-300 transform -translate-y-24 opacity-0">
-    <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 border-cyan-400/90 pointer-events-auto flex items-center justify-between gap-3 backdrop-blur-md">
+    <div id="orderAlertBannerInner" class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 border-cyan-400/90 pointer-events-auto flex items-center justify-between gap-3 backdrop-blur-md">
       <div class="flex items-center gap-3 min-w-0">
-        <div class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 border border-cyan-400/40 shadow-inner">
-          <i data-lucide="bell-ring" class="w-5 h-5 text-cyan-400 animate-bounce"></i>
+        <div id="orderAlertBannerIconWrapper" class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 border border-cyan-400/40 shadow-inner">
+          <i id="orderAlertBannerIcon" data-lucide="bell-ring" class="w-5 h-5 text-cyan-400 animate-bounce"></i>
         </div>
         <div class="min-w-0">
           <div class="flex items-center gap-2 flex-wrap">
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-400 text-slate-950 uppercase tracking-wider">NEW ORDER</span>
+            <span id="orderAlertBannerBadge" class="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-400 text-slate-950 uppercase tracking-wider">NEW ORDER</span>
             <span id="newOrderBannerId" class="text-xs font-mono font-bold text-cyan-300">ORD-5470</span>
           </div>
           <h4 id="newOrderBannerCustomer" class="text-sm font-black text-white truncate mt-0.5">Shop / Customer Name</h4>
@@ -567,6 +567,85 @@
       }
     }
 
+    function playOrderUpdatedChime() {
+      if (!isDeliveryAlertSoundEnabled()) return;
+      try {
+        const ctx = getDeliveryAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        // Distinct 2-note attention chime: D5 (587.33Hz) -> A5 (880.00Hz)
+        const notes = [
+          { freq: 587.33, start: 0.00, dur: 0.16 },
+          { freq: 880.00, start: 0.15, dur: 0.35 }
+        ];
+        notes.forEach(n => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(n.freq, now + n.start);
+          gain.gain.setValueAtTime(0.0001, now + n.start);
+          gain.gain.exponentialRampToValueAtTime(0.25, now + n.start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + n.start);
+          osc.stop(now + n.start + n.dur + 0.05);
+        });
+      } catch (e) {
+        console.warn('Audio update chime notice:', e);
+      }
+    }
+
+    // Viewed state tracking for blinking "NEW ORDER" and "UPDATED" badges
+    const STORAGE_VIEWED_ORDERS_MAP = 'thirdman_viewed_orders_map';
+
+    function getViewedOrdersMap() {
+      try {
+        const raw = localStorage.getItem(STORAGE_VIEWED_ORDERS_MAP);
+        return raw ? JSON.parse(raw) : {};
+      } catch (e) {
+        return {};
+      }
+    }
+
+    function markOrderAsViewed(orderId, timestamp) {
+      if (!orderId) return;
+      try {
+        const map = getViewedOrdersMap();
+        map[orderId] = timestamp || new Date().toISOString();
+        localStorage.setItem(STORAGE_VIEWED_ORDERS_MAP, JSON.stringify(map));
+      } catch (e) {}
+
+      // Immediately dismiss badge element in DOM
+      const badgeEls = document.querySelectorAll(`[data-order-badge-id="${orderId}"]`);
+      badgeEls.forEach(el => el.remove());
+    }
+
+    function getOrderBadgeState(order) {
+      if (!order || !order.id) return null;
+      if (order.dispatchStatus === 'Delivered') return null;
+
+      const viewedMap = getViewedOrdersMap();
+      const lastViewedAt = viewedMap[order.id];
+
+      const createdAt = order.createdAt ? new Date(order.createdAt).getTime() : (order.date ? new Date(order.date).getTime() : 0);
+      const updatedAt = order.updatedAt ? new Date(order.updatedAt).getTime() : createdAt;
+
+      if (!lastViewedAt) {
+        // If never viewed on this device, check if created within the past 48 hours
+        const now = Date.now();
+        const isRecent = createdAt > 0 ? (now - createdAt < 48 * 3600 * 1000) : true;
+        return isRecent ? 'NEW' : null;
+      }
+
+      const lastViewedTime = new Date(lastViewedAt).getTime();
+      if (updatedAt > lastViewedTime && updatedAt > createdAt) {
+        return 'UPDATED';
+      }
+
+      return null;
+    }
+
     function triggerNewOrderAlert(order) {
       if (!order || !order.id) return;
 
@@ -579,16 +658,40 @@
           const totalBags = (order.bagQty !== undefined) ? order.bagQty : items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
           new Notification(`🔔 New Order: ${cust}`, {
             body: `${order.id} • ${totalBags} Bags • Tap to view in Delivery Portal`,
-            icon: 'uploaded-logo.png?v=2'
+            icon: 'uploaded-logo.png?v=3'
           });
         }
       } catch (e) {}
 
-      showNewOrderTopBanner(order);
+      showOrderAlertTopBanner('new', order);
     }
 
-    function showNewOrderTopBanner(order) {
+    function triggerOrderUpdatedAlert(order) {
+      if (!order || !order.id) return;
+
+      playOrderUpdatedChime();
+
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const cust = getCustName(order);
+          const items = Array.isArray(order.items) ? order.items : [];
+          const totalBags = (order.bagQty !== undefined) ? order.bagQty : items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+          new Notification(`🔄 Order Updated: ${cust}`, {
+            body: `${order.id} • ${totalBags} Bags • Tap to view update in Delivery Portal`,
+            icon: 'uploaded-logo.png?v=3'
+          });
+        }
+      } catch (e) {}
+
+      showOrderAlertTopBanner('updated', order);
+    }
+
+    function showOrderAlertTopBanner(type, order) {
       const container = document.getElementById('newOrderBannerContainer');
+      const inner = document.getElementById('orderAlertBannerInner');
+      const iconWrapper = document.getElementById('orderAlertBannerIconWrapper');
+      const iconEl = document.getElementById('orderAlertBannerIcon');
+      const badgeEl = document.getElementById('orderAlertBannerBadge');
       const idEl = document.getElementById('newOrderBannerId');
       const custEl = document.getElementById('newOrderBannerCustomer');
       const summaryEl = document.getElementById('newOrderBannerSummary');
@@ -610,6 +713,38 @@
       custEl.textContent = custName;
       summaryEl.textContent = `${totalBags} Bags • ₹${Math.round(totalAmount).toLocaleString('en-IN')}${location ? ' • ' + location : ''}`;
 
+      if (type === 'updated') {
+        if (inner) {
+          inner.className = 'bg-gradient-to-r from-slate-900 via-amber-950/60 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 border-amber-400 pointer-events-auto flex items-center justify-between gap-3 backdrop-blur-md';
+        }
+        if (iconWrapper) {
+          iconWrapper.className = 'w-10 h-10 rounded-xl bg-amber-500/20 text-amber-300 flex items-center justify-center shrink-0 border border-amber-400/40 shadow-inner';
+        }
+        if (iconEl) {
+          iconEl.setAttribute('data-lucide', 'refresh-cw');
+          iconEl.className = 'w-5 h-5 text-amber-400 animate-spin';
+        }
+        if (badgeEl) {
+          badgeEl.textContent = 'ORDER UPDATED';
+          badgeEl.className = 'px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-slate-950 uppercase tracking-wider';
+        }
+      } else {
+        if (inner) {
+          inner.className = 'bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 border-cyan-400/90 pointer-events-auto flex items-center justify-between gap-3 backdrop-blur-md';
+        }
+        if (iconWrapper) {
+          iconWrapper.className = 'w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 border border-cyan-400/40 shadow-inner';
+        }
+        if (iconEl) {
+          iconEl.setAttribute('data-lucide', 'bell-ring');
+          iconEl.className = 'w-5 h-5 text-cyan-400 animate-bounce';
+        }
+        if (badgeEl) {
+          badgeEl.textContent = 'NEW ORDER';
+          badgeEl.className = 'px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-400 text-slate-950 uppercase tracking-wider';
+        }
+      }
+
       container.classList.remove('pointer-events-none', '-translate-y-24', 'opacity-0');
       container.classList.add('-translate-y-0', 'opacity-100');
 
@@ -619,6 +754,10 @@
       }, 12000);
 
       if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function showNewOrderTopBanner(order) {
+      showOrderAlertTopBanner('new', order);
     }
 
     function dismissNewOrderBanner() {
@@ -821,39 +960,100 @@
       renderOrders();
     }
 
+    let deliveryOrdersUnsubscribe = null;
+    let reconnectOrdersTimeout = null;
+    const previousOrdersStateMap = {};
+
     function listenToOrders() {
       if (!db) return;
-      db.collection('orders').onSnapshot(snapshot => {
+      if (deliveryOrdersUnsubscribe) {
+        try { deliveryOrdersUnsubscribe(); } catch (e) {}
+        deliveryOrdersUnsubscribe = null;
+      }
+      if (reconnectOrdersTimeout) {
+        clearTimeout(reconnectOrdersTimeout);
+        reconnectOrdersTimeout = null;
+      }
+
+      deliveryOrdersUnsubscribe = db.collection('orders').onSnapshot(snapshot => {
+        updateSyncStatus('synced', 'Live Synced 🟢');
         if (isInitialDeliveryOrdersLoad) {
           snapshot.forEach(doc => {
             const d = doc.data();
             if (d && d.id) {
               knownDeliveryOrderIds.add(d.id);
+              previousOrdersStateMap[d.id] = {
+                updatedAt: d.updatedAt || d.createdAt || '',
+                dispatchStatus: d.dispatchStatus || '',
+                itemsHash: JSON.stringify(d.items || []),
+                bagQty: (d.bagQty !== undefined) ? d.bagQty : (d.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+                notes: d.notes || '',
+                rate: d.perKgRate || 0
+              };
             }
           });
           isInitialDeliveryOrdersLoad = false;
         } else {
-          // Detect real-time newly created orders
+          // Detect real-time additions and modifications
           snapshot.docChanges().forEach(change => {
+            const order = change.doc.data();
+            if (!order || !order.id) return;
+
             if (change.type === 'added') {
-              const order = change.doc.data();
-              if (order && order.id && !knownDeliveryOrderIds.has(order.id)) {
+              if (!knownDeliveryOrderIds.has(order.id)) {
                 knownDeliveryOrderIds.add(order.id);
+                previousOrdersStateMap[order.id] = {
+                  updatedAt: order.updatedAt || order.createdAt || '',
+                  dispatchStatus: order.dispatchStatus || '',
+                  itemsHash: JSON.stringify(order.items || []),
+                  bagQty: (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+                  notes: order.notes || '',
+                  rate: order.perKgRate || 0
+                };
                 if (order.dispatchStatus !== 'Delivered') {
                   triggerNewOrderAlert(order);
                 }
+              }
+            } else if (change.type === 'modified') {
+              const prev = previousOrdersStateMap[order.id] || {};
+              const currentItemsHash = JSON.stringify(order.items || []);
+              const currentBagQty = (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+              const currentUpdatedAt = order.updatedAt || '';
+
+              const isContentChanged = (
+                (currentUpdatedAt && currentUpdatedAt !== prev.updatedAt) ||
+                currentItemsHash !== prev.itemsHash ||
+                currentBagQty !== prev.bagQty ||
+                (order.notes || '') !== (prev.notes || '') ||
+                (order.perKgRate || 0) !== (prev.rate || 0)
+              );
+
+              previousOrdersStateMap[order.id] = {
+                updatedAt: currentUpdatedAt,
+                dispatchStatus: order.dispatchStatus || '',
+                itemsHash: currentItemsHash,
+                bagQty: currentBagQty,
+                notes: order.notes || '',
+                rate: order.perKgRate || 0
+              };
+
+              if (isContentChanged && order.dispatchStatus !== 'Delivered') {
+                triggerOrderUpdatedAlert(order);
               }
             }
           });
         }
         processIncomingOrdersSnapshot(snapshot);
       }, err => {
-        console.warn('Orders onSnapshot error:', err);
-        fetchOrdersFromRestFallback();
-        updateSyncStatus('error', 'Offline');
-        if (allOrders.length === 0) {
-          showEmptyOrErrorState('Could not load orders: ' + (err.message || 'Network error'));
-        }
+        console.warn('Orders onSnapshot error, scheduling auto-reconnect:', err);
+        updateSyncStatus('syncing', 'Reconnecting...');
+        // Auto-reconnect with 2.5s backoff
+        reconnectOrdersTimeout = setTimeout(() => {
+          try {
+            if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+          } catch (e) {}
+          listenToOrders();
+        }, 2500);
       });
     }
 
@@ -862,7 +1062,8 @@
         fetchOrdersFromRestFallback();
         return;
       }
-      db.collection('orders').get().then(snapshot => {
+      // Force server source first, fallback to default cache if network offline
+      db.collection('orders').get({ source: 'server' }).catch(() => db.collection('orders').get()).then(snapshot => {
         if (!snapshot.empty) {
           snapshot.forEach(doc => {
             const d = doc.data();
@@ -1225,10 +1426,21 @@
         statusPill = `<span class="px-2 py-0.5 bg-blue-50 text-blue-800 border border-blue-300 rounded-md text-[9px] font-bold inline-flex items-center gap-1">🚚 OUT FOR DELIVERY</span>`;
       }
 
+      const badgeState = getOrderBadgeState(o);
+      let badgeHtml = '';
+      if (badgeState === 'NEW') {
+        badgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-700 border border-emerald-500/30 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping mr-0.5"></span>NEW ORDER</span>`;
+      } else if (badgeState === 'UPDATED') {
+        badgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-700 border border-amber-500/30 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping mr-0.5"></span>UPDATED</span>`;
+      }
+
       return `
-        <tr class="hover:bg-slate-50 transition border-b border-slate-100 ${isDelivered ? 'bg-emerald-50/20' : (isUrgent ? 'bg-rose-50/30' : '')}">
+        <tr onclick="markOrderAsViewed('${o.id}')" class="hover:bg-slate-50 transition border-b border-slate-100 ${isDelivered ? 'bg-emerald-50/20' : (isUrgent ? 'bg-rose-50/30' : '')}">
           <td class="py-2.5 px-3 whitespace-nowrap">
-            <div class="font-mono font-black text-blue-700 text-xs">${escapeHtml(o.id)}</div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <div class="font-mono font-black text-blue-700 text-xs">${escapeHtml(o.id)}</div>
+              ${badgeHtml}
+            </div>
             <div class="text-[10px] text-slate-500 font-medium">${escapeHtml(o.date || '')}</div>
             <div class="mt-0.5">${urgencyPill}</div>
           </td>
@@ -1348,13 +1560,22 @@
       // Border and background highlighting
       let cardBorder = isDelivered ? 'border-emerald-200 bg-white' : (isUrgent ? 'border-rose-300 ring-2 ring-rose-200/50 bg-white' : 'border-slate-200 bg-white');
 
+      const badgeState = getOrderBadgeState(o);
+      let badgeHtml = '';
+      if (badgeState === 'NEW') {
+        badgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-700 border border-emerald-500/30 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping mr-0.5"></span>NEW ORDER</span>`;
+      } else if (badgeState === 'UPDATED') {
+        badgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-500/15 text-amber-700 border border-amber-500/30 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping mr-0.5"></span>UPDATED</span>`;
+      }
+
       return `
-        <div class="rounded-2xl sm:rounded-3xl border ${cardBorder} p-4 sm:p-5 shadow-xs transition-all space-y-3.5">
+        <div id="order-card-${o.id}" onclick="markOrderAsViewed('${o.id}')" class="rounded-2xl sm:rounded-3xl border ${cardBorder} p-4 sm:p-5 shadow-xs transition-all space-y-3.5">
           
           <!-- Card Top Bar: ID, Date, Priority, Status -->
           <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 flex-wrap">
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2 flex-wrap">
               <span class="font-mono font-black text-blue-700 text-xs sm:text-sm">${escapeHtml(o.id)}</span>
+              ${badgeHtml}
               <span class="text-slate-300">•</span>
               <span class="text-xs font-medium text-slate-500">📅 ${escapeHtml(o.date || '')}</span>
             </div>
@@ -1898,6 +2119,7 @@
     }
 
     function openDeliveryActionModal(orderId, type = 'delivered') {
+      markOrderAsViewed(orderId);
       activeActionOrderId = orderId;
       activeActionType = type;
       const order = allOrders.find(o => o.id === orderId);
@@ -1935,14 +2157,17 @@
       const noteInput = document.getElementById('modalDeliveryNoteInput');
       const noteText = (noteInput?.value || '').trim();
 
+      const nowIso = new Date().toISOString();
       const updatePayload = {
-        deliveryNote: noteText
+        deliveryNote: noteText,
+        updatedAt: nowIso
       };
 
       if (activeActionType === 'delivered') {
         updatePayload.dispatchStatus = 'Delivered';
-        updatePayload.deliveredAt = new Date().toISOString();
+        updatePayload.deliveredAt = nowIso;
       }
+      markOrderAsViewed(activeActionOrderId, nowIso);
 
       const targetOrder = allOrders.find(o => o.id === activeActionOrderId);
       if (targetOrder) {
@@ -1993,21 +2218,22 @@
     }
 
     // Auto-resync & socket wake-up when returning to delivery portal (e.g. mobile unlock, tab focus, online event)
-    document.addEventListener('visibilitychange', () => {
-      if (document.visibilityState === 'visible' && db) {
-        if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+    function handleDeliveryConnectionWakeup() {
+      if (document.visibilityState === 'visible' || navigator.onLine) {
+        if (db && typeof db.enableNetwork === 'function') {
+          db.enableNetwork().catch(() => {});
+        }
+        if (!deliveryOrdersUnsubscribe && db) {
+          listenToOrders();
+        }
         fetchOrdersDirect();
       }
-    });
+    }
 
-    window.addEventListener('online', () => {
-      if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-      fetchOrdersDirect();
-    });
-
-    window.addEventListener('focus', () => {
-      if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-    });
+    document.addEventListener('visibilitychange', handleDeliveryConnectionWakeup);
+    window.addEventListener('online', handleDeliveryConnectionWakeup);
+    window.addEventListener('focus', handleDeliveryConnectionWakeup);
+    window.addEventListener('pageshow', handleDeliveryConnectionWakeup);
 
     setInterval(() => {
       if (document.visibilityState === 'visible' && db && typeof db.enableNetwork === 'function') {
@@ -2025,7 +2251,7 @@
         const logoEl = document.getElementById('deliveryHeaderLogo');
         if (logoEl) {
           if (customLogo) logoEl.src = customLogo;
-          else logoEl.src = 'uploaded-logo.png?v=2';
+          else logoEl.src = 'uploaded-logo.png?v=3';
         }
       } catch (e) {}
       initFirebase();

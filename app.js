@@ -1585,6 +1585,66 @@ function isMainDeliverySoundEnabled() {
   return val === null ? true : val === 'true'; // Enabled by default
 }
 
+function playNewOrderSound() {
+  if (!isMainDeliverySoundEnabled()) return;
+  try {
+    const ctx = getMainDeliveryAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // Pleasant 4-note ascending chime: C5 (523Hz) -> E5 (659Hz) -> G5 (784Hz) -> High C6 (1046Hz)
+    const notes = [
+      { freq: 523.25, start: 0.00, dur: 0.18 },
+      { freq: 659.25, start: 0.10, dur: 0.18 },
+      { freq: 783.99, start: 0.20, dur: 0.22 },
+      { freq: 1046.50, start: 0.32, dur: 0.40 }
+    ];
+    notes.forEach(n => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(n.freq, now + n.start);
+      gain.gain.setValueAtTime(0.0001, now + n.start);
+      gain.gain.exponentialRampToValueAtTime(0.26, now + n.start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + n.start);
+      osc.stop(now + n.start + n.dur + 0.05);
+    });
+  } catch (e) {
+    console.warn('New order sound notice:', e);
+  }
+}
+
+function playOrderUpdatedSound() {
+  if (!isMainDeliverySoundEnabled()) return;
+  try {
+    const ctx = getMainDeliveryAudioContext();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    // 2-tone attention chime: D5 (587.33Hz) -> A5 (880.00Hz)
+    const notes = [
+      { freq: 587.33, start: 0.00, dur: 0.16 },
+      { freq: 880.00, start: 0.15, dur: 0.35 }
+    ];
+    notes.forEach(n => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(n.freq, now + n.start);
+      gain.gain.setValueAtTime(0.0001, now + n.start);
+      gain.gain.exponentialRampToValueAtTime(0.24, now + n.start + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now + n.start);
+      osc.stop(now + n.start + n.dur + 0.05);
+    });
+  } catch (e) {
+    console.warn('Order updated sound notice:', e);
+  }
+}
+
 function playOrderDeliveredSound() {
   if (!isMainDeliverySoundEnabled()) return;
   try {
@@ -1613,6 +1673,117 @@ function playOrderDeliveredSound() {
   } catch (e) {
     console.warn('Delivered audio notice:', e);
   }
+}
+
+function showNewOrderToast(order) {
+  const container = document.getElementById('orderDeliveredToastContainer');
+  if (!container) return;
+
+  const custName = getCustomerName(order.customer) || order.customerName || 'Customer';
+  const orderId = order.id || '';
+  const totalBags = (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+  const totalAmount = parseFloat(order.totalAmount) || 0;
+
+  const toast = document.createElement('div');
+  toast.className = 'bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border-2 border-cyan-400 pointer-events-auto flex items-start justify-between gap-3 transform translate-x-12 opacity-0 transition-all duration-300';
+  toast.innerHTML = `
+    <div class="flex items-start gap-2.5 min-w-0">
+      <div class="w-8 h-8 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 border border-cyan-400/30 mt-0.5">
+        <i data-lucide="bell-ring" class="w-4 h-4 text-cyan-400 animate-bounce"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-cyan-400 text-slate-950 uppercase">NEW ORDER</span>
+          <span class="text-xs font-mono font-bold text-cyan-300">${escapeHtml(orderId)}</span>
+        </div>
+        <h5 class="text-xs font-black text-white truncate mt-0.5">${escapeHtml(custName)}</h5>
+        <p class="text-[11px] text-slate-300 font-semibold mt-0.5">${totalBags} Bags • ₹${Math.round(totalAmount).toLocaleString('en-IN')}</p>
+      </div>
+    </div>
+    <button type="button" class="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer" onclick="this.closest('.bg-slate-900').remove()">✕</button>
+  `;
+
+  container.appendChild(toast);
+  if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+
+  requestAnimationFrame(() => {
+    toast.classList.remove('translate-x-12', 'opacity-0');
+  });
+
+  setTimeout(() => {
+    toast.classList.add('translate-x-12', 'opacity-0');
+    setTimeout(() => toast.remove(), 300);
+  }, 9000);
+}
+
+function showOrderUpdatedToast(order) {
+  const container = document.getElementById('orderDeliveredToastContainer');
+  if (!container) return;
+
+  const custName = getCustomerName(order.customer) || order.customerName || 'Customer';
+  const orderId = order.id || '';
+  const totalBags = (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+
+  const toast = document.createElement('div');
+  toast.className = 'bg-slate-900 text-white p-3.5 rounded-2xl shadow-2xl border-2 border-amber-400 pointer-events-auto flex items-start justify-between gap-3 transform translate-x-12 opacity-0 transition-all duration-300';
+  toast.innerHTML = `
+    <div class="flex items-start gap-2.5 min-w-0">
+      <div class="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center shrink-0 border border-amber-400/30 mt-0.5">
+        <i data-lucide="refresh-cw" class="w-4 h-4 text-amber-400 animate-spin"></i>
+      </div>
+      <div class="min-w-0">
+        <div class="flex items-center gap-1.5 flex-wrap">
+          <span class="px-1.5 py-0.5 rounded-md text-[9px] font-black bg-amber-400 text-slate-950 uppercase">ORDER UPDATED</span>
+          <span class="text-xs font-mono font-bold text-amber-300">${escapeHtml(orderId)}</span>
+        </div>
+        <h5 class="text-xs font-black text-white truncate mt-0.5">${escapeHtml(custName)}</h5>
+        <p class="text-[11px] text-amber-200 font-semibold mt-0.5">${totalBags} Bags • Order details modified</p>
+      </div>
+    </div>
+    <button type="button" class="text-slate-400 hover:text-white p-1 rounded-lg transition cursor-pointer" onclick="this.closest('.bg-slate-900').remove()">✕</button>
+  `;
+
+  container.appendChild(toast);
+  if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+
+  requestAnimationFrame(() => {
+    toast.classList.remove('translate-x-12', 'opacity-0');
+  });
+
+  setTimeout(() => {
+    toast.classList.add('translate-x-12', 'opacity-0');
+    setTimeout(() => toast.remove(), 300);
+  }, 9000);
+}
+
+function triggerNewOrderAlertInMainApp(order) {
+  if (!order || !order.id) return;
+  playNewOrderSound();
+  showNewOrderToast(order);
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const custName = getCustomerName(order.customer) || order.customerName || 'Customer';
+      new Notification(`🔔 New Order: ${custName}`, {
+        body: `${order.id} • New order recorded`,
+        icon: 'uploaded-logo.png?v=3'
+      });
+    }
+  } catch (e) {}
+}
+
+function triggerOrderUpdatedAlertInMainApp(order) {
+  if (!order || !order.id) return;
+  playOrderUpdatedSound();
+  showOrderUpdatedToast(order);
+  try {
+    if ('Notification' in window && Notification.permission === 'granted') {
+      const custName = getCustomerName(order.customer) || order.customerName || 'Customer';
+      new Notification(`🔄 Order Updated: ${custName}`, {
+        body: `${order.id} • Order details updated`,
+        icon: 'uploaded-logo.png?v=3'
+      });
+    }
+  } catch (e) {}
 }
 
 function showOrderDeliveredToast(order) {
@@ -1789,30 +1960,91 @@ function toggleMainDeliveryAlertSound() {
   if (next) {
     playOrderDeliveredSound();
     if (typeof showNotification === 'function') {
-      showNotification('🔔 Delivery sound alerts enabled');
+      showNotification('🔔 Sound & notification alerts enabled');
     }
   } else {
     if (typeof showNotification === 'function') {
-      showNotification('🔕 Delivery sound alerts muted');
+      showNotification('🔕 Sound alerts muted');
     }
   }
+}
+
+function toggleMainAppSoundAlerts() {
+  toggleMainDeliveryAlertSound();
 }
 
 function updateMainDeliverySoundToggleUI() {
   const icon = document.getElementById('mainDeliverySoundIcon');
   const label = document.getElementById('mainDeliverySoundLabel');
-  if (!icon || !label) return;
+  const topIcon = document.getElementById('topBarSoundIcon');
+  const topLabel = document.getElementById('topBarSoundLabel');
   const enabled = isMainDeliverySoundEnabled();
-  if (enabled) {
-    icon.setAttribute('data-lucide', 'volume-2');
-    icon.className = 'w-3 h-3 text-emerald-400';
-    label.textContent = 'Sound ON';
-  } else {
-    icon.setAttribute('data-lucide', 'volume-x');
-    icon.className = 'w-3 h-3 text-slate-400';
-    label.textContent = 'Muted';
+
+  if (icon) {
+    icon.setAttribute('data-lucide', enabled ? 'volume-2' : 'volume-x');
+    icon.className = enabled ? 'w-3 h-3 text-emerald-400' : 'w-3 h-3 text-slate-400';
   }
+  if (label) {
+    label.textContent = enabled ? 'Sound ON' : 'Muted';
+  }
+
+  if (topIcon) {
+    topIcon.setAttribute('data-lucide', enabled ? 'volume-2' : 'volume-x');
+    topIcon.className = enabled ? 'w-4 h-4 text-emerald-600' : 'w-4 h-4 text-slate-400';
+  }
+  if (topLabel) {
+    topLabel.textContent = enabled ? 'Sound ON' : 'Muted';
+  }
+
   if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+}
+
+// Viewed state tracking for blinking "NEW ORDER" and "UPDATED" badges
+const STORAGE_VIEWED_ORDERS_MAP = 'thirdman_viewed_orders_map';
+
+function getViewedOrdersMap() {
+  try {
+    const raw = localStorage.getItem(STORAGE_VIEWED_ORDERS_MAP);
+    return raw ? JSON.parse(raw) : {};
+  } catch (e) {
+    return {};
+  }
+}
+
+function markOrderAsViewed(orderId, timestamp) {
+  if (!orderId) return;
+  try {
+    const map = getViewedOrdersMap();
+    map[orderId] = timestamp || new Date().toISOString();
+    localStorage.setItem(STORAGE_VIEWED_ORDERS_MAP, JSON.stringify(map));
+  } catch (e) {}
+
+  const badgeEls = document.querySelectorAll(`[data-order-badge-id="${orderId}"]`);
+  badgeEls.forEach(el => el.remove());
+}
+
+function getOrderBadgeState(order) {
+  if (!order || !order.id) return null;
+  if (order.dispatchStatus === 'Delivered') return null;
+
+  const viewedMap = getViewedOrdersMap();
+  const lastViewedAt = viewedMap[order.id];
+
+  const createdAt = order.createdAt ? new Date(order.createdAt).getTime() : (order.date ? new Date(order.date).getTime() : 0);
+  const updatedAt = order.updatedAt ? new Date(order.updatedAt).getTime() : createdAt;
+
+  if (!lastViewedAt) {
+    const now = Date.now();
+    const isRecent = createdAt > 0 ? (now - createdAt < 48 * 3600 * 1000) : true;
+    return isRecent ? 'NEW' : null;
+  }
+
+  const lastViewedTime = new Date(lastViewedAt).getTime();
+  if (updatedAt > lastViewedTime && updatedAt > createdAt) {
+    return 'UPDATED';
+  }
+
+  return null;
 }
 
 function requestBrowserNotificationPermission() {
@@ -1848,11 +2080,40 @@ document.addEventListener('click', (e) => {
   }
 });
 
+let mainOrdersUnsubscribe = null;
+let reconnectMainOrdersTimeout = null;
+const mainOrdersStateMap = {};
+
+function handleMainAppConnectionWakeup() {
+  if (document.visibilityState === 'visible' || navigator.onLine) {
+    if (db && typeof db.enableNetwork === 'function') {
+      db.enableNetwork().catch(() => {});
+    }
+    if (!mainOrdersUnsubscribe && db) {
+      setupFirestoreRealtimeListeners();
+    }
+  }
+}
+
+document.addEventListener('visibilitychange', handleMainAppConnectionWakeup);
+window.addEventListener('online', handleMainAppConnectionWakeup);
+window.addEventListener('focus', handleMainAppConnectionWakeup);
+window.addEventListener('pageshow', handleMainAppConnectionWakeup);
+
 function setupFirestoreRealtimeListeners() {
   if (!db) return;
 
+  if (mainOrdersUnsubscribe) {
+    try { mainOrdersUnsubscribe(); } catch (e) {}
+    mainOrdersUnsubscribe = null;
+  }
+  if (reconnectMainOrdersTimeout) {
+    clearTimeout(reconnectMainOrdersTimeout);
+    reconnectMainOrdersTimeout = null;
+  }
+
   // 1. Orders Realtime Listener
-  db.collection('orders').onSnapshot(snapshot => {
+  mainOrdersUnsubscribe = db.collection('orders').onSnapshot(snapshot => {
     // If cloud is empty initially, seed local orders up to cloud
     if (snapshot.empty && orders.length > 0 && !hasPerformedInitialOrdersCloudSeed) {
       seedLocalOrdersToCloud();
@@ -1866,22 +2127,72 @@ function setupFirestoreRealtimeListeners() {
           if (d && d.id) {
             const status = (d.date && d.date <= '2026-11-21') ? 'Delivered' : (d.dispatchStatus || 'Pending');
             knownOrderDeliveryStatuses.set(d.id, status);
+            mainOrdersStateMap[d.id] = {
+              updatedAt: d.updatedAt || d.createdAt || '',
+              dispatchStatus: status,
+              itemsHash: JSON.stringify(d.items || []),
+              bagQty: (d.bagQty !== undefined) ? d.bagQty : (d.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+              notes: d.notes || '',
+              rate: d.perKgRate || 0
+            };
           }
         });
         isInitialOrdersListenerRun = false;
       } else {
-        // Detect real-time transitions to 'Delivered'
+        // Detect real-time additions and modifications
         snapshot.docChanges().forEach(change => {
-          if (change.type === 'modified' || change.type === 'added') {
-            const ord = change.doc.data();
-            if (ord && ord.id) {
-              const prevStatus = knownOrderDeliveryStatuses.get(ord.id);
-              const newStatus = ord.dispatchStatus;
-              if (prevStatus && prevStatus !== 'Delivered' && newStatus === 'Delivered') {
-                triggerOrderDeliveredAlert(ord);
+          const ord = change.doc.data();
+          if (!ord || !ord.id) return;
+
+          if (change.type === 'added') {
+            if (!knownOrderDeliveryStatuses.has(ord.id)) {
+              const status = ord.dispatchStatus || 'Pending';
+              knownOrderDeliveryStatuses.set(ord.id, status);
+              mainOrdersStateMap[ord.id] = {
+                updatedAt: ord.updatedAt || ord.createdAt || '',
+                dispatchStatus: status,
+                itemsHash: JSON.stringify(ord.items || []),
+                bagQty: (ord.bagQty !== undefined) ? ord.bagQty : (ord.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+                notes: ord.notes || '',
+                rate: ord.perKgRate || 0
+              };
+              if (status !== 'Delivered') {
+                triggerNewOrderAlertInMainApp(ord);
               }
-              knownOrderDeliveryStatuses.set(ord.id, newStatus || 'Pending');
             }
+          } else if (change.type === 'modified') {
+            const prevStatus = knownOrderDeliveryStatuses.get(ord.id);
+            const newStatus = ord.dispatchStatus || 'Pending';
+            if (prevStatus && prevStatus !== 'Delivered' && newStatus === 'Delivered') {
+              triggerOrderDeliveredAlert(ord);
+            } else if (newStatus !== 'Delivered') {
+              const prev = mainOrdersStateMap[ord.id] || {};
+              const currentItemsHash = JSON.stringify(ord.items || []);
+              const currentBagQty = (ord.bagQty !== undefined) ? ord.bagQty : (ord.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+              const currentUpdatedAt = ord.updatedAt || '';
+
+              const isContentChanged = (
+                (currentUpdatedAt && currentUpdatedAt !== prev.updatedAt) ||
+                currentItemsHash !== prev.itemsHash ||
+                currentBagQty !== prev.bagQty ||
+                (ord.notes || '') !== (prev.notes || '') ||
+                (ord.perKgRate || 0) !== (prev.rate || 0)
+              );
+
+              if (isContentChanged) {
+                triggerOrderUpdatedAlertInMainApp(ord);
+              }
+            }
+
+            knownOrderDeliveryStatuses.set(ord.id, newStatus);
+            mainOrdersStateMap[ord.id] = {
+              updatedAt: ord.updatedAt || '',
+              dispatchStatus: newStatus,
+              itemsHash: JSON.stringify(ord.items || []),
+              bagQty: (ord.bagQty !== undefined) ? ord.bagQty : (ord.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+              notes: ord.notes || '',
+              rate: ord.perKgRate || 0
+            };
           }
         });
       }
@@ -1942,8 +2253,15 @@ function setupFirestoreRealtimeListeners() {
       updateCloudSyncStatus('synced', 'Live Synced 🟢');
     }
   }, err => {
-    console.warn('Orders snapshot listener error:', err);
-    updateCloudSyncStatus('offline', 'Offline Mode (Local)');
+    console.warn('Orders snapshot listener error, scheduling auto-reconnect:', err);
+    updateCloudSyncStatus('offline', 'Reconnecting...');
+    if (reconnectMainOrdersTimeout) clearTimeout(reconnectMainOrdersTimeout);
+    reconnectMainOrdersTimeout = setTimeout(() => {
+      try {
+        if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+      } catch (e) {}
+      setupFirestoreRealtimeListeners();
+    }, 2500);
   });
 
   // 2. Customers Realtime Listener
@@ -3720,6 +4038,7 @@ function openNewOrderModal(preselectedCustomerId = null) {
 
 function openEditOrderModal(orderId) {
   try {
+    markOrderAsViewed(orderId);
     const order = orders.find(o => o.id === orderId);
     if (!order) return;
 
@@ -4884,6 +5203,7 @@ function handleSaveOrder(event) {
     const existingIndex = orders.findIndex(o => o.id === editingOrderId);
     if (existingIndex !== -1) {
       const prevOrder = orders[existingIndex];
+      const nowIso = new Date().toISOString();
       const updatedOrder = {
         ...prevOrder,
         id: editingOrderId,
@@ -4914,8 +5234,11 @@ function handleSaveOrder(event) {
         totalKg: totalKg,
         perKgRate: Math.round(averagePerKgRate * 100) / 100,
         totalAmount: Math.round(totalAmount),
-        notes: notes
+        notes: notes,
+        createdAt: prevOrder.createdAt || (prevOrder.date ? prevOrder.date + 'T00:00:00.000Z' : nowIso),
+        updatedAt: nowIso
       };
+      markOrderAsViewed(editingOrderId, nowIso);
       orders[existingIndex] = updatedOrder;
       saveDataToStorage();
       syncCloudOrder(updatedOrder);
@@ -4926,6 +5249,7 @@ function handleSaveOrder(event) {
     }
   } else {
     const newId = generateNextOrderId();
+    const nowIso = new Date().toISOString();
     const newOrder = {
       id: newId,
       date: orderDate,
@@ -4959,9 +5283,11 @@ function handleSaveOrder(event) {
       dispatchStatus: 'Pending',
       deliveryNote: '',
       deliveredAt: null,
-      createdAt: new Date().toISOString()
+      createdAt: nowIso,
+      updatedAt: nowIso
     };
 
+    markOrderAsViewed(newId, nowIso);
     orders.unshift(newOrder);
     if (typeof upgradeProspectToCustomerIfOrdered === 'function') {
       upgradeProspectToCustomerIfOrdered(newOrder.customer);
@@ -6890,10 +7216,25 @@ function renderOrdersTable() {
       </span>`;
     }
 
+    const badgeState = getOrderBadgeState(o);
+    let orderBadgeHtml = '';
+    if (badgeState === 'NEW') {
+      orderBadgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping mr-0.5"></span>NEW ORDER</span>`;
+    } else if (badgeState === 'UPDATED') {
+      orderBadgeHtml = `<span data-order-badge-id="${o.id}" class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-300 animate-pulse shadow-xs"><span class="w-1.5 h-1.5 rounded-full bg-amber-600 animate-ping mr-0.5"></span>UPDATED</span>`;
+    }
+
+    tr.onclick = (e) => {
+      if (!e.target.closest('button') && !e.target.closest('a')) {
+        markOrderAsViewed(o.id);
+      }
+    };
+
     tr.innerHTML = `
       <td class="px-4 py-3 whitespace-nowrap">
-        <div class="flex items-center gap-1.5">
+        <div class="flex items-center gap-1.5 flex-wrap">
           <div class="font-mono font-bold text-blue-700 text-xs">${escapeHtml(o.id)}</div>
+          ${orderBadgeHtml}
           ${isUrgent ? '<span class="px-1 py-0.2 rounded text-[9px] font-black bg-rose-100 text-rose-700 border border-rose-200">Urgent</span>' : ''}
         </div>
         <div class="text-[11px] text-slate-500 font-medium">${escapeHtml(o.date)}</div>
@@ -7043,6 +7384,7 @@ ${itemsText}
 }
 
 function shareOrderToWhatsApp(orderId) {
+  markOrderAsViewed(orderId);
   const order = orders.find(o => o.id === orderId);
   if (!order) return;
 
@@ -7191,6 +7533,7 @@ function closeViewsModal() {
 // ==================== INVOICE MODAL & PRINT ====================
 
 function openInvoiceModal(orderId) {
+  markOrderAsViewed(orderId);
   const order = orders.find(o => o.id === orderId);
   if (!order) return;
 
@@ -13411,6 +13754,13 @@ window.toggleDeliveryAlertMenu = toggleDeliveryAlertMenu;
 window.closeDeliveryAlertMenu = closeDeliveryAlertMenu;
 window.clearDeliveryAlertHistory = clearDeliveryAlertHistory;
 window.toggleMainDeliveryAlertSound = toggleMainDeliveryAlertSound;
+window.toggleMainAppSoundAlerts = toggleMainAppSoundAlerts;
 window.requestBrowserNotificationPermission = requestBrowserNotificationPermission;
 window.playOrderDeliveredSound = playOrderDeliveredSound;
+window.playNewOrderSound = playNewOrderSound;
+window.playOrderUpdatedSound = playOrderUpdatedSound;
 window.triggerOrderDeliveredAlert = triggerOrderDeliveredAlert;
+window.triggerNewOrderAlertInMainApp = triggerNewOrderAlertInMainApp;
+window.triggerOrderUpdatedAlertInMainApp = triggerOrderUpdatedAlertInMainApp;
+window.markOrderAsViewed = markOrderAsViewed;
+window.getOrderBadgeState = getOrderBadgeState;
