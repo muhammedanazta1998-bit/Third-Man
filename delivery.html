@@ -9,63 +9,32 @@
   <meta name="apple-mobile-web-app-title" content="Third Man Delivery">
   <meta name="theme-color" content="#0f172a">
   <title>Third Man - Staff Delivery & Dispatch Portal</title>
-  <link rel="manifest" href="manifest.json">
-  <link id="deliveryAppleTouchIcon" rel="apple-touch-icon" href="apple-touch-icon.png">
-  <link id="deliveryAppleTouchIcon180" rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
-  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon.png">
-  <link rel="apple-touch-icon" sizes="167x167" href="apple-touch-icon.png">
-  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png">
-  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png">
-  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
-  <link rel="icon" type="image/svg+xml" href="logo.svg">
+  <link rel="manifest" href="manifest.json?v=2">
+  <link rel="icon" type="image/png" sizes="32x32" href="uploaded-logo.png?v=2">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png?v=2">
+  <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png?v=2">
+  <link rel="shortcut icon" type="image/png" href="uploaded-logo.png?v=2">
+  <link id="deliveryAppleTouchIcon" rel="apple-touch-icon" href="apple-touch-icon.png?v=2">
+  <link id="deliveryAppleTouchIcon180" rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png?v=2">
+  <link rel="apple-touch-icon" sizes="152x152" href="apple-touch-icon.png?v=2">
+  <link rel="apple-touch-icon" sizes="167x167" href="apple-touch-icon.png?v=2">
+  <link rel="apple-touch-icon-precomposed" href="apple-touch-icon.png?v=2">
+  <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png?v=2">
   <script>
-    window.EMBEDDED_DEFAULT_LOGO_SVG = 'data:image/svg+xml;utf8,' + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="200" height="200">
-      <defs>
-        <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#1e3a8a"/>
-          <stop offset="100%" stop-color="#09111e"/>
-        </linearGradient>
-        <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#fbbf24"/>
-          <stop offset="100%" stop-color="#d97706"/>
-        </linearGradient>
-        <linearGradient id="cyanGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stop-color="#38bdf8"/>
-          <stop offset="100%" stop-color="#0284c7"/>
-        </linearGradient>
-        <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
-          <feDropShadow dx="0" dy="4" stdDeviation="5" flood-color="#000000" flood-opacity="0.4"/>
-        </filter>
-      </defs>
-      <rect x="10" y="10" width="180" height="180" rx="42" fill="url(#bgGrad)" stroke="url(#goldGrad)" stroke-width="4" filter="url(#shadow)"/>
-      <g fill="url(#goldGrad)" opacity="0.95">
-        <ellipse cx="44" cy="70" rx="7" ry="13" transform="rotate(-35 44 70)"/>
-        <ellipse cx="36" cy="95" rx="7" ry="13" transform="rotate(-20 36 95)"/>
-        <ellipse cx="38" cy="122" rx="7" ry="13" transform="rotate(10 38 122)"/>
-        <ellipse cx="50" cy="146" rx="7" ry="12" transform="rotate(35 50 146)"/>
-      </g>
-      <g fill="url(#goldGrad)" opacity="0.95">
-        <ellipse cx="156" cy="70" rx="7" ry="13" transform="rotate(35 156 70)"/>
-        <ellipse cx="164" cy="95" rx="7" ry="13" transform="rotate(20 164 95)"/>
-        <ellipse cx="162" cy="122" rx="7" ry="13" transform="rotate(-10 162 122)"/>
-        <ellipse cx="150" cy="146" rx="7" ry="12" transform="rotate(-35 150 146)"/>
-      </g>
-      <circle cx="100" cy="95" r="45" fill="#0b1324" stroke="url(#cyanGrad)" stroke-width="2.5"/>
-      <path d="M86 58 L100 44 L114 58 L107 63 L100 56 L93 63 Z" fill="url(#goldGrad)"/>
-      <text x="100" y="107" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="34" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="1">TM</text>
-      <rect x="28" y="152" width="144" height="26" rx="13" fill="url(#goldGrad)"/>
-      <text x="100" y="169" font-family="'Plus Jakarta Sans', system-ui, sans-serif" font-size="11" font-weight="900" fill="#09111e" text-anchor="middle" letter-spacing="1.5">THIRD MAN</text>
-    </svg>`);
+    window.EMBEDDED_DEFAULT_LOGO_SVG = 'uploaded-logo.png?v=2';
 
     (function() {
       try {
         var customLogo = localStorage.getItem('thirdman_app_logo');
-        if (customLogo && !customLogo.startsWith('data:') && !customLogo.endsWith('.svg') && !customLogo.includes('.svg') && !customLogo.includes('image/svg+xml')) {
-          var atIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
-          atIcons.forEach(function(link) {
-            link.href = customLogo;
-          });
-        }
+        var logoToApply = customLogo || 'uploaded-logo.png?v=2';
+        var favs = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+        favs.forEach(function(link) {
+          link.href = logoToApply;
+        });
+        var atIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
+        atIcons.forEach(function(link) {
+          link.href = logoToApply;
+        });
       } catch (e) {}
     })();
   </script>
@@ -104,7 +73,7 @@
       <!-- Clickable Logo & Brand Title (Standard Link to Main Dashboard) -->
       <a href="index.html" id="btnHeaderReturnToDashboard" class="flex items-center gap-3 min-w-0 group hover:opacity-95 transition-all duration-150 cursor-pointer select-none" title="Return to Third Man Dashboard" aria-label="Return to Third Man Dashboard">
         <div class="relative shrink-0">
-          <img id="deliveryHeaderLogo" src="uploaded-logo.png" onerror="if(this.src.indexOf('uploaded-logo.png')!==-1){this.src='logo.svg';}else if(window.EMBEDDED_DEFAULT_LOGO_SVG){this.src=window.EMBEDDED_DEFAULT_LOGO_SVG;}" alt="Third Man Logo" class="w-10 h-10 rounded-xl shadow-md object-contain bg-slate-900 p-0.5 border border-slate-700/80 group-hover:border-cyan-400 group-hover:shadow-cyan-950/40 transition-all duration-150">
+          <img id="deliveryHeaderLogo" src="uploaded-logo.png?v=2" onerror="this.onerror=null;this.src='icon-192.png?v=2';" alt="Third Man Logo" class="w-10 h-10 rounded-xl shadow-md object-contain bg-slate-900 p-0.5 border border-slate-700/80 group-hover:border-cyan-400 group-hover:shadow-cyan-950/40 transition-all duration-150">
         </div>
         <script>
           (function() {
@@ -130,6 +99,12 @@
       </a>
 
       <div class="flex items-center gap-2 shrink-0">
+        <!-- Sound & Push Notification Alert Toggle Button -->
+        <button type="button" id="btnDeliverySoundToggle" onclick="toggleDeliveryAlertSound()" class="px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer select-none bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/40" title="Toggle Real-Time Sound & Push Notification Alerts">
+          <i id="deliverySoundIcon" data-lucide="bell" class="w-3.5 h-3.5 text-emerald-400"></i>
+          <span id="deliverySoundLabel" class="hidden xs:inline sm:inline">Alerts ON</span>
+        </button>
+
         <!-- Return to Dashboard Quick Action Button -->
         <a href="index.html" id="btnBackToDashboardAction" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer" title="Return to Main Dashboard">
           <i data-lucide="arrow-left" class="w-3.5 h-3.5 text-cyan-400"></i>
@@ -144,6 +119,34 @@
       </div>
     </div>
   </header>
+
+  <!-- FLOATING NEW ORDER ALERT BANNER (REAL-TIME NOTIFICATION) -->
+  <div id="newOrderBannerContainer" class="fixed top-16 left-1/2 -translate-x-1/2 z-50 w-full max-w-lg px-3 pointer-events-none transition-all duration-300 transform -translate-y-24 opacity-0">
+    <div class="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-3.5 sm:p-4 rounded-2xl shadow-2xl border-2 border-cyan-400/90 pointer-events-auto flex items-center justify-between gap-3 backdrop-blur-md">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-300 flex items-center justify-center shrink-0 border border-cyan-400/40 shadow-inner">
+          <i data-lucide="bell-ring" class="w-5 h-5 text-cyan-400 animate-bounce"></i>
+        </div>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-2 py-0.5 rounded-full text-[10px] font-black bg-cyan-400 text-slate-950 uppercase tracking-wider">NEW ORDER</span>
+            <span id="newOrderBannerId" class="text-xs font-mono font-bold text-cyan-300">ORD-5470</span>
+          </div>
+          <h4 id="newOrderBannerCustomer" class="text-sm font-black text-white truncate mt-0.5">Shop / Customer Name</h4>
+          <p id="newOrderBannerSummary" class="text-xs text-slate-300 truncate">15 Bags • ₹12,500</p>
+        </div>
+      </div>
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button type="button" id="btnViewNewOrder" onclick="viewNewOrderFromBanner()" class="px-3 py-1.5 bg-gradient-to-r from-cyan-400 to-blue-500 hover:from-cyan-300 hover:to-blue-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition active:scale-95 flex items-center gap-1 cursor-pointer">
+          <span>View</span>
+          <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+        </button>
+        <button type="button" onclick="dismissNewOrderBanner()" class="p-1.5 rounded-xl hover:bg-white/10 text-slate-400 hover:text-white transition cursor-pointer" title="Dismiss Alert">
+          <i data-lucide="x" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </div>
+  </div>
 
   <!-- MAIN CONTENT CONTAINER -->
   <main class="max-w-7xl mx-auto w-full px-3 sm:px-4 py-4 flex-1 space-y-3.5 pb-20">
@@ -389,6 +392,7 @@
 
     const STORAGE_ORDERS = 'biriyani_rice_orders_fresh_v2';
     const STORAGE_DELIVERY_CACHE = 'third_man_delivery_orders_cache';
+    const STORAGE_DELIVERY_ALERT_SOUND = 'thirdman_delivery_alert_sound';
 
     let db = null;
     let allOrders = [];
@@ -399,6 +403,11 @@
     let activeActionOrderId = null;
     let activeActionType = 'delivered'; // 'delivered' or 'note_only'
     let currentViewMode = localStorage.getItem('deliveryViewMode') || (window.innerWidth >= 1024 ? 'table' : 'cards');
+    let isInitialDeliveryOrdersLoad = true;
+    const knownDeliveryOrderIds = new Set();
+    let deliveryAudioCtx = null;
+    let activeBannerOrderId = null;
+    let newOrderBannerTimer = null;
 
     function sortOrders(arr) {
       if (!Array.isArray(arr)) return;
@@ -458,6 +467,189 @@
       }
     }
 
+    // ==================== WEB AUDIO API SOUND & NOTIFICATION ENGINE ====================
+    function getDeliveryAudioContext() {
+      if (!deliveryAudioCtx) {
+        const AudioCtx = window.AudioContext || window.webkitAudioContext;
+        if (AudioCtx) deliveryAudioCtx = new AudioCtx();
+      }
+      if (deliveryAudioCtx && deliveryAudioCtx.state === 'suspended') {
+        deliveryAudioCtx.resume().catch(() => {});
+      }
+      return deliveryAudioCtx;
+    }
+
+    ['click', 'touchstart', 'keydown'].forEach(evt => {
+      document.addEventListener(evt, () => {
+        if (deliveryAudioCtx && deliveryAudioCtx.state === 'suspended') {
+          deliveryAudioCtx.resume().catch(() => {});
+        }
+      }, { passive: true });
+    });
+
+    function isDeliveryAlertSoundEnabled() {
+      const val = localStorage.getItem(STORAGE_DELIVERY_ALERT_SOUND);
+      return val === null ? true : val === 'true';
+    }
+
+    function updateDeliverySoundToggleUI() {
+      const btn = document.getElementById('btnDeliverySoundToggle');
+      const icon = document.getElementById('deliverySoundIcon');
+      const label = document.getElementById('deliverySoundLabel');
+      if (!btn) return;
+      const enabled = isDeliveryAlertSoundEnabled();
+      if (enabled) {
+        btn.className = 'px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer select-none bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/40';
+        if (icon) {
+          icon.setAttribute('data-lucide', 'bell');
+          icon.className = 'w-3.5 h-3.5 text-emerald-400';
+        }
+        if (label) label.textContent = 'Alerts ON';
+      } else {
+        btn.className = 'px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer select-none bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-300';
+        if (icon) {
+          icon.setAttribute('data-lucide', 'bell-off');
+          icon.className = 'w-3.5 h-3.5 text-slate-400';
+        }
+        if (label) label.textContent = 'Muted';
+      }
+      if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function toggleDeliveryAlertSound() {
+      const current = isDeliveryAlertSoundEnabled();
+      const next = !current;
+      try {
+        localStorage.setItem(STORAGE_DELIVERY_ALERT_SOUND, String(next));
+      } catch (e) {}
+      updateDeliverySoundToggleUI();
+
+      getDeliveryAudioContext();
+      if (next) {
+        playNewOrderChime();
+        if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission().catch(() => {});
+        }
+        showToast('🔔 Sound & Notification Alerts Activated');
+      } else {
+        showToast('🔕 Delivery Alerts Muted');
+      }
+    }
+
+    function playNewOrderChime() {
+      if (!isDeliveryAlertSoundEnabled()) return;
+      try {
+        const ctx = getDeliveryAudioContext();
+        if (!ctx) return;
+        const now = ctx.currentTime;
+        // Distinct, pleasant 4-note ascending arpeggio chime: C5 (523Hz) -> E5 (659Hz) -> G5 (784Hz) -> High C6 (1046Hz)
+        const notes = [
+          { freq: 523.25, start: 0.00, dur: 0.18 },
+          { freq: 659.25, start: 0.10, dur: 0.18 },
+          { freq: 783.99, start: 0.20, dur: 0.22 },
+          { freq: 1046.50, start: 0.32, dur: 0.40 }
+        ];
+        notes.forEach(n => {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'sine';
+          osc.frequency.setValueAtTime(n.freq, now + n.start);
+          gain.gain.setValueAtTime(0.0001, now + n.start);
+          gain.gain.exponentialRampToValueAtTime(0.28, now + n.start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, now + n.start + n.dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(now + n.start);
+          osc.stop(now + n.start + n.dur + 0.05);
+        });
+      } catch (e) {
+        console.warn('Audio playback notice:', e);
+      }
+    }
+
+    function triggerNewOrderAlert(order) {
+      if (!order || !order.id) return;
+
+      playNewOrderChime();
+
+      try {
+        if ('Notification' in window && Notification.permission === 'granted') {
+          const cust = getCustName(order);
+          const items = Array.isArray(order.items) ? order.items : [];
+          const totalBags = (order.bagQty !== undefined) ? order.bagQty : items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+          new Notification(`🔔 New Order: ${cust}`, {
+            body: `${order.id} • ${totalBags} Bags • Tap to view in Delivery Portal`,
+            icon: 'uploaded-logo.png?v=2'
+          });
+        }
+      } catch (e) {}
+
+      showNewOrderTopBanner(order);
+    }
+
+    function showNewOrderTopBanner(order) {
+      const container = document.getElementById('newOrderBannerContainer');
+      const idEl = document.getElementById('newOrderBannerId');
+      const custEl = document.getElementById('newOrderBannerCustomer');
+      const summaryEl = document.getElementById('newOrderBannerSummary');
+      if (!container || !idEl || !custEl || !summaryEl) return;
+
+      activeBannerOrderId = order.id;
+      const custName = getCustName(order);
+      const location = getCustLandmark(order) || getCustTown(order) || '';
+      const items = Array.isArray(order.items) ? order.items : [];
+      const totalBags = (order.bagQty !== undefined) ? order.bagQty : items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+      const totalAmount = (order.totalAmount !== undefined && order.totalAmount !== null)
+        ? parseFloat(order.totalAmount)
+        : items.reduce((s, it) => {
+            const itKg = parseFloat(it.totalKg) || ((parseFloat(it.bagQty) || 0) * (parseFloat(it.bagSize) || 25));
+            return s + (itKg * (parseFloat(it.perKgRate) || 0));
+          }, 0);
+
+      idEl.textContent = order.id;
+      custEl.textContent = custName;
+      summaryEl.textContent = `${totalBags} Bags • ₹${Math.round(totalAmount).toLocaleString('en-IN')}${location ? ' • ' + location : ''}`;
+
+      container.classList.remove('pointer-events-none', '-translate-y-24', 'opacity-0');
+      container.classList.add('-translate-y-0', 'opacity-100');
+
+      clearTimeout(newOrderBannerTimer);
+      newOrderBannerTimer = setTimeout(() => {
+        dismissNewOrderBanner();
+      }, 12000);
+
+      if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function dismissNewOrderBanner() {
+      const container = document.getElementById('newOrderBannerContainer');
+      if (!container) return;
+      container.classList.add('-translate-y-24', 'opacity-0', 'pointer-events-none');
+      container.classList.remove('-translate-y-0', 'opacity-100');
+      activeBannerOrderId = null;
+    }
+
+    function viewNewOrderFromBanner() {
+      const targetId = activeBannerOrderId;
+      dismissNewOrderBanner();
+      if (!targetId) return;
+
+      const searchInput = document.getElementById('deliverySearchInput');
+      if (searchInput) searchInput.value = '';
+      setFilter('pending');
+
+      setTimeout(() => {
+        const card = document.getElementById(`order-card-${targetId}`);
+        if (card) {
+          card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          card.classList.add('ring-4', 'ring-cyan-400', 'ring-offset-2', 'transition-all');
+          setTimeout(() => {
+            card.classList.remove('ring-4', 'ring-cyan-400', 'ring-offset-2');
+          }, 3500);
+        }
+      }, 100);
+    }
+
     function loadInitialOrdersFromCache() {
       try {
         const raw = localStorage.getItem(STORAGE_DELIVERY_CACHE) || localStorage.getItem(STORAGE_ORDERS);
@@ -466,6 +658,7 @@
           if (Array.isArray(parsed) && parsed.length > 0) {
             normalizeHistoricalOrders(parsed);
             allOrders = parsed;
+            parsed.forEach(o => { if (o && o.id) knownDeliveryOrderIds.add(o.id); });
             sortOrders(allOrders);
             populateTownDropdown();
             updateTabBadges();
@@ -631,6 +824,28 @@
     function listenToOrders() {
       if (!db) return;
       db.collection('orders').onSnapshot(snapshot => {
+        if (isInitialDeliveryOrdersLoad) {
+          snapshot.forEach(doc => {
+            const d = doc.data();
+            if (d && d.id) {
+              knownDeliveryOrderIds.add(d.id);
+            }
+          });
+          isInitialDeliveryOrdersLoad = false;
+        } else {
+          // Detect real-time newly created orders
+          snapshot.docChanges().forEach(change => {
+            if (change.type === 'added') {
+              const order = change.doc.data();
+              if (order && order.id && !knownDeliveryOrderIds.has(order.id)) {
+                knownDeliveryOrderIds.add(order.id);
+                if (order.dispatchStatus !== 'Delivered') {
+                  triggerNewOrderAlert(order);
+                }
+              }
+            }
+          });
+        }
         processIncomingOrdersSnapshot(snapshot);
       }, err => {
         console.warn('Orders onSnapshot error:', err);
@@ -649,6 +864,10 @@
       }
       db.collection('orders').get().then(snapshot => {
         if (!snapshot.empty) {
+          snapshot.forEach(doc => {
+            const d = doc.data();
+            if (d && d.id) knownDeliveryOrderIds.add(d.id);
+          });
           processIncomingOrdersSnapshot(snapshot);
         } else if (allOrders.length === 0) {
           allOrders = [];
@@ -704,6 +923,7 @@
 
         if (restOrders.length > 0 && allOrders.length === 0) {
           normalizeHistoricalOrders(restOrders);
+          restOrders.forEach(o => { if (o && o.id) knownDeliveryOrderIds.add(o.id); });
           sortOrders(restOrders);
           allOrders = restOrders;
           try {
@@ -1456,6 +1676,10 @@
               } catch (e) {}
               const logoEl = document.getElementById('deliveryHeaderLogo');
               if (logoEl) logoEl.src = cfg.appLogo;
+              const favs = document.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"]');
+              favs.forEach(link => { link.href = cfg.appLogo; });
+              const atIcons = document.querySelectorAll('link[rel="apple-touch-icon"], link[rel="apple-touch-icon-precomposed"]');
+              atIcons.forEach(link => { link.href = cfg.appLogo; });
             }
           }
         }, err => console.warn('Could not sync logo in delivery portal:', err));
@@ -1793,6 +2017,7 @@
 
     function startDeliveryApp() {
       updateViewModeButtons();
+      updateDeliverySoundToggleUI();
       initQuickRemarksDelegation();
       renderQuickRemarkChips();
       try {
@@ -1800,7 +2025,7 @@
         const logoEl = document.getElementById('deliveryHeaderLogo');
         if (logoEl) {
           if (customLogo) logoEl.src = customLogo;
-          else logoEl.src = 'uploaded-logo.png';
+          else logoEl.src = 'uploaded-logo.png?v=2';
         }
       } catch (e) {}
       initFirebase();
