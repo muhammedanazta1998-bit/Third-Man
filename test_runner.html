@@ -164,6 +164,34 @@
   <button type="button" id="custCatBtn-Retailer" class="cust-cat-pill"></button>
   <button type="button" id="custCatBtn-Other" class="cust-cat-pill"></button>
   <button type="button" id="btnResetCustFilters" class="hidden"></button>
+
+  <!-- Navigation Fixtures -->
+  <div id="viewOverview" class="hidden"></div>
+  <div id="viewSalesRegister" class="hidden"></div>
+  <div id="viewCustomers" class="hidden"></div>
+  <div id="viewDailyReport" class="hidden"></div>
+  <div id="viewSettings" class="hidden"></div>
+  <div id="viewIncentives" class="hidden"></div>
+  <div id="settingsTabContent-towns" class="hidden"></div>
+  <div id="settingsTabContent-products" class="hidden"></div>
+  <div id="settingsTabContent-incentive" class="hidden"></div>
+  <div id="settingsTabContent-branding" class="hidden"></div>
+  <div id="settingsTabContent-data" class="hidden"></div>
+  <div id="settingsTabContent-security" class="hidden"></div>
+  <button id="settingsTabBtn-towns"></button>
+  <button id="settingsTabBtn-products"></button>
+  <button id="settingsTabBtn-incentive"></button>
+  <button id="settingsTabBtn-branding"></button>
+  <button id="settingsTabBtn-data"></button>
+  <button id="settingsTabBtn-security"></button>
+  <button id="tabBtnHome"></button>
+  <button id="tabBtnOrders"></button>
+  <button id="tabBtnDailyReport"></button>
+  <button id="tabBtnCustomers"></button>
+  <button id="tabBtnMore"></button>
+  <span id="mobileDailyReportBadge" class="hidden"></span>
+  <div id="mobileMoreDrawerOverlay" class="hidden"></div>
+  <div id="mobileMoreDrawer" class="hidden"></div>
 </div>
 
 <script>
@@ -1053,6 +1081,56 @@ window.onerror = function(msg, url, line, col, err) {
   assert(customerCategoryFilter === 'all', "resetCustomerFilters() resets category filter to 'all'");
   assert(custActiveFiltersBadge.classList.contains('hidden'), "Active filter badge is hidden after reset");
   assert(btnResetCustFilters.classList.contains('hidden'), "Reset filters button is hidden after reset");
+
+  // ==========================================
+  // TEST 17: Streamlined Navigation & Settings Incentive Hub
+  // ==========================================
+  log("\n--- TEST 17: Streamlined Navigation & Settings Incentive Hub ---");
+
+  // 1. Primary mobile bottom navigation buttons
+  const tabHome = document.getElementById('tabBtnHome');
+  const tabOrders = document.getElementById('tabBtnOrders');
+  const tabDailyReport = document.getElementById('tabBtnDailyReport');
+  const tabCustomers = document.getElementById('tabBtnCustomers');
+  const tabMore = document.getElementById('tabBtnMore');
+  const tabIncentives = document.getElementById('tabBtnIncentives');
+
+  assert(tabHome !== null, "tabBtnHome exists in primary bottom navigation");
+  assert(tabOrders !== null, "tabBtnOrders exists in primary bottom navigation");
+  assert(tabDailyReport !== null, "tabBtnDailyReport exists in primary bottom navigation");
+  assert(tabCustomers !== null, "tabBtnCustomers exists in primary bottom navigation");
+  assert(tabMore !== null, "tabBtnMore exists in primary bottom navigation");
+  assert(tabIncentives === null, "tabBtnIncentives removed from primary bottom navigation");
+
+  // 2. Bottom nav clicks & active tab state
+  handleBottomNavClick('home');
+  assert(currentMainView === 'overview', "handleBottomNavClick('home') switches to overview");
+  assert(activeMobileTab === 'home', "activeMobileTab is 'home'");
+
+  handleBottomNavClick('orders');
+  assert(currentMainView === 'sales-register', "handleBottomNavClick('orders') switches to sales-register");
+  assert(activeMobileTab === 'orders', "activeMobileTab is 'orders'");
+
+  handleBottomNavClick('daily-report');
+  assert(currentMainView === 'daily-report', "handleBottomNavClick('daily-report') switches to daily-report");
+  assert(activeMobileTab === 'dailyReport', "activeMobileTab is 'dailyReport'");
+
+  handleBottomNavClick('customers');
+  assert(currentMainView === 'customers', "handleBottomNavClick('customers') switches to customers");
+  assert(activeMobileTab === 'customers', "activeMobileTab is 'customers'");
+
+  // 3. Routing from incentives to Settings -> Incentive Scheme & Rules
+  switchMainView('incentives');
+  assert(currentMainView === 'settings', "switchMainView('incentives') smoothly routes to 'settings'");
+  assert(currentSettingsTab === 'incentive', "currentSettingsTab is 'incentive'");
+
+  showIncentiveDetails();
+  assert(currentMainView === 'settings', "showIncentiveDetails() routes to 'settings'");
+  assert(currentSettingsTab === 'incentive', "showIncentiveDetails() opens the 'incentive' tab inside settings");
+
+  handleBottomNavClick('incentives');
+  assert(currentMainView === 'settings', "handleBottomNavClick('incentives') routes to 'settings'");
+  assert(currentSettingsTab === 'incentive', "handleBottomNavClick('incentives') activates the 'incentive' subTab");
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

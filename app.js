@@ -7195,11 +7195,15 @@ function updateCharts(filteredOrders) {
 
 // ==================== RESPONSIVE MOBILE NAVIGATION (BOTTOM BAR & MORE DRAWER) ====================
 
-let activeMobileTab = 'home'; // 'home', 'orders', 'customers', 'incentives', 'more'
+let activeMobileTab = 'home'; // 'home', 'orders', 'dailyReport', 'customers', 'more'
 
 function updateBottomNavActiveTab(tabName) {
-  activeMobileTab = tabName || 'home';
-  const tabIds = ['home', 'orders', 'customers', 'incentives', 'more'];
+  if (tabName === 'daily-report' || tabName === 'dailyReport') {
+    activeMobileTab = 'dailyReport';
+  } else {
+    activeMobileTab = tabName || 'home';
+  }
+  const tabIds = ['home', 'orders', 'dailyReport', 'customers', 'more'];
 
   tabIds.forEach(t => {
     const btn = document.getElementById(`tabBtn${t.charAt(0).toUpperCase() + t.slice(1)}`);
@@ -7227,6 +7231,18 @@ function updateBottomNavActiveTab(tabName) {
     }
   }
 
+  // Sync mobile daily report badge
+  const mobileDailyBadge = document.getElementById('mobileDailyReportBadge');
+  const sidebarDailyBadge = document.getElementById('sidebarDailyReportBadge');
+  if (mobileDailyBadge && sidebarDailyBadge) {
+    mobileDailyBadge.textContent = sidebarDailyBadge.textContent;
+    if (!sidebarDailyBadge.classList.contains('hidden') && sidebarDailyBadge.textContent !== '0') {
+      mobileDailyBadge.classList.remove('hidden');
+    } else {
+      mobileDailyBadge.classList.add('hidden');
+    }
+  }
+
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
   }
@@ -7244,10 +7260,12 @@ function handleBottomNavClick(tabName) {
     switchMainView('overview');
   } else if (tabName === 'orders') {
     switchMainView('sales-register');
+  } else if (tabName === 'daily-report' || tabName === 'dailyReport') {
+    switchMainView('daily-report');
   } else if (tabName === 'customers') {
     switchMainView('customers');
   } else if (tabName === 'incentives') {
-    switchMainView('incentives');
+    switchMainView('settings', 'incentive');
   }
 }
 
@@ -7297,10 +7315,10 @@ function closeMobileMoreDrawer() {
     updateBottomNavActiveTab('home');
   } else if (currentMainView === 'sales-register') {
     updateBottomNavActiveTab('orders');
+  } else if (currentMainView === 'daily-report') {
+    updateBottomNavActiveTab('dailyReport');
   } else if (currentMainView === 'customers') {
     updateBottomNavActiveTab('customers');
-  } else if (currentMainView === 'incentives') {
-    updateBottomNavActiveTab('incentives');
   } else {
     updateBottomNavActiveTab('more');
   }
@@ -7338,6 +7356,10 @@ function closeAllOpenModals() {
 let currentMainView = 'overview'; // 'overview' or 'sales-register'
 
 function switchMainView(viewName, subTab) {
+  if (viewName === 'incentives') {
+    return switchMainView('settings', 'incentive');
+  }
+
   currentMainView = viewName || 'overview';
 
   // If navigating away from Customers or if clicking main Customers nav button, reset profile view state
@@ -7437,12 +7459,11 @@ function switchMainView(viewName, subTab) {
   const sidebarButtons = [
     { id: 'navBtnOverview', view: 'overview' },
     { id: 'navBtnSalesRegister', view: 'sales-register' },
-    { id: 'navBtnCustomers', view: 'customers' },
     { id: 'navBtnDailyReport', view: 'daily-report' },
+    { id: 'navBtnCustomers', view: 'customers' },
     { id: 'navBtnLeaderboard', view: 'leaderboard' },
     { id: 'navBtnMonthlyHistory', view: 'monthly-history' },
     { id: 'navBtnProducts', view: 'settings', subTab: 'products' },
-    { id: 'navBtnIncentives', view: 'incentives' },
     { id: 'navBtnViews', view: 'views' },
     { id: 'navBtnSettings', view: 'settings' }
   ];
@@ -7473,8 +7494,8 @@ function switchMainView(viewName, subTab) {
   let mobileTab = 'more';
   if (currentMainView === 'overview') mobileTab = 'home';
   else if (currentMainView === 'sales-register') mobileTab = 'orders';
+  else if (currentMainView === 'daily-report') mobileTab = 'dailyReport';
   else if (currentMainView === 'customers') mobileTab = 'customers';
-  else if (currentMainView === 'incentives') mobileTab = 'incentives';
   updateBottomNavActiveTab(mobileTab);
 
   // Trigger View-Specific Renderers
@@ -8204,7 +8225,7 @@ function closeInvoiceModal() {
 // ==================== INCENTIVE DETAILS MODAL ====================
 
 function showIncentiveDetails() {
-  switchMainView('incentives');
+  switchMainView('settings', 'incentive');
 }
 
 function closeIncentiveDetails() {
@@ -8541,6 +8562,11 @@ function setSettingsTab(tabName) {
     if (btnIncentive) btnIncentive.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
     const dateInput = document.getElementById('settingsSchemeEffectiveDateInput');
     if (dateInput) dateInput.value = incentiveSchemeEffectiveDate || '2026-05-01';
+    const schemeDateInput = document.getElementById('schemeEffectiveDateInput');
+    if (schemeDateInput) schemeDateInput.value = incentiveSchemeEffectiveDate || '2026-05-01';
+    const filteredOrders = getFilteredOrders();
+    const totalKg = filteredOrders.reduce((sum, o) => sum + (parseFloat(o.totalKg) || 0), 0);
+    updateIncentiveCard(filteredOrders, totalKg);
   } else if (currentSettingsTab === 'branding') {
     if (tabBranding) tabBranding.classList.remove('hidden');
     if (btnBranding) btnBranding.className = 'settings-tab-btn px-3.5 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 bg-blue-600 text-white shadow-xs';
