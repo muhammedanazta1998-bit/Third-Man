@@ -2629,9 +2629,13 @@ function setupFirestoreRealtimeListeners() {
     console.warn('Settings snapshot error:', err);
   });
 
-  // 4. Daily Visits & Visits Realtime Listeners (All visits streamed real-time across devices)
-  const processVisitSnapshot = snapshot => {
+  // 4. Daily Visits Realtime Listener (Unified single collection 'dailyVisits')
+  db.collection('dailyVisits').onSnapshot(snapshot => {
     if (!snapshot) return;
+    if (snapshot.empty && dailyVisits.length > 0) {
+      seedLocalVisitsToCloud();
+      return;
+    }
     const remoteVisits = [];
     snapshot.forEach(doc => {
       const d = doc.data() || {};
@@ -2645,18 +2649,12 @@ function setupFirestoreRealtimeListeners() {
     if (typeof mergeIncomingCloudVisits === 'function') {
       mergeIncomingCloudVisits(remoteVisits);
     }
-  };
-
-  db.collection('dailyVisits').onSnapshot(processVisitSnapshot, err => {
+  }, err => {
     console.warn('dailyVisits snapshot error:', err);
   });
 
-  db.collection('visits').onSnapshot(processVisitSnapshot, err => {
-    console.warn('visits snapshot error:', err);
-  });
-
-  // 5. Daily Reports & Holiday Status Realtime Listener (dailyReports & daily_reports)
-  const processReportSnapshot = snapshot => {
+  // 5. Daily Reports & Holiday Status Realtime Listener
+  db.collection('dailyReports').onSnapshot(snapshot => {
     if (!snapshot) return;
     snapshot.forEach(doc => {
       const d = doc.data() || {};
@@ -2673,14 +2671,8 @@ function setupFirestoreRealtimeListeners() {
       if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
       if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
     }
-  };
-
-  db.collection('dailyReports').onSnapshot(processReportSnapshot, err => {
+  }, err => {
     console.warn('dailyReports snapshot error:', err);
-  });
-
-  db.collection('daily_reports').onSnapshot(processReportSnapshot, err => {
-    console.warn('daily_reports snapshot error:', err);
   });
 }
 
@@ -3214,8 +3206,54 @@ function manualTriggerCloudSync(isQuiet = false) {
 
   syncCloudConfig();
 
+  // 4. Daily Visits sync
+  const visitsPromise = db.collection('dailyVisits').get().then(snapshot => {
+    if (!snapshot.empty) {
+      const remoteVisits = [];
+      snapshot.forEach(doc => {
+        const d = doc.data() || {};
+        const docId = doc.id;
+        const visitObj = { ...d, id: d.id || docId };
+        visitObj.date = standardizeDateString(visitObj.date || visitObj.timestamp || visitObj.createdAt);
+        if (visitObj.id && visitObj.date) {
+          remoteVisits.push(visitObj);
+        }
+      });
+      if (typeof mergeIncomingCloudVisits === 'function') {
+        mergeIncomingCloudVisits(remoteVisits);
+      }
+    } else if (dailyVisits.length > 0 && typeof seedLocalVisitsToCloud === 'function') {
+      seedLocalVisitsToCloud();
+    }
+  }).catch(err => {
+    console.warn('Manual sync visits fetch error:', err);
+  });
+
+  // 5. Daily Reports sync
+  const reportsPromise = db.collection('dailyReports').get().then(snapshot => {
+    if (!snapshot.empty) {
+      snapshot.forEach(doc => {
+        const d = doc.data() || {};
+        const rawDate = d.date || doc.id;
+        const dateKey = standardizeDateString(rawDate);
+        if (dateKey) {
+          dailyReports[dateKey] = { ...d, date: dateKey };
+        }
+      });
+      if (typeof saveDailyReportDataToStorage === 'function') {
+        saveDailyReportDataToStorage();
+      }
+      if (currentMainView === 'daily-report') {
+        if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
+        if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
+      }
+    }
+  }).catch(err => {
+    console.warn('Manual sync reports fetch error:', err);
+  });
+
   // All promises settled: Stop spin animation and ALWAYS set status to Live Synced 🟢
-  Promise.allSettled([custPromise, ordersPromise, configPromise]).then(() => {
+  Promise.allSettled([custPromise, ordersPromise, configPromise, visitsPromise, reportsPromise]).then(() => {
     updateCloudSyncStatus('synced', 'Live Synced 🟢');
     if (refreshIcon) refreshIcon.classList.remove('animate-spin');
     if (!isQuiet && typeof showNotification === 'function') {
@@ -13298,9 +13336,56 @@ window.closeAllOpenModals = closeAllOpenModals;
 
 const STORAGE_DAILY_VISITS = 'third_man_daily_visits_v1';
 const STORAGE_DAILY_REPORTS = 'third_man_daily_reports_v1';
+const STORAGE_DELETED_VISIT_TOMBSTONES = 'third_man_deleted_visit_ids_v1';
 
 let dailyVisits = [];
 let dailyReports = {};
+let deletedVisitTombstones = [];
+
+try {
+  const rawVt = localStorage.getItem(STORAGE_DELETED_VISIT_TOMBSTONES);
+  if (rawVt) deletedVisitTombstones = JSON.parse(rawVt) || [];
+} catch (e) {
+  deletedVisitTombstones = [];
+}
+
+function isVisitTombstoned(visitId) {
+  if (!visitId) return false;
+  const cleanId = String(visitId).trim();
+  return (Array.isArray(deletedVisitTombstones) ? deletedVisitTombstones : []).some(t => {
+    const tid = typeof t === 'string' ? t : (t.id || '');
+    return tid && String(tid).trim() === cleanId;
+  });
+}
+
+function addVisitTombstone(visitId) {
+  if (!visitId) return;
+  const cleanId = String(visitId).trim();
+  if (!isVisitTombstoned(cleanId)) {
+    if (!Array.isArray(deletedVisitTombstones)) deletedVisitTombstones = [];
+    deletedVisitTombstones.push({
+      id: cleanId,
+      deletedAt: new Date().toISOString()
+    });
+    try {
+      localStorage.setItem(STORAGE_DELETED_VISIT_TOMBSTONES, JSON.stringify(deletedVisitTombstones));
+    } catch (e) {}
+  }
+}
+
+function removeVisitTombstone(visitId) {
+  if (!visitId) return;
+  const cleanId = String(visitId).trim();
+  if (Array.isArray(deletedVisitTombstones)) {
+    deletedVisitTombstones = deletedVisitTombstones.filter(t => {
+      const tid = typeof t === 'string' ? t : (t.id || '');
+      return tid && String(tid).trim() !== cleanId;
+    });
+    try {
+      localStorage.setItem(STORAGE_DELETED_VISIT_TOMBSTONES, JSON.stringify(deletedVisitTombstones));
+    } catch (e) {}
+  }
+}
 
 let dailyReportSelectedDate = '';
 let dailyReportCalendarYear = new Date().getFullYear();
@@ -13326,10 +13411,12 @@ function loadDailyReportDataFromStorage() {
     const vRaw = localStorage.getItem(STORAGE_DAILY_VISITS);
     if (vRaw) {
       const parsed = JSON.parse(vRaw) || [];
-      dailyVisits = parsed.map(v => ({
-        ...v,
-        date: standardizeDateString(v.date || v.timestamp || v.createdAt)
-      }));
+      dailyVisits = parsed
+        .filter(v => v && v.id && !isVisitTombstoned(v.id))
+        .map(v => ({
+          ...v,
+          date: standardizeDateString(v.date || v.timestamp || v.createdAt)
+        }));
     }
   } catch (e) {
     dailyVisits = [];
@@ -13394,25 +13481,63 @@ function updateAllShopsLastVisitedFromVisits() {
   }
 }
 
+function seedLocalVisitsToCloud() {
+  if (!db || !Array.isArray(dailyVisits) || dailyVisits.length === 0) return;
+  const validVisits = dailyVisits.filter(v => v && v.id && !isVisitTombstoned(v.id));
+  if (validVisits.length === 0) return;
+
+  const CHUNK_SIZE = 400;
+  for (let i = 0; i < validVisits.length; i += CHUNK_SIZE) {
+    const chunk = validVisits.slice(i, i + CHUNK_SIZE);
+    try {
+      const batch = db.batch();
+      chunk.forEach(v => {
+        v.date = standardizeDateString(v.date || v.timestamp || v.createdAt);
+        const ref = db.collection('dailyVisits').doc(v.id);
+        batch.set(ref, sanitizeForFirestore(v));
+      });
+      batch.commit().catch(err => {
+        console.warn('Initial dailyVisits seed batch error:', err);
+      });
+    } catch (e) {
+      console.warn('Error batch seeding visits:', e);
+    }
+  }
+}
+
 function mergeIncomingCloudVisits(remoteVisits) {
   if (!Array.isArray(remoteVisits)) return;
   const visitMap = new Map();
-  // Standardize and register all remote visits
+
+  // 1. Process all remote visits: ignore tombstones; delete them remotely if found
   remoteVisits.forEach(rv => {
-    if (!rv) return;
-    const cleanId = rv.id;
-    if (!cleanId) return;
+    if (!rv || !rv.id) return;
+    const cleanId = String(rv.id).trim();
+    if (isVisitTombstoned(cleanId)) {
+      deleteCloudVisit(cleanId);
+      return;
+    }
     rv.date = standardizeDateString(rv.date || rv.timestamp || rv.createdAt);
     visitMap.set(cleanId, rv);
   });
 
-  // Preserve any local visits created within the last 2 minutes that haven't reached cloud yet
+  // 2. Non-destructive merge: preserve ALL non-tombstoned local visits
   dailyVisits.forEach(lv => {
-    if (lv && lv.id && !visitMap.has(lv.id)) {
-      const ageMs = lv.timestamp ? (Date.now() - new Date(lv.timestamp).getTime()) : 0;
-      if (ageMs >= 0 && ageMs < 120000) {
-        visitMap.set(lv.id, lv);
-      }
+    if (!lv || !lv.id) return;
+    const cleanId = String(lv.id).trim();
+    if (isVisitTombstoned(cleanId)) return;
+
+    if (!visitMap.has(cleanId)) {
+      // Local visit is not in remote snapshot yet (e.g. backdated or newly added offline)
+      // Keep it and push it to cloud so other devices receive it!
+      visitMap.set(cleanId, lv);
+      syncCloudVisit(lv);
+    } else {
+      // Present in both: merge fields safely, preserving date standardization
+      const remote = visitMap.get(cleanId);
+      const merged = { ...remote, ...lv };
+      merged.date = standardizeDateString(merged.date || remote.date || lv.date);
+      visitMap.set(cleanId, merged);
     }
   });
 
@@ -13612,9 +13737,75 @@ function renderDailyReportView() {
 
   renderDailyReportCalendar();
   renderDailyReportAnalytics();
+  renderDailyReportVisitedSection();
   populateDailyReportTownFilter();
   renderDailyReportShopsList();
 
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function renderDailyReportVisitedSection() {
+  const section = document.getElementById('dailyReportVisitedSection');
+  const title = document.getElementById('visitedSectionTitle');
+  const subtitle = document.getElementById('visitedSectionSubtitle');
+  const countBadge = document.getElementById('visitedSectionCountBadge');
+  const listContainer = document.getElementById('visitedSectionList');
+
+  if (!section || !listContainer) return;
+
+  const targetDate = standardizeDateString(dailyReportSelectedDate || getLocalTodayDateString());
+  const dayVisits = dailyVisits.filter(v => standardizeDateString(v.date) === targetDate);
+
+  if (dayVisits.length === 0) {
+    section.classList.add('hidden');
+    listContainer.innerHTML = '';
+    return;
+  }
+
+  section.classList.remove('hidden');
+
+  // Format date as DD-MM-YYYY
+  const parts = targetDate.split('-');
+  let displayDate = targetDate;
+  if (parts.length === 3) {
+    const [y, m, d] = parts;
+    displayDate = `${d}-${m}-${y}`;
+  }
+
+  if (title) title.textContent = `Visited on ${displayDate}`;
+  if (subtitle) subtitle.textContent = `${dayVisits.length} shop${dayVisits.length === 1 ? '' : 's'} recorded on this date`;
+  if (countBadge) countBadge.textContent = `✓ ${dayVisits.length} Visited`;
+
+  let html = '';
+  dayVisits.forEach((v, idx) => {
+    const shopName = (v.shopName || 'Shop').trim();
+    const tag = v.tag || 'General Visit';
+    const notes = (v.notes || '').trim();
+    const town = v.town || '';
+
+    html += `
+      <div class="bg-white/95 border border-emerald-200 rounded-xl p-3 shadow-xs flex items-start justify-between gap-2.5 hover:border-emerald-400 hover:shadow-sm transition">
+        <div class="flex items-start gap-2.5 min-w-0 flex-1">
+          <span class="w-6 h-6 rounded-lg bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center shrink-0 mt-0.5">${idx + 1}</span>
+          <div class="min-w-0 flex-1">
+            <h4 class="font-black text-slate-900 text-xs sm:text-sm truncate leading-snug">${escapeHtml(shopName)}</h4>
+            <div class="flex items-center gap-1.5 mt-1 flex-wrap">
+              <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">${escapeHtml(tag)}</span>
+              ${town ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">${escapeHtml(town)}</span>` : ''}
+            </div>
+            ${notes ? `<p class="text-[11px] text-slate-600 italic mt-1 line-clamp-2">"${escapeHtml(notes)}"</p>` : ''}
+          </div>
+        </div>
+        <button type="button" onclick="removeShopVisitForDate('${v.shopId}', '${targetDate}')" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition shrink-0" title="Remove visit for this date">
+          <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+        </button>
+      </div>
+    `;
+  });
+
+  listContainer.innerHTML = html;
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
   }
@@ -13714,7 +13905,12 @@ function renderDailyReportCalendar() {
       indicatorHtml = `<span class="px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-200 text-slate-700" title="${escapeHtml(report.reason || label)}">${label}</span>`;
       dayBgClass = 'bg-slate-100/80 border-slate-300/80';
     } else if (hasVisits || isSent) {
-      indicatorHtml = `<span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 flex items-center gap-0.5">✓ ${dayVisits.length > 0 ? dayVisits.length : 'Sent'}</span>`;
+      const vCount = dayVisits.length || (report && report.visitCount ? report.visitCount : 0);
+      let badgeLabel = '✓ Sent';
+      if (vCount > 0) {
+        badgeLabel = isSent ? `✓ ${vCount} Sent` : `✓ ${vCount} Visited`;
+      }
+      indicatorHtml = `<span class="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 flex items-center gap-0.5 whitespace-nowrap" title="${vCount} visits${isSent ? ' (Report Sent)' : ''}">${badgeLabel}</span>`;
       dayBgClass = 'bg-emerald-50/50 border-emerald-200';
     } else if (isPast && !isSunday) {
       // Missed report alert on past working days
@@ -14133,14 +14329,17 @@ function markQuickShopVisit(shopId, tag = 'General Visit', notes = '') {
   // Check if visit already exists for this shop & date
   let visit = dailyVisits.find(v => v.shopId === shop.id && standardizeDateString(v.date) === targetDate);
   if (visit) {
+    removeVisitTombstone(visit.id);
     visit.tag = tag;
     visit.notes = notes;
     visit.date = targetDate;
     visit.timestamp = new Date().toISOString();
     visit.updatedAt = new Date().toISOString();
   } else {
+    const newId = 'v_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+    removeVisitTombstone(newId);
     visit = {
-      id: 'v_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
+      id: newId,
       shopId: shop.id,
       shopName: shop.name,
       town: shop.town || shop.area || 'Ernakulam',
@@ -14185,6 +14384,7 @@ function removeShopVisitForDate(shopId, dateStr) {
 
   const removed = dailyVisits[vIndex];
   dailyVisits.splice(vIndex, 1);
+  addVisitTombstone(removed.id);
   saveDailyReportDataToStorage();
   deleteCloudVisit(removed.id);
 
@@ -14410,6 +14610,7 @@ window.renderDailyReportCalendar = renderDailyReportCalendar;
 window.navigateDailyReportMonth = navigateDailyReportMonth;
 window.selectDailyReportDate = selectDailyReportDate;
 window.renderDailyReportAnalytics = renderDailyReportAnalytics;
+window.renderDailyReportVisitedSection = renderDailyReportVisitedSection;
 window.populateDailyReportTownFilter = populateDailyReportTownFilter;
 window.renderDailyReportShopsList = renderDailyReportShopsList;
 window.setDailyReportFilterStatus = setDailyReportFilterStatus;
@@ -14420,6 +14621,10 @@ window.selectVisitTag = selectVisitTag;
 window.handleLogShopVisitSubmit = handleLogShopVisitSubmit;
 window.markQuickShopVisit = markQuickShopVisit;
 window.removeShopVisitForDate = removeShopVisitForDate;
+window.isVisitTombstoned = isVisitTombstoned;
+window.addVisitTombstone = addVisitTombstone;
+window.removeVisitTombstone = removeVisitTombstone;
+window.seedLocalVisitsToCloud = seedLocalVisitsToCloud;
 window.openLeaveHolidayModal = openLeaveHolidayModal;
 window.closeLeaveHolidayModal = closeLeaveHolidayModal;
 window.handleLeaveHolidaySubmit = handleLeaveHolidaySubmit;

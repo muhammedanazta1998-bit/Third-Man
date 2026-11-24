@@ -105,6 +105,12 @@
   <div id="quickAddShopModal" class="hidden"></div>
   <div id="leaveHolidayModal" class="hidden"></div>
   <div id="logShopVisitModal" class="hidden"></div>
+  <!-- Dedicated Visited Section Fixtures -->
+  <div id="dailyReportVisitedSection" class="hidden"></div>
+  <h3 id="visitedSectionTitle"></h3>
+  <p id="visitedSectionSubtitle"></p>
+  <span id="visitedSectionCountBadge"></span>
+  <div id="visitedSectionList"></div>
   <input type="text" id="qasShopName" />
   <select id="qasShopType"></select>
   <select id="qasTier"></select>
@@ -818,7 +824,49 @@ window.onerror = function(msg, url, line, col, err) {
   const foundMerged = dailyVisits.find(v => v.id === 'v_remote_1');
   assert(foundMerged !== undefined && foundMerged.date === '2026-11-21', "mergeIncomingCloudVisits successfully syncs and standardizes backdated remote visits");
 
-  // 6. Leave / Holiday Tracking
+  // Zero Data Loss Guarantee: Incoming empty array [] must NEVER wipe local visits!
+  const visitsCountBeforeEmptyMerge = dailyVisits.length;
+  assert(visitsCountBeforeEmptyMerge > 0, "Visits exist prior to empty remote snapshot test");
+  mergeIncomingCloudVisits([]);
+  assert(dailyVisits.length === visitsCountBeforeEmptyMerge, `Zero data loss verified: empty snapshot preserved all ${visitsCountBeforeEmptyMerge} visits (actual: ${dailyVisits.length})`);
+
+  // Visit Tombstone Guarantee: Deleted visit must be tombstoned and not revived by remote snapshot
+  const testTombstoneVisit = {
+    id: 'v_tombstone_test_1',
+    shopId: 'shop_tombstone_test',
+    shopName: 'Temporary Shop',
+    date: '2026-11-21'
+  };
+  dailyVisits.push(testTombstoneVisit);
+  saveDailyReportDataToStorage();
+  assert(dailyVisits.some(v => v.id === 'v_tombstone_test_1'), "Test visit added for tombstone check");
+  addVisitTombstone('v_tombstone_test_1');
+  assert(isVisitTombstoned('v_tombstone_test_1') === true, "Visit ID successfully registered in deleted visit tombstones");
+
+  // Try to revive it via remote snapshot
+  mergeIncomingCloudVisits([testTombstoneVisit]);
+  assert(!dailyVisits.some(v => v.id === 'v_tombstone_test_1'), "Tombstoned visit was properly ignored and not revived by remote sync");
+  removeVisitTombstone('v_tombstone_test_1');
+
+  // 6. Dedicated Visited Section Rendering Test
+  selectDailyReportDate('2026-11-21');
+  renderDailyReportVisitedSection();
+  const visitedSectionEl = document.getElementById('dailyReportVisitedSection');
+  const visitedSectionListEl = document.getElementById('visitedSectionList');
+  const visitedCountBadgeEl = document.getElementById('visitedSectionCountBadge');
+  assert(visitedSectionEl !== null && !visitedSectionEl.classList.contains('hidden'), "Dedicated Visited Section unhidden when visits exist for Nov 21");
+  assert(visitedSectionListEl !== null && visitedSectionListEl.children.length > 0, "Visited Section contains rendered shop cards");
+  assert(visitedCountBadgeEl !== null && visitedCountBadgeEl.textContent.includes('Visited'), "Visited count badge renders '✓ [N] Visited'");
+
+  // 7. Calendar Tile Indicator Display Test
+  dailyReportCalendarYear = 2026;
+  dailyReportCalendarMonth = 10; // November (0-based: 10 = Nov)
+  renderDailyReportCalendar();
+  const calContainer = document.getElementById('dailyReportCalendarContainer');
+  assert(calContainer !== null && calContainer.innerHTML.length > 0, "Calendar days rendered in container");
+  assert(calContainer.innerHTML.includes('✓') && (calContainer.innerHTML.includes('Visited') || calContainer.innerHTML.includes('Sent')), "Calendar day tile shows checkmark and visit count / status");
+
+  // 8. Leave / Holiday Tracking
   dailyReports['2026-11-25'] = {
     id: '2026-11-25',
     date: '2026-11-25',
