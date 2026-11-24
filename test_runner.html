@@ -1132,6 +1132,15 @@ window.onerror = function(msg, url, line, col, err) {
   assert(currentMainView === 'settings', "handleBottomNavClick('incentives') routes to 'settings'");
   assert(currentSettingsTab === 'incentive', "handleBottomNavClick('incentives') activates the 'incentive' subTab");
 
+  // ==========================================
+  // TEST 18: Overview Dashboard Decluttering
+  // ==========================================
+  log("\n--- TEST 18: Overview Dashboard Decluttering ---");
+  const viewOverviewEl = document.getElementById('viewOverview');
+  assert(viewOverviewEl !== null, "viewOverview fixture exists in DOM");
+  assert(viewOverviewEl.querySelector('.bg-gradient-to-r.from-blue-900\\/90') === null, "Redundant Quick Sales Register banner is removed from Overview");
+  assert(document.getElementById('testFixtures').querySelector('footer') === null, "Outdated footer banner is not in overview fixtures");
+
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   if (failed === 0) {
