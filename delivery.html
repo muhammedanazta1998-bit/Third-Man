@@ -1392,10 +1392,11 @@
     // ==================== QUICK DELIVERY REMARKS MANAGEMENT ====================
     const STORAGE_QUICK_REMARKS = 'thirdman_delivery_quick_remarks';
     const DEFAULT_QUICK_REMARKS = [
+      '💵 Cash/Cheque payment collected',
+      '❌ Payment not received',
       '👨‍🍳 Handed over to Chef / Cook',
       '🏪 Delivered at Shop / Hotel',
       '👑 Received by Owner / Manager',
-      '💵 Cash payment collected',
       '🥘 Gave to Kitchen staff'
     ];
 
@@ -1461,6 +1462,84 @@
       } catch (e) {}
     }
 
+    function isRemarkSelected(fullText, remark) {
+      if (!fullText || !remark) return false;
+      return fullText.includes(remark);
+    }
+
+    function removeRemarkFromText(fullText, remark) {
+      if (!fullText || !remark) return fullText || '';
+      let text = fullText;
+      const esc = remark.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      
+      const pRegex = new RegExp('(?:\\s*[•,\\n;]+\\s*)' + esc, 'g');
+      if (pRegex.test(text)) {
+        text = text.replace(pRegex, '');
+      } else {
+        const tRegex = new RegExp(esc + '(?:\\s*[•,\\n;]+\\s*)', 'g');
+        if (tRegex.test(text)) {
+          text = text.replace(tRegex, '');
+        } else {
+          text = text.replace(new RegExp(esc, 'g'), '');
+        }
+      }
+      
+      text = text.replace(/\s*[•,;]\s*[•,;]+/g, ' • ');
+      text = text.replace(/^[\s•,;]+|[\s•,;]+$/g, '').trim();
+      return text;
+    }
+
+    function toggleQuickRemark(remarkText) {
+      const input = document.getElementById('modalDeliveryNoteInput');
+      if (!input) return;
+      const cleanRemark = String(remarkText || '').trim();
+      if (!cleanRemark) return;
+
+      const currentVal = input.value || '';
+      if (isRemarkSelected(currentVal, cleanRemark)) {
+        input.value = removeRemarkFromText(currentVal, cleanRemark);
+      } else {
+        const trimmed = currentVal.trim();
+        if (!trimmed) {
+          input.value = cleanRemark;
+        } else if (/[•,\-\n]$/.test(trimmed)) {
+          input.value = trimmed + ' ' + cleanRemark;
+        } else {
+          input.value = trimmed + ' • ' + cleanRemark;
+        }
+      }
+
+      updateQuickRemarkChipsActiveState();
+      input.dispatchEvent(new Event('input', { bubbles: true }));
+      input.focus();
+    }
+
+    function appendQuickRemark(text) {
+      toggleQuickRemark(text);
+    }
+
+    function updateQuickRemarkChipsActiveState() {
+      const container = document.getElementById('quickRemarksContainer');
+      if (!container) return;
+      const noteInput = document.getElementById('modalDeliveryNoteInput');
+      const currentText = noteInput ? noteInput.value : '';
+      const chips = container.querySelectorAll('.quick-remark-chip');
+      chips.forEach(chip => {
+        const remark = chip.getAttribute('data-remark');
+        const isSelected = isRemarkSelected(currentText, remark);
+        const checkEl = chip.querySelector('.quick-chip-check');
+        if (isSelected) {
+          chip.classList.remove('bg-slate-100', 'hover:bg-slate-200', 'text-slate-700', 'border-slate-200', 'font-semibold', 'shadow-2xs');
+          chip.classList.add('bg-blue-50', 'text-blue-800', 'border-2', 'border-blue-600', 'ring-2', 'ring-blue-500/20', 'font-bold', 'shadow-xs');
+          if (checkEl) checkEl.classList.remove('hidden');
+        } else {
+          chip.classList.remove('bg-blue-50', 'text-blue-800', 'border-2', 'border-blue-600', 'ring-2', 'ring-blue-500/20', 'font-bold', 'shadow-xs');
+          chip.classList.add('bg-slate-100', 'hover:bg-slate-200', 'text-slate-700', 'border', 'border-slate-200', 'font-semibold', 'shadow-2xs');
+          if (checkEl) checkEl.classList.add('hidden');
+        }
+      });
+    }
+
     function renderQuickRemarkChips() {
       const container = document.getElementById('quickRemarksContainer');
       if (!container) return;
@@ -1469,10 +1548,46 @@
         container.innerHTML = `<span class="text-xs text-slate-400 italic">No quick remarks saved. Click 'Edit Remarks' to add.</span>`;
         return;
       }
+      const noteInput = document.getElementById('modalDeliveryNoteInput');
+      const currentText = noteInput ? noteInput.value : '';
+
       container.innerHTML = remarks.map(rem => {
-        return `<button type="button" onclick="appendQuickRemark(${JSON.stringify(rem)})" class="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded-lg text-xs font-semibold transition active:scale-95 flex items-center gap-1 shadow-2xs"><span>${escapeHtml(rem)}</span></button>`;
+        const isSelected = isRemarkSelected(currentText, rem);
+        const activeClass = isSelected
+          ? 'bg-blue-50 text-blue-800 border-2 border-blue-600 ring-2 ring-blue-500/20 font-bold shadow-xs'
+          : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 font-semibold shadow-2xs';
+
+        return `<button type="button" data-remark="${escapeHtml(rem)}" class="quick-remark-chip px-2.5 py-1.5 rounded-lg text-xs transition active:scale-95 flex items-center gap-1.5 select-none cursor-pointer ${activeClass}">
+          <span class="quick-chip-check text-blue-600 font-black text-xs ${isSelected ? 'inline-block' : 'hidden'}">✓</span>
+          <span>${escapeHtml(rem)}</span>
+        </button>`;
       }).join('');
+
+      initQuickRemarksDelegation();
       if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
+    }
+
+    function initQuickRemarksDelegation() {
+      const container = document.getElementById('quickRemarksContainer');
+      if (container && !container.hasAttribute('data-delegation-attached')) {
+        container.setAttribute('data-delegation-attached', 'true');
+        container.addEventListener('click', (e) => {
+          const btn = e.target.closest('button[data-remark]');
+          if (!btn) return;
+          e.preventDefault();
+          e.stopPropagation();
+          const remark = btn.getAttribute('data-remark');
+          toggleQuickRemark(remark);
+        });
+      }
+
+      const noteInput = document.getElementById('modalDeliveryNoteInput');
+      if (noteInput && !noteInput.hasAttribute('data-chipsync-attached')) {
+        noteInput.setAttribute('data-chipsync-attached', 'true');
+        noteInput.addEventListener('input', () => {
+          updateQuickRemarkChipsActiveState();
+        });
+      }
     }
 
     function openManageRemarksModal() {
@@ -1558,28 +1673,11 @@
       showToast('↺ Quick remarks reset to default!');
     }
 
-    function appendQuickRemark(text) {
-      const input = document.getElementById('modalDeliveryNoteInput');
-      if (!input) return;
-      const cleanText = String(text || '').trim();
-      if (!cleanText) return;
-      if (input.value && input.value.trim().length > 0) {
-        if (!input.value.includes(cleanText)) {
-          input.value = input.value.trim() + ' • ' + cleanText;
-        }
-      } else {
-        input.value = cleanText;
-      }
-      input.focus();
-    }
-
     function openDeliveryActionModal(orderId, type = 'delivered') {
       activeActionOrderId = orderId;
       activeActionType = type;
       const order = allOrders.find(o => o.id === orderId);
       if (!order) return;
-
-      renderQuickRemarkChips();
 
       const modal = document.getElementById('deliveryActionModal');
       const title = document.getElementById('modalActionTitle');
@@ -1591,6 +1689,10 @@
       if (subtitle) subtitle.textContent = `${getCustName(order)} • ${order.id}`;
       if (noteInput) noteInput.value = order.deliveryNote || '';
       if (submitBtnText) submitBtnText.textContent = (type === 'delivered') ? 'Mark as Delivered' : 'Save Remarks';
+
+      initQuickRemarksDelegation();
+      renderQuickRemarkChips();
+      updateQuickRemarkChipsActiveState();
 
       if (modal) modal.classList.remove('hidden');
       noteInput?.focus();
@@ -1616,6 +1718,20 @@
       if (activeActionType === 'delivered') {
         updatePayload.dispatchStatus = 'Delivered';
         updatePayload.deliveredAt = new Date().toISOString();
+      }
+
+      const targetOrder = allOrders.find(o => o.id === activeActionOrderId);
+      if (targetOrder) {
+        targetOrder.deliveryNote = noteText;
+        if (activeActionType === 'delivered') {
+          targetOrder.dispatchStatus = 'Delivered';
+          targetOrder.deliveredAt = updatePayload.deliveredAt;
+        }
+        try {
+          localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
+        } catch (e) {}
+        updateTabBadges();
+        renderOrders();
       }
 
       db.collection('orders').doc(activeActionOrderId).update(updatePayload).then(() => {
@@ -1677,6 +1793,7 @@
 
     function startDeliveryApp() {
       updateViewModeButtons();
+      initQuickRemarksDelegation();
       renderQuickRemarkChips();
       try {
         const customLogo = localStorage.getItem('thirdman_app_logo');
