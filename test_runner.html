@@ -140,18 +140,20 @@
 
   <!-- Support Chat / Helpline Fixtures -->
   <div id="supportChatContainer">
-    <button type="button" id="btnSupportChat" onclick="toggleSupportChatMenu()">
-      <span id="supportChatUnreadBadge" class="hidden">0</span>
+    <button type="button" id="btnSupportChat" onclick="toggleSupportChatMenu(event)">
+      <i data-lucide="message-square" id="supportChatIcon" class="pointer-events-none"></i>
+      <span id="supportChatUnreadBadge" class="hidden pointer-events-none">0</span>
     </button>
-    <div id="supportChatDropdown" class="hidden">
-      <div id="adminSupportMessageList">
-        <div id="adminSupportEmptyState"></div>
-      </div>
-      <form id="adminSupportChatForm">
-        <input type="text" id="adminSupportReplyInput" />
-        <button type="submit" id="btnAdminSupportSend"></button>
-      </form>
+  </div>
+  <div id="supportChatBackdrop" onclick="closeSupportChatMenu()" class="hidden"></div>
+  <div id="supportChatDropdown" onclick="event.stopPropagation()" class="hidden">
+    <div id="adminSupportMessageList">
+      <div id="adminSupportEmptyState"></div>
     </div>
+    <form id="adminSupportChatForm">
+      <input type="text" id="adminSupportReplyInput" />
+      <button type="submit" id="btnAdminSupportSend"></button>
+    </form>
   </div>
 
   <!-- Customers Directory Standardized Toolbar & Collapsible Filter Fixtures -->
@@ -1237,6 +1239,57 @@ window.onerror = function(msg, url, line, col, err) {
   window.confirm = origConfirm;
   assert(getSupportChatMessages().length === 0, "clearOrResolveSupportChat clears all messages");
   assert(document.getElementById('adminSupportEmptyState') !== null, "Empty state displayed after clearing messages");
+
+  // 7. Click / Propagation & Portal Backdrop Regression Checks
+  const supportChatBackdrop = document.getElementById('supportChatBackdrop');
+  assert(supportChatBackdrop !== null, "supportChatBackdrop portal fixture exists");
+  setSupportChatMessages([
+    {
+      id: 'reg-ts-2',
+      sender: 'delivery',
+      senderName: 'Rider One',
+      tag: 'Help',
+      text: 'Later message via seconds',
+      timestamp: { seconds: 1795580000 },
+      readByAdmin: false,
+      readByDelivery: true
+    },
+    {
+      id: 'reg-ts-1',
+      sender: 'delivery',
+      senderName: 'Rider Two',
+      tag: 'Bug',
+      text: 'Earlier message via createdAt',
+      createdAt: new Date(1795570000 * 1000).toISOString(),
+      readByAdmin: false,
+      readByDelivery: true
+    }
+  ]);
+  const sortedMsgs = getSupportChatMessages();
+  assert(sortedMsgs[0].id === 'reg-ts-1' && sortedMsgs[1].id === 'reg-ts-2', "Mixed timestamp/createdAt messages sort chronologically");
+
+  updateSupportChatUnreadBadge();
+  assert(supportChatUnreadBadge.textContent === '2', "Unread badge updates to 2 for mixed-timestamp unread messages");
+
+  // Simulate direct click on button (as dispatched by browser tap)
+  closeSupportChatMenu();
+  btnSupportChat.click();
+  assert(!supportChatDropdown.classList.contains('hidden'), "btnSupportChat.click() cleanly opens supportChatDropdown");
+  assert(!supportChatBackdrop.classList.contains('hidden'), "supportChatBackdrop becomes visible when menu opens");
+
+  // Click inside message list does NOT close chat dropdown
+  adminSupportMessageList.click();
+  assert(!supportChatDropdown.classList.contains('hidden'), "Clicking inside supportChatDropdown keeps panel open");
+
+  // Clicking backdrop closes both dropdown and backdrop
+  supportChatBackdrop.click();
+  assert(supportChatDropdown.classList.contains('hidden'), "Clicking backdrop closes supportChatDropdown");
+  assert(supportChatBackdrop.classList.contains('hidden'), "Clicking backdrop hides supportChatBackdrop");
+
+  // Clean up test messages
+  window.confirm = () => true;
+  clearOrResolveSupportChat();
+  window.confirm = origConfirm;
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

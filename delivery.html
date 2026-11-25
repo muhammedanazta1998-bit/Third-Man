@@ -96,11 +96,11 @@
 
   <!-- TOP HEADER -->
   <header class="bg-slate-900 text-white sticky top-0 z-40 shadow-lg border-b border-slate-800" style="padding-top: max(0px, env(safe-area-inset-top, 0px));">
-    <div class="max-w-7xl mx-auto px-3 sm:px-4 py-3 flex items-center justify-between gap-3">
+    <div class="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
       <!-- Clickable Logo & Brand Title (Standard Link to Main Dashboard) -->
-      <a href="index.html" id="btnHeaderReturnToDashboard" class="flex items-center gap-3 min-w-0 group hover:opacity-95 transition-all duration-150 cursor-pointer select-none" title="Return to Third Man Dashboard" aria-label="Return to Third Man Dashboard">
+      <a href="index.html" id="btnHeaderReturnToDashboard" class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden group hover:opacity-95 transition-all duration-150 cursor-pointer select-none" title="Return to Third Man Dashboard" aria-label="Return to Third Man Dashboard">
         <div class="relative shrink-0">
-          <img id="deliveryHeaderLogo" src="uploaded-logo.png?v=2" onerror="this.onerror=null;this.src='icon-192.png?v=2';" alt="Third Man Logo" class="w-10 h-10 rounded-xl shadow-md object-contain bg-slate-900 p-0.5 border border-slate-700/80 group-hover:border-cyan-400 group-hover:shadow-cyan-950/40 transition-all duration-150">
+          <img id="deliveryHeaderLogo" src="uploaded-logo.png?v=2" onerror="this.onerror=null;this.src='icon-192.png?v=2';" alt="Third Man Logo" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-md object-contain bg-slate-900 p-0.5 border border-slate-700/80 group-hover:border-cyan-400 group-hover:shadow-cyan-950/40 transition-all duration-150">
         </div>
         <script>
           (function() {
@@ -113,42 +113,42 @@
             } catch(e) {}
           })();
         </script>
-        <div class="min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <h1 class="font-black text-sm sm:text-base tracking-tight text-white group-hover:text-cyan-300 transition-colors truncate">THIRD MAN</h1>
-            <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-400/30 shrink-0">Delivery Portal</span>
+        <div class="min-w-0 overflow-hidden">
+          <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+            <h1 class="font-black text-xs sm:text-base tracking-tight text-white group-hover:text-cyan-300 transition-colors truncate">THIRD MAN</h1>
+            <span class="px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-400/30 shrink-0">Delivery</span>
           </div>
-          <p class="text-[11px] text-slate-400 group-hover:text-slate-300 transition-colors truncate flex items-center gap-1">
+          <p class="text-[10px] sm:text-[11px] text-slate-400 group-hover:text-slate-300 transition-colors truncate flex items-center gap-1">
             <span>Staff Dispatch &amp; Delivery</span>
             <span class="text-cyan-400/90 font-bold hidden sm:inline text-[10px]">• ◂ Return to Dashboard</span>
           </p>
         </div>
       </a>
 
-      <div class="flex items-center gap-2 shrink-0">
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Support Helpline & Chat Header Button -->
-        <button type="button" id="btnDeliveryHelpChat" onclick="openDeliveryChatDrawer()" class="relative px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer select-none bg-blue-950/40 text-blue-300 border-blue-500/40 hover:bg-blue-900/40" title="Chat with Admin / Helpline">
-          <i data-lucide="message-square" class="w-3.5 h-3.5 text-blue-400"></i>
-          <span class="hidden sm:inline">Help / Chat</span>
-          <span id="deliveryChatHeaderBadge" class="hidden min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black items-center justify-center animate-pulse shadow-xs">0</span>
+        <button type="button" id="btnDeliveryHelpChat" onclick="openDeliveryChatDrawer(event)" class="relative px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer select-none bg-blue-950/40 text-blue-300 border-blue-500/40 hover:bg-blue-900/40" title="Chat with Admin / Helpline">
+          <i data-lucide="message-square" class="w-3.5 h-3.5 text-blue-400 pointer-events-none"></i>
+          <span class="hidden sm:inline pointer-events-none">Help / Chat</span>
+          <span id="deliveryChatHeaderBadge" class="hidden min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] font-black items-center justify-center animate-pulse shadow-xs pointer-events-none">0</span>
         </button>
 
         <!-- Sound & Push Notification Alert Toggle Button -->
-        <button type="button" id="btnDeliverySoundToggle" onclick="toggleDeliveryAlertSound()" class="px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer select-none bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/40" title="Toggle Real-Time Sound & Push Notification Alerts">
-          <i id="deliverySoundIcon" data-lucide="bell" class="w-3.5 h-3.5 text-emerald-400"></i>
-          <span id="deliverySoundLabel" class="hidden xs:inline sm:inline">Alerts ON</span>
+        <button type="button" id="btnDeliverySoundToggle" onclick="toggleDeliveryAlertSound()" class="px-2 sm:px-2.5 py-1.5 rounded-xl border text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer select-none bg-emerald-950/40 text-emerald-300 border-emerald-500/40 hover:bg-emerald-900/40" title="Toggle Real-Time Sound & Push Notification Alerts">
+          <i id="deliverySoundIcon" data-lucide="bell" class="w-3.5 h-3.5 text-emerald-400 pointer-events-none"></i>
+          <span id="deliverySoundLabel" class="hidden sm:inline pointer-events-none">Alerts ON</span>
         </button>
 
         <!-- Return to Dashboard Quick Action Button -->
-        <a href="index.html" id="btnBackToDashboardAction" class="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer" title="Return to Main Dashboard">
-          <i data-lucide="arrow-left" class="w-3.5 h-3.5 text-cyan-400"></i>
-          <span class="hidden sm:inline">Dashboard</span>
+        <a href="index.html" id="btnBackToDashboardAction" class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer" title="Return to Main Dashboard">
+          <i data-lucide="arrow-left" class="w-3.5 h-3.5 text-cyan-400 pointer-events-none"></i>
+          <span class="hidden sm:inline pointer-events-none">Dashboard</span>
         </a>
 
         <!-- Live Cloud Sync Status -->
-        <div id="syncBadge" class="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-[11px] font-semibold text-slate-300 shadow-inner">
+        <div id="syncBadge" class="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-[11px] font-semibold text-slate-300 shadow-inner">
           <span id="syncDot" class="w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
-          <span id="syncText">Connecting...</span>
+          <span id="syncText" class="truncate max-w-[78px] sm:max-w-none">Connecting...</span>
         </div>
       </div>
     </div>
@@ -411,41 +411,41 @@
   </div>
 
   <!-- FLOATING HELP / CHAT ACTION BUTTON -->
-  <button type="button" id="floatingDeliveryChatBtn" onclick="openDeliveryChatDrawer()" class="fixed bottom-5 right-5 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xl shadow-blue-600/30 rounded-full px-4 py-2.5 flex items-center gap-2 font-bold text-xs transition active:scale-95 cursor-pointer border border-blue-400/30 print:hidden" title="Chat with Admin / Helpline">
-    <i data-lucide="message-square" class="w-4 h-4"></i>
-    <span>Help / Chat</span>
-    <span id="floatingDeliveryChatBadge" class="hidden min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-black items-center justify-center animate-pulse shadow-xs">0</span>
+  <button type="button" id="floatingDeliveryChatBtn" onclick="openDeliveryChatDrawer(event)" class="fixed bottom-5 right-5 z-40 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white shadow-xl shadow-blue-600/30 rounded-full px-4 py-2.5 flex items-center gap-2 font-bold text-xs transition active:scale-95 cursor-pointer border border-blue-400/30 print:hidden" title="Chat with Admin / Helpline">
+    <i data-lucide="message-square" class="w-4 h-4 pointer-events-none"></i>
+    <span class="pointer-events-none">Help / Chat</span>
+    <span id="floatingDeliveryChatBadge" class="hidden min-w-[18px] h-[18px] px-1.5 rounded-full bg-rose-500 text-white text-[10px] font-black items-center justify-center animate-pulse shadow-xs pointer-events-none">0</span>
   </button>
 
   <!-- ==================== DELIVERY SUPPORT CHAT DRAWER ==================== -->
   <div id="deliveryChatOverlay" onclick="closeDeliveryChatDrawer()" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs transition-opacity duration-300 hidden opacity-0 print:hidden"></div>
 
-  <div id="deliveryChatDrawer" class="fixed bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 left-0 right-0 z-[51] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200/90 w-full sm:max-w-lg max-h-[85vh] sm:max-h-[640px] flex flex-col transition-all duration-300 transform translate-y-full sm:translate-y-0 hidden print:hidden" style="padding-bottom: max(12px, env(safe-area-inset-bottom));">
+  <div id="deliveryChatDrawer" class="fixed bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 left-0 right-0 z-[51] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200/90 w-full max-w-full sm:max-w-lg max-h-[85vh] max-h-[85dvh] sm:max-h-[640px] flex flex-col overflow-hidden transition-all duration-300 transform translate-y-full sm:translate-y-0 hidden print:hidden" style="padding-bottom: max(12px, env(safe-area-inset-bottom));">
     
     <!-- Drawer Header -->
-    <div class="p-3.5 px-4 bg-slate-900 text-white rounded-t-3xl sm:rounded-t-3xl flex items-center justify-between border-b border-slate-800">
-      <div class="flex items-center gap-2.5">
-        <div class="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center">
+    <div class="p-3.5 px-4 bg-slate-900 text-white rounded-t-3xl sm:rounded-t-3xl flex items-center justify-between border-b border-slate-800 shrink-0">
+      <div class="flex items-center gap-2.5 min-w-0">
+        <div class="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center shrink-0">
           <i data-lucide="headphones" class="w-4 h-4"></i>
         </div>
-        <div>
+        <div class="min-w-0">
           <div class="flex items-center gap-2">
-            <h3 class="text-xs sm:text-sm font-black text-white">Admin Support &amp; Helpline</h3>
-            <span class="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+            <h3 class="text-xs sm:text-sm font-black text-white truncate">Admin Support &amp; Helpline</h3>
+            <span class="inline-flex items-center gap-1 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
               <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
               <span>LIVE</span>
             </span>
           </div>
-          <p class="text-[10px] text-slate-400">Report app bugs, delivery issues, or ask quick questions</p>
+          <p class="text-[10px] text-slate-400 truncate">Report app bugs, delivery issues, or ask quick questions</p>
         </div>
       </div>
-      <button type="button" onclick="closeDeliveryChatDrawer()" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition">
+      <button type="button" onclick="closeDeliveryChatDrawer()" class="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition shrink-0">
         <i data-lucide="x" class="w-4 h-4"></i>
       </button>
     </div>
 
     <!-- Messages Container -->
-    <div id="deliveryChatMessageList" class="flex-1 p-3.5 sm:p-4 space-y-3 overflow-y-auto bg-slate-50/60 min-h-[220px] max-h-[380px] text-xs">
+    <div id="deliveryChatMessageList" class="flex-1 p-3.5 sm:p-4 space-y-3 overflow-y-auto overflow-x-hidden bg-slate-50/60 min-h-[120px] max-h-[50dvh] sm:max-h-[400px] text-xs" style="-webkit-overflow-scrolling: touch; overscroll-behavior: contain;">
       <div id="deliveryChatEmptyState" class="py-8 text-center text-slate-400">
         <i data-lucide="message-square" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
         <p class="font-bold">Need help with an order or app bug?</p>
@@ -454,7 +454,7 @@
     </div>
 
     <!-- Bottom Action & Input Area -->
-    <div class="p-3 sm:p-3.5 bg-white border-t border-slate-200 space-y-2.5">
+    <div class="p-3 sm:p-3.5 bg-white border-t border-slate-200 space-y-2.5 shrink-0">
       <!-- 1-Tap Quick Issue Chips -->
       <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
         <button type="button" onclick="selectDeliveryChatTag('Bug')" class="delivery-chat-tag-chip px-2.5 py-1 rounded-full text-[10px] font-bold border transition shrink-0 flex items-center gap-1 bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" data-tag="Bug">
@@ -469,8 +469,8 @@
       </div>
 
       <!-- Text Input & Send Form -->
-      <form id="deliveryChatForm" onsubmit="event.preventDefault(); sendDeliveryChatMessage();" class="flex items-center gap-2">
-        <input type="text" id="deliveryChatInput" placeholder="Type message to admin..." class="flex-1 px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white" autocomplete="off" />
+      <form id="deliveryChatForm" onsubmit="event.preventDefault(); sendDeliveryChatMessage();" class="flex items-center gap-2 min-w-0">
+        <input type="text" id="deliveryChatInput" placeholder="Type message to admin..." class="w-0 flex-1 min-w-0 px-3 py-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white" autocomplete="off" />
         <button type="submit" id="btnDeliveryChatSend" class="px-4 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-xs transition active:scale-95 shadow-md shadow-blue-600/20 flex items-center gap-1.5 shrink-0">
           <span>Send</span>
           <i data-lucide="send" class="w-3.5 h-3.5"></i>
@@ -2434,6 +2434,8 @@
         }
         if (!deliveryChatUnsubscribe && db) {
           listenToDeliverySupportChats();
+        } else if (db) {
+          flushPendingDeliveryChatMessages();
         }
         fetchOrdersDirect();
       }
@@ -2454,26 +2456,165 @@
 
     let deliveryChatMessages = [];
     let knownDeliveryChatMessageIds = new Set();
+    let pendingOutgoingDeliveryChats = new Map();
     let isInitialDeliveryChatLoad = true;
     let isDeliveryChatDrawerOpen = false;
     let activeDeliveryChatTag = 'Help'; // 'Bug', 'Delivery Issue', 'Help'
     let deliveryChatUnsubscribe = null;
+    let reconnectChatTimeout = null;
+    let closeDeliveryChatTimer = null;
     const STORAGE_DELIVERY_SUPPORT_CHATS = 'delivery_support_chats_cache';
+    const STORAGE_DELIVERY_PENDING_CHATS = 'delivery_support_pending_chats';
 
-    function loadCachedDeliverySupportChats() {
+    function normalizeChatTimestampIso(ts, fallbackCreatedAt) {
+      const val = ts || fallbackCreatedAt;
+      if (!val) return new Date().toISOString();
+      if (typeof val === 'object' && typeof val.toDate === 'function') {
+        try { return val.toDate().toISOString(); } catch (e) {}
+      }
+      if (typeof val === 'object' && typeof val.seconds === 'number') {
+        return new Date(val.seconds * 1000).toISOString();
+      }
+      if (typeof val === 'number' && !isNaN(val)) {
+        return new Date(val).toISOString();
+      }
+      const d = new Date(val);
+      return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+    }
+
+    function getChatTimestampMs(msg) {
+      if (!msg) return 0;
+      if (typeof msg.createdAtMs === 'number' && !isNaN(msg.createdAtMs)) return msg.createdAtMs;
+      const iso = normalizeChatTimestampIso(msg.timestamp, msg.createdAt);
+      const t = new Date(iso).getTime();
+      return isNaN(t) ? 0 : t;
+    }
+
+    function savePendingOutgoingChatsToStorage() {
+      try {
+        const arr = Array.from(pendingOutgoingDeliveryChats.values());
+        localStorage.setItem(STORAGE_DELIVERY_PENDING_CHATS, JSON.stringify(arr));
+      } catch (e) {}
+    }
+
+    function loadPendingOutgoingChatsFromStorage() {
+      try {
+        const raw = localStorage.getItem(STORAGE_DELIVERY_PENDING_CHATS);
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            parsed.forEach(m => {
+              if (m && m.id && !pendingOutgoingDeliveryChats.has(m.id)) {
+                pendingOutgoingDeliveryChats.set(m.id, m);
+              }
+            });
+          }
+        }
+      } catch (e) {}
+    }
+
+    function mergeAndSortDeliveryChats(baseList) {
+      const byId = new Map();
+      (Array.isArray(baseList) ? baseList : []).forEach(m => {
+        if (m && m.id) byId.set(m.id, m);
+      });
+      pendingOutgoingDeliveryChats.forEach((pMsg, id) => {
+        if (!byId.has(id)) {
+          byId.set(id, pMsg);
+        }
+      });
+      const merged = Array.from(byId.values());
+      merged.sort((a, b) => {
+        const diff = getChatTimestampMs(a) - getChatTimestampMs(b);
+        if (diff !== 0) return diff;
+        return String(a.id || '').localeCompare(String(b.id || ''));
+      });
+      return merged;
+    }
+
+    function loadCachedDeliverySupportChats(forceOverwrite) {
+      loadPendingOutgoingChatsFromStorage();
       try {
         const raw = localStorage.getItem(STORAGE_DELIVERY_SUPPORT_CHATS);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed)) {
-            deliveryChatMessages = parsed;
+            if (forceOverwrite || deliveryChatMessages.length === 0) {
+              deliveryChatMessages = mergeAndSortDeliveryChats(parsed);
+            } else {
+              deliveryChatMessages = mergeAndSortDeliveryChats([...parsed, ...deliveryChatMessages]);
+            }
             deliveryChatMessages.forEach(m => {
               if (m && m.id) knownDeliveryChatMessageIds.add(m.id);
             });
             updateDeliveryChatBadges();
+            if (isDeliveryChatDrawerOpen) renderDeliveryChatMessages();
           }
+        } else if (pendingOutgoingDeliveryChats.size > 0) {
+          deliveryChatMessages = mergeAndSortDeliveryChats(deliveryChatMessages);
         }
       } catch (e) {}
+    }
+
+    function flushPendingDeliveryChatMessages() {
+      if (!db || pendingOutgoingDeliveryChats.size === 0) return;
+      pendingOutgoingDeliveryChats.forEach((msg, id) => {
+        if (!msg || id.startsWith('local_')) return;
+        const payload = {
+          id: msg.id,
+          text: msg.text,
+          tag: msg.tag || 'Help',
+          sender: msg.sender || 'delivery',
+          senderName: msg.senderName || 'Delivery Team',
+          timestamp: normalizeChatTimestampIso(msg.timestamp, msg.createdAt),
+          createdAt: msg.createdAt || normalizeChatTimestampIso(msg.timestamp),
+          createdAtMs: getChatTimestampMs(msg) || Date.now(),
+          readByAdmin: msg.readByAdmin === true,
+          readByDelivery: true
+        };
+        db.collection('support_chats').doc(id).set(payload, { merge: true }).then(() => {
+          pendingOutgoingDeliveryChats.delete(id);
+          savePendingOutgoingChatsToStorage();
+        }).catch(() => {});
+      });
+    }
+
+    function scrollDeliveryChatToBottom() {
+      const container = document.getElementById('deliveryChatMessageList');
+      if (!container) return;
+      container.scrollTop = container.scrollHeight;
+      requestAnimationFrame(() => {
+        container.scrollTop = container.scrollHeight;
+        const lastEl = container.lastElementChild;
+        if (lastEl && typeof lastEl.scrollIntoView === 'function') {
+          try { lastEl.scrollIntoView({ block: 'end', behavior: 'auto' }); } catch (e) {}
+        }
+      });
+      setTimeout(() => {
+        container.scrollTop = container.scrollHeight;
+      }, 90);
+    }
+
+    function adjustDeliveryChatDrawerForViewport() {
+      const drawer = document.getElementById('deliveryChatDrawer');
+      const container = document.getElementById('deliveryChatMessageList');
+      if (!drawer || !isDeliveryChatDrawerOpen) return;
+      if (window.visualViewport && window.innerWidth < 640) {
+        const vv = window.visualViewport;
+        const availH = Math.max(260, Math.floor(vv.height - 16));
+        drawer.style.maxHeight = availH + 'px';
+        if (container) {
+          container.style.maxHeight = Math.max(110, availH - 175) + 'px';
+        }
+        scrollDeliveryChatToBottom();
+      } else {
+        drawer.style.maxHeight = '';
+        if (container) container.style.maxHeight = '';
+      }
+    }
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', adjustDeliveryChatDrawerForViewport);
     }
 
     function playSupportChatChime() {
@@ -2516,29 +2657,47 @@
         try { deliveryChatUnsubscribe(); } catch (e) {}
         deliveryChatUnsubscribe = null;
       }
+      if (reconnectChatTimeout) {
+        clearTimeout(reconnectChatTimeout);
+        reconnectChatTimeout = null;
+      }
 
-      loadCachedDeliverySupportChats();
+      loadCachedDeliverySupportChats(false);
+      flushPendingDeliveryChatMessages();
 
       try {
-        deliveryChatUnsubscribe = db.collection('support_chats').orderBy('timestamp', 'asc').onSnapshot(snapshot => {
+        deliveryChatUnsubscribe = db.collection('support_chats').onSnapshot(snapshot => {
           if (!snapshot) return;
 
+          const fromServer = snapshot.metadata ? !snapshot.metadata.fromCache : true;
           const loaded = [];
+          const seenSnapshotIds = new Set();
           let newIncomingAdminCount = 0;
 
           snapshot.forEach(doc => {
             const d = doc.data() || {};
+            const iso = normalizeChatTimestampIso(d.timestamp, d.createdAt);
+            const ms = typeof d.createdAtMs === 'number' ? d.createdAtMs : new Date(iso).getTime();
             const msg = {
               id: doc.id,
               text: d.text || '',
               tag: d.tag || 'Help',
               sender: d.sender || 'delivery',
               senderName: d.senderName || 'Delivery Team',
-              timestamp: d.timestamp || new Date().toISOString(),
+              timestamp: iso,
+              createdAt: d.createdAt || iso,
+              createdAtMs: isNaN(ms) ? Date.now() : ms,
               readByAdmin: d.readByAdmin === true,
               readByDelivery: d.readByDelivery === true
             };
             loaded.push(msg);
+            seenSnapshotIds.add(doc.id);
+
+            // Once confirmed in snapshot (and committed when online), remove from pending map
+            if (pendingOutgoingDeliveryChats.has(doc.id) && fromServer && !(snapshot.metadata && snapshot.metadata.hasPendingWrites)) {
+              pendingOutgoingDeliveryChats.delete(doc.id);
+              savePendingOutgoingChatsToStorage();
+            }
 
             // Check for new incoming admin message
             if (!knownDeliveryChatMessageIds.has(doc.id)) {
@@ -2549,7 +2708,8 @@
             }
           });
 
-          deliveryChatMessages = loaded;
+          // Merge with any optimistic outgoing messages not yet returned in snapshot (prevents disappearing on stale PWA cache)
+          deliveryChatMessages = mergeAndSortDeliveryChats(loaded);
           try {
             localStorage.setItem(STORAGE_DELIVERY_SUPPORT_CHATS, JSON.stringify(deliveryChatMessages));
           } catch (e) {}
@@ -2573,9 +2733,16 @@
           isInitialDeliveryChatLoad = false;
         }, err => {
           console.warn('support_chats snapshot error in delivery portal:', err);
+          deliveryChatUnsubscribe = null;
+          reconnectChatTimeout = setTimeout(() => {
+            if (db && !deliveryChatUnsubscribe) {
+              listenToDeliverySupportChats();
+            }
+          }, 3000);
         });
       } catch (err) {
         console.warn('Error starting support_chats listener in delivery portal:', err);
+        deliveryChatUnsubscribe = null;
       }
     }
 
@@ -2598,7 +2765,14 @@
       });
     }
 
-    function openDeliveryChatDrawer() {
+    function openDeliveryChatDrawer(e) {
+      if (e && typeof e.stopPropagation === 'function') {
+        e.stopPropagation();
+      }
+      if (closeDeliveryChatTimer) {
+        clearTimeout(closeDeliveryChatTimer);
+        closeDeliveryChatTimer = null;
+      }
       const drawer = document.getElementById('deliveryChatDrawer');
       const overlay = document.getElementById('deliveryChatOverlay');
       if (!drawer || !overlay) return;
@@ -2609,13 +2783,21 @@
       drawer.classList.remove('hidden', 'translate-y-full');
       isDeliveryChatDrawerOpen = true;
 
+      if (db && !deliveryChatUnsubscribe) {
+        listenToDeliverySupportChats();
+      } else if (db) {
+        flushPendingDeliveryChatMessages();
+      }
+
       renderDeliveryChatMessages();
       markDeliveryMessagesAsRead();
+      adjustDeliveryChatDrawerForViewport();
+      scrollDeliveryChatToBottom();
 
       setTimeout(() => {
         const input = document.getElementById('deliveryChatInput');
         if (input) input.focus();
-      }, 100);
+      }, 120);
 
       if (window.lucide && typeof lucide.createIcons === 'function') {
         lucide.createIcons();
@@ -2629,11 +2811,13 @@
 
       overlay.classList.remove('opacity-100');
       drawer.classList.add('translate-y-full');
+      isDeliveryChatDrawerOpen = false;
 
-      setTimeout(() => {
+      if (closeDeliveryChatTimer) clearTimeout(closeDeliveryChatTimer);
+      closeDeliveryChatTimer = setTimeout(() => {
         overlay.classList.add('hidden');
         drawer.classList.add('hidden');
-        isDeliveryChatDrawerOpen = false;
+        drawer.style.maxHeight = '';
       }, 300);
     }
 
@@ -2675,8 +2859,9 @@
 
       let html = '';
       deliveryChatMessages.forEach(msg => {
+        if (!msg) return;
         const isDelivery = msg.sender === 'delivery';
-        const timeStr = formatChatTimestamp(msg.timestamp);
+        const timeStr = formatChatTimestamp(msg.timestamp || msg.createdAt);
 
         // Tag badge
         let tagBadge = '';
@@ -2694,12 +2879,12 @@
           // Outgoing from Delivery Staff (Right aligned)
           html += `
             <div class="flex flex-col items-end max-w-[88%] ml-auto space-y-1">
-              <div class="flex items-center gap-1.5 flex-wrap">
+              <div class="flex items-center gap-1.5 flex-wrap justify-end">
                 <span class="text-[9px] text-slate-400 font-medium">${timeStr}</span>
                 ${tagBadge}
                 <span class="font-extrabold text-[11px] text-slate-700">You</span>
               </div>
-              <div class="p-2.5 rounded-2xl rounded-tr-xs bg-slate-900 text-white shadow-xs leading-relaxed break-words text-xs">
+              <div class="p-2.5 rounded-2xl rounded-tr-xs bg-slate-900 text-white shadow-xs leading-relaxed break-words max-w-full text-xs">
                 ${escapeHtml(msg.text)}
               </div>
             </div>
@@ -2712,7 +2897,7 @@
                 <span class="font-extrabold text-[11px] text-blue-600">Admin Support</span>
                 <span class="text-[9px] text-slate-400 font-medium">${timeStr}</span>
               </div>
-              <div class="p-2.5 rounded-2xl rounded-tl-xs bg-white border border-blue-200 text-slate-900 shadow-2xs leading-relaxed break-words text-xs">
+              <div class="p-2.5 rounded-2xl rounded-tl-xs bg-white border border-blue-200 text-slate-900 shadow-2xs leading-relaxed break-words max-w-full text-xs">
                 ${escapeHtml(msg.text)}
               </div>
             </div>
@@ -2721,11 +2906,11 @@
       });
 
       container.innerHTML = html;
-      container.scrollTop = container.scrollHeight;
 
       if (window.lucide && typeof lucide.createIcons === 'function') {
         lucide.createIcons();
       }
+      scrollDeliveryChatToBottom();
     }
 
     function sendDeliveryChatMessage() {
@@ -2734,33 +2919,51 @@
       const text = (input.value || '').trim();
       if (!text) return;
 
+      const nowMs = Date.now();
+      const nowIso = new Date(nowMs).toISOString();
+      const clientId = 'msg_' + nowMs + '_' + Math.random().toString(36).slice(2, 7);
+
       const msgData = {
+        id: clientId,
         text: text,
         tag: activeDeliveryChatTag || 'Help',
         sender: 'delivery',
         senderName: 'Delivery Team',
-        timestamp: new Date().toISOString(),
+        timestamp: nowIso,
+        createdAt: nowIso,
+        createdAtMs: nowMs,
         readByAdmin: false,
         readByDelivery: true
       };
 
       input.value = '';
 
+      // Optimistically persist locally and render immediately so message never disappears on PWA
+      knownDeliveryChatMessageIds.add(clientId);
+      pendingOutgoingDeliveryChats.set(clientId, msgData);
+      savePendingOutgoingChatsToStorage();
+      deliveryChatMessages = mergeAndSortDeliveryChats([...deliveryChatMessages, msgData]);
+      try {
+        localStorage.setItem(STORAGE_DELIVERY_SUPPORT_CHATS, JSON.stringify(deliveryChatMessages));
+      } catch (e) {}
+      renderDeliveryChatMessages();
+      scrollDeliveryChatToBottom();
+
       if (db) {
-        db.collection('support_chats').add(msgData).then(() => {
+        if (typeof db.enableNetwork === 'function') {
+          db.enableNetwork().catch(() => {});
+        }
+        db.collection('support_chats').doc(clientId).set(msgData).then(() => {
+          pendingOutgoingDeliveryChats.delete(clientId);
+          savePendingOutgoingChatsToStorage();
           if (typeof showToast === 'function') showToast('✓ Message sent to Admin');
         }).catch(err => {
           console.warn('Error sending delivery support message to Firestore:', err);
+          if (typeof showToast === 'function') showToast('Saved locally — will sync when online');
         });
       } else {
-        msgData.id = 'local_' + Date.now();
-        deliveryChatMessages.push(msgData);
-        renderDeliveryChatMessages();
         if (typeof showToast === 'function') showToast('✓ Message recorded locally');
       }
-
-      const container = document.getElementById('deliveryChatMessageList');
-      if (container) container.scrollTop = container.scrollHeight;
     }
 
     function markDeliveryMessagesAsRead() {
@@ -2787,7 +2990,8 @@
     function formatChatTimestamp(isoStr) {
       if (!isoStr) return '';
       try {
-        const d = new Date(isoStr);
+        const cleanIso = (typeof isoStr === 'object') ? normalizeChatTimestampIso(isoStr) : isoStr;
+        const d = new Date(cleanIso);
         if (isNaN(d.getTime())) return '';
         const hours = d.getHours();
         const mins = String(d.getMinutes()).padStart(2, '0');
@@ -2807,6 +3011,16 @@
     window.renderDeliveryChatMessages = renderDeliveryChatMessages;
     window.markDeliveryMessagesAsRead = markDeliveryMessagesAsRead;
     window.loadCachedDeliverySupportChats = loadCachedDeliverySupportChats;
+    window.scrollDeliveryChatToBottom = scrollDeliveryChatToBottom;
+    window.flushPendingDeliveryChatMessages = flushPendingDeliveryChatMessages;
+    window.setDeliveryChatMessagesForTest = function(arr) {
+      deliveryChatMessages = mergeAndSortDeliveryChats(arr);
+      updateDeliveryChatBadges();
+      if (isDeliveryChatDrawerOpen) renderDeliveryChatMessages();
+    };
+    window.getDeliveryChatMessages = function() {
+      return deliveryChatMessages;
+    };
 
     function startDeliveryApp() {
       loadCachedDeliverySupportChats();

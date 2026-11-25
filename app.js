@@ -1031,6 +1031,9 @@ function initApp() {
     updateMainDeliverySoundToggleUI();
     updateDeliveryAlertBadge();
     renderDeliveryAlertList();
+    if (typeof loadCachedSupportChats === 'function') {
+      loadCachedSupportChats();
+    }
 
     // Restore or initialize active view (overview vs sales-register)
     try {
@@ -2129,11 +2132,15 @@ function renderDeliveryAlertList() {
   if (window.lucide && typeof lucide.createIcons === 'function') lucide.createIcons();
 }
 
-function toggleDeliveryAlertMenu() {
+function toggleDeliveryAlertMenu(e) {
+  if (e && typeof e.stopPropagation === 'function') {
+    e.stopPropagation();
+  }
   const menu = document.getElementById('deliveryAlertDropdown');
   if (!menu) return;
   const isHidden = menu.classList.contains('hidden');
   if (isHidden) {
+    if (typeof closeSupportChatMenu === 'function') closeSupportChatMenu();
     menu.classList.remove('hidden');
     unreadDeliveryAlertsCount = 0;
     updateDeliveryAlertBadge();
@@ -2322,25 +2329,124 @@ document.addEventListener('click', (e) => {
 
 let supportChatMessages = [];
 let knownAdminChatMessageIds = new Set();
+let pendingOutgoingAdminChats = new Map();
 let isInitialAdminChatLoad = true;
 let supportChatUnsubscribe = null;
+let reconnectAdminChatTimeout = null;
 let isSupportChatMenuOpen = false;
 const STORAGE_SUPPORT_CHATS_CACHE = 'thirdman_support_chats_cache';
+const STORAGE_ADMIN_PENDING_CHATS = 'thirdman_support_pending_chats';
 
-function loadCachedSupportChats() {
+function normalizeAdminChatTimestampIso(ts, fallbackCreatedAt) {
+  const val = ts || fallbackCreatedAt;
+  if (!val) return new Date().toISOString();
+  if (typeof val === 'object' && typeof val.toDate === 'function') {
+    try { return val.toDate().toISOString(); } catch (e) {}
+  }
+  if (typeof val === 'object' && typeof val.seconds === 'number') {
+    return new Date(val.seconds * 1000).toISOString();
+  }
+  if (typeof val === 'number' && !isNaN(val)) {
+    return new Date(val).toISOString();
+  }
+  const d = new Date(val);
+  return isNaN(d.getTime()) ? new Date().toISOString() : d.toISOString();
+}
+
+function getAdminChatTimestampMs(msg) {
+  if (!msg) return 0;
+  if (typeof msg.createdAtMs === 'number' && !isNaN(msg.createdAtMs)) return msg.createdAtMs;
+  const iso = normalizeAdminChatTimestampIso(msg.timestamp, msg.createdAt);
+  const t = new Date(iso).getTime();
+  return isNaN(t) ? 0 : t;
+}
+
+function savePendingAdminChatsToStorage() {
+  try {
+    localStorage.setItem(STORAGE_ADMIN_PENDING_CHATS, JSON.stringify(Array.from(pendingOutgoingAdminChats.values())));
+  } catch (e) {}
+}
+
+function loadPendingAdminChatsFromStorage() {
+  try {
+    const raw = localStorage.getItem(STORAGE_ADMIN_PENDING_CHATS);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach(m => {
+          if (m && m.id && !pendingOutgoingAdminChats.has(m.id)) {
+            pendingOutgoingAdminChats.set(m.id, m);
+          }
+        });
+      }
+    }
+  } catch (e) {}
+}
+
+function mergeAndSortAdminChats(baseList) {
+  const byId = new Map();
+  (Array.isArray(baseList) ? baseList : []).forEach(m => {
+    if (m && m.id) byId.set(m.id, m);
+  });
+  pendingOutgoingAdminChats.forEach((pMsg, id) => {
+    if (!byId.has(id)) {
+      byId.set(id, pMsg);
+    }
+  });
+  const merged = Array.from(byId.values());
+  merged.sort((a, b) => {
+    const diff = getAdminChatTimestampMs(a) - getAdminChatTimestampMs(b);
+    if (diff !== 0) return diff;
+    return String(a.id || '').localeCompare(String(b.id || ''));
+  });
+  return merged;
+}
+
+function loadCachedSupportChats(forceOverwrite) {
+  loadPendingAdminChatsFromStorage();
   try {
     const raw = localStorage.getItem(STORAGE_SUPPORT_CHATS_CACHE);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        supportChatMessages = parsed;
+        if (forceOverwrite || supportChatMessages.length === 0) {
+          supportChatMessages = mergeAndSortAdminChats(parsed);
+        } else {
+          supportChatMessages = mergeAndSortAdminChats([...parsed, ...supportChatMessages]);
+        }
         supportChatMessages.forEach(m => {
           if (m && m.id) knownAdminChatMessageIds.add(m.id);
         });
         updateSupportChatUnreadBadge();
       }
+    } else if (pendingOutgoingAdminChats.size > 0) {
+      supportChatMessages = mergeAndSortAdminChats(supportChatMessages);
+      updateSupportChatUnreadBadge();
     }
   } catch (e) {}
+}
+
+function flushPendingAdminChatMessages() {
+  if (!db || pendingOutgoingAdminChats.size === 0) return;
+  pendingOutgoingAdminChats.forEach((msg, id) => {
+    if (!msg || id.startsWith('local_')) return;
+    const payload = {
+      id: msg.id,
+      text: msg.text,
+      tag: msg.tag || 'Reply',
+      sender: 'admin',
+      senderName: msg.senderName || 'Admin',
+      timestamp: normalizeAdminChatTimestampIso(msg.timestamp, msg.createdAt),
+      createdAt: msg.createdAt || normalizeAdminChatTimestampIso(msg.timestamp),
+      createdAtMs: getAdminChatTimestampMs(msg) || Date.now(),
+      readByAdmin: true,
+      readByDelivery: msg.readByDelivery === true
+    };
+    db.collection('support_chats').doc(id).set(payload, { merge: true }).then(() => {
+      pendingOutgoingAdminChats.delete(id);
+      savePendingAdminChatsToStorage();
+    }).catch(() => {});
+  });
 }
 
 function playSupportChatChime() {
@@ -2383,29 +2489,44 @@ function listenToSupportChats() {
     try { supportChatUnsubscribe(); } catch (e) {}
     supportChatUnsubscribe = null;
   }
+  if (reconnectAdminChatTimeout) {
+    clearTimeout(reconnectAdminChatTimeout);
+    reconnectAdminChatTimeout = null;
+  }
 
-  loadCachedSupportChats();
+  loadCachedSupportChats(false);
+  flushPendingAdminChatMessages();
 
   try {
-    supportChatUnsubscribe = db.collection('support_chats').orderBy('timestamp', 'asc').onSnapshot(snapshot => {
+    supportChatUnsubscribe = db.collection('support_chats').onSnapshot(snapshot => {
       if (!snapshot) return;
 
+      const fromServer = snapshot.metadata ? !snapshot.metadata.fromCache : true;
       const loaded = [];
       let newIncomingDeliveryCount = 0;
 
       snapshot.forEach(doc => {
         const d = doc.data() || {};
+        const iso = normalizeAdminChatTimestampIso(d.timestamp, d.createdAt);
+        const ms = typeof d.createdAtMs === 'number' ? d.createdAtMs : new Date(iso).getTime();
         const msg = {
           id: doc.id,
           text: d.text || '',
           tag: d.tag || 'Help',
           sender: d.sender || 'delivery',
           senderName: d.senderName || 'Delivery Team',
-          timestamp: d.timestamp || new Date().toISOString(),
+          timestamp: iso,
+          createdAt: d.createdAt || iso,
+          createdAtMs: isNaN(ms) ? Date.now() : ms,
           readByAdmin: d.readByAdmin === true,
           readByDelivery: d.readByDelivery === true
         };
         loaded.push(msg);
+
+        if (pendingOutgoingAdminChats.has(doc.id) && fromServer && !(snapshot.metadata && snapshot.metadata.hasPendingWrites)) {
+          pendingOutgoingAdminChats.delete(doc.id);
+          savePendingAdminChatsToStorage();
+        }
 
         // Check for new incoming delivery messages
         if (!knownAdminChatMessageIds.has(doc.id)) {
@@ -2416,17 +2537,19 @@ function listenToSupportChats() {
         }
       });
 
-      supportChatMessages = loaded;
+      supportChatMessages = mergeAndSortAdminChats(loaded);
       try {
         localStorage.setItem(STORAGE_SUPPORT_CHATS_CACHE, JSON.stringify(supportChatMessages));
       } catch (e) {}
 
-      // Trigger sound & toast if new delivery message arrived
+      // Trigger sound & clickable toast if new delivery message arrived
       if (!isInitialAdminChatLoad && newIncomingDeliveryCount > 0) {
         playSupportChatChime();
         const latestMsg = supportChatMessages.filter(m => m.sender === 'delivery').slice(-1)[0];
         if (latestMsg && typeof showNotification === 'function') {
-          showNotification(`💬 Delivery Support (${latestMsg.tag || 'Help'}): ${latestMsg.text || 'New message'}`, 'delivery', 6000);
+          showNotification(`💬 Delivery Support (${latestMsg.tag || 'Help'}): ${latestMsg.text || 'New message'}`, {
+            onClick: () => openSupportChatMenu()
+          });
         }
       }
 
@@ -2440,9 +2563,16 @@ function listenToSupportChats() {
       isInitialAdminChatLoad = false;
     }, err => {
       console.warn('support_chats snapshot error:', err);
+      supportChatUnsubscribe = null;
+      reconnectAdminChatTimeout = setTimeout(() => {
+        if (db && !supportChatUnsubscribe) {
+          listenToSupportChats();
+        }
+      }, 3000);
     });
   } catch (err) {
     console.warn('Error starting support_chats listener:', err);
+    supportChatUnsubscribe = null;
   }
 }
 
@@ -2461,11 +2591,70 @@ function updateSupportChatUnreadBadge() {
   }
 }
 
-function toggleSupportChatMenu() {
+function positionSupportChatDropdown() {
+  const dropdown = document.getElementById('supportChatDropdown');
+  const btn = document.getElementById('btnSupportChat');
+  if (!dropdown || !btn) return;
+
+  const vw = window.innerWidth || document.documentElement.clientWidth || 1024;
+  const vh = window.innerHeight || document.documentElement.clientHeight || 768;
+  const btnRect = btn.getBoundingClientRect();
+
+  if (vw < 768) {
+    // Mobile: centered fixed panel below button (fallback cleanly if btnRect is 0 in tests)
+    dropdown.style.left = '';
+    dropdown.style.right = '';
+    if (btnRect && btnRect.height > 0 && btnRect.bottom > 0) {
+      const topPos = Math.max(56, Math.min(vh - 340, Math.round(btnRect.bottom + 8)));
+      dropdown.style.top = topPos + 'px';
+    } else {
+      dropdown.style.top = '';
+    }
+  } else {
+    // Desktop/Tablet: fixed popover anchored cleanly below button and clamped inside <main> / viewport
+    const dropWidth = Math.min(384, vw - 24);
+    const aside = document.querySelector('aside');
+    const asideRight = (aside && aside.offsetWidth > 0) ? aside.getBoundingClientRect().right : 0;
+    const minLeft = Math.max(12, Math.round(asideRight + 12));
+
+    if (btnRect && btnRect.width > 0) {
+      const topPos = Math.max(12, Math.min(vh - 360, Math.round(btnRect.bottom + 8)));
+      const idealLeft = Math.round(btnRect.right - dropWidth);
+      const clampedLeft = Math.max(minLeft, Math.min(vw - dropWidth - 12, idealLeft));
+      dropdown.style.top = topPos + 'px';
+      dropdown.style.left = clampedLeft + 'px';
+      dropdown.style.right = 'auto';
+    } else {
+      dropdown.style.top = '64px';
+      dropdown.style.right = '16px';
+      dropdown.style.left = 'auto';
+    }
+  }
+}
+
+window.addEventListener('resize', () => {
+  if (isSupportChatMenuOpen) {
+    positionSupportChatDropdown();
+  }
+});
+
+function scrollAdminSupportToBottom() {
+  const container = document.getElementById('adminSupportMessageList');
+  if (!container) return;
+  container.scrollTop = container.scrollHeight;
+  requestAnimationFrame(() => {
+    container.scrollTop = container.scrollHeight;
+  });
+}
+
+function toggleSupportChatMenu(e) {
+  if (e && typeof e.stopPropagation === 'function') {
+    e.stopPropagation();
+  }
   const dropdown = document.getElementById('supportChatDropdown');
   if (!dropdown) return;
 
-  if (dropdown.classList.contains('hidden')) {
+  if (dropdown.classList.contains('hidden') || !isSupportChatMenuOpen) {
     openSupportChatMenu();
   } else {
     closeSupportChatMenu();
@@ -2474,18 +2663,41 @@ function toggleSupportChatMenu() {
 
 function openSupportChatMenu() {
   const dropdown = document.getElementById('supportChatDropdown');
+  const backdrop = document.getElementById('supportChatBackdrop');
   if (!dropdown) return;
 
-  // Close delivery alert dropdown if open
-  closeDeliveryAlertMenu();
+  try {
+    if (typeof closeDeliveryAlertMenu === 'function') closeDeliveryAlertMenu();
+  } catch (e) {}
 
+  if (backdrop) backdrop.classList.remove('hidden');
   dropdown.classList.remove('hidden');
   isSupportChatMenuOpen = true;
 
-  renderAdminSupportMessages();
-  markAdminMessagesAsRead();
+  try {
+    positionSupportChatDropdown();
+  } catch (e) {}
 
-  // Focus input
+  if (db && !supportChatUnsubscribe) {
+    listenToSupportChats();
+  } else if (db) {
+    flushPendingAdminChatMessages();
+  }
+
+  try {
+    renderAdminSupportMessages();
+  } catch (err) {
+    console.warn('Error rendering admin support messages:', err);
+  }
+
+  try {
+    markAdminMessagesAsRead();
+  } catch (err) {
+    console.warn('Error marking admin messages as read:', err);
+  }
+
+  scrollAdminSupportToBottom();
+
   setTimeout(() => {
     const input = document.getElementById('adminSupportReplyInput');
     if (input) input.focus();
@@ -2498,7 +2710,9 @@ function openSupportChatMenu() {
 
 function closeSupportChatMenu() {
   const dropdown = document.getElementById('supportChatDropdown');
+  const backdrop = document.getElementById('supportChatBackdrop');
   if (dropdown) dropdown.classList.add('hidden');
+  if (backdrop) backdrop.classList.add('hidden');
   isSupportChatMenuOpen = false;
 }
 
@@ -2520,8 +2734,9 @@ function renderAdminSupportMessages() {
 
   let html = '';
   supportChatMessages.forEach(msg => {
+    if (!msg) return;
     const isDelivery = msg.sender === 'delivery';
-    const timeStr = formatChatTimestamp(msg.timestamp);
+    const timeStr = formatChatTimestamp(msg.timestamp || msg.createdAt);
 
     // Tag badge
     let tagBadge = '';
@@ -2544,7 +2759,7 @@ function renderAdminSupportMessages() {
             ${tagBadge}
             <span class="text-[9px] text-slate-400 font-medium">${timeStr}</span>
           </div>
-          <div class="p-2.5 rounded-2xl rounded-tl-xs bg-white border border-slate-200 text-slate-800 shadow-2xs leading-relaxed break-words text-xs">
+          <div class="p-2.5 rounded-2xl rounded-tl-xs bg-white border border-slate-200 text-slate-800 shadow-2xs leading-relaxed break-words max-w-full text-xs">
             ${escapeHtml(msg.text)}
           </div>
         </div>
@@ -2553,11 +2768,11 @@ function renderAdminSupportMessages() {
       // Outgoing from Admin (Right aligned)
       html += `
         <div class="flex flex-col items-end max-w-[88%] ml-auto space-y-1">
-          <div class="flex items-center gap-1.5 flex-wrap">
+          <div class="flex items-center gap-1.5 flex-wrap justify-end">
             <span class="text-[9px] text-slate-400 font-medium">${timeStr}</span>
             <span class="font-extrabold text-[11px] text-indigo-600">You (Admin)</span>
           </div>
-          <div class="p-2.5 rounded-2xl rounded-tr-xs bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs leading-relaxed break-words text-xs">
+          <div class="p-2.5 rounded-2xl rounded-tr-xs bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-xs leading-relaxed break-words max-w-full text-xs">
             ${escapeHtml(msg.text)}
           </div>
         </div>
@@ -2566,7 +2781,7 @@ function renderAdminSupportMessages() {
   });
 
   container.innerHTML = html;
-  container.scrollTop = container.scrollHeight;
+  scrollAdminSupportToBottom();
 
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
@@ -2576,7 +2791,8 @@ function renderAdminSupportMessages() {
 function formatChatTimestamp(isoStr) {
   if (!isoStr) return '';
   try {
-    const d = new Date(isoStr);
+    const cleanIso = (typeof isoStr === 'object') ? normalizeAdminChatTimestampIso(isoStr) : isoStr;
+    const d = new Date(cleanIso);
     if (isNaN(d.getTime())) return '';
     const hours = d.getHours();
     const mins = String(d.getMinutes()).padStart(2, '0');
@@ -2594,32 +2810,44 @@ function sendAdminSupportReply() {
   const text = (input.value || '').trim();
   if (!text) return;
 
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const clientId = 'msg_' + nowMs + '_' + Math.random().toString(36).slice(2, 7);
+
   const replyData = {
+    id: clientId,
     text: text,
     tag: 'Reply',
     sender: 'admin',
     senderName: 'Admin',
-    timestamp: new Date().toISOString(),
+    timestamp: nowIso,
+    createdAt: nowIso,
+    createdAtMs: nowMs,
     readByAdmin: true,
     readByDelivery: false
   };
 
   input.value = '';
 
+  knownAdminChatMessageIds.add(clientId);
+  pendingOutgoingAdminChats.set(clientId, replyData);
+  savePendingAdminChatsToStorage();
+  supportChatMessages = mergeAndSortAdminChats([...supportChatMessages, replyData]);
+  try {
+    localStorage.setItem(STORAGE_SUPPORT_CHATS_CACHE, JSON.stringify(supportChatMessages));
+  } catch (e) {}
+  renderAdminSupportMessages();
+  scrollAdminSupportToBottom();
+
   if (db) {
-    db.collection('support_chats').add(replyData).catch(err => {
+    if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+    db.collection('support_chats').doc(clientId).set(replyData).then(() => {
+      pendingOutgoingAdminChats.delete(clientId);
+      savePendingAdminChatsToStorage();
+    }).catch(err => {
       console.warn('Error sending admin support reply to Firestore:', err);
     });
-  } else {
-    // Offline local fallback
-    replyData.id = 'local_' + Date.now();
-    supportChatMessages.push(replyData);
-    renderAdminSupportMessages();
   }
-
-  // Scroll to bottom
-  const container = document.getElementById('adminSupportMessageList');
-  if (container) container.scrollTop = container.scrollHeight;
 }
 
 function markAdminMessagesAsRead() {
@@ -2665,8 +2893,10 @@ function clearOrResolveSupportChat() {
 
   supportChatMessages = [];
   knownAdminChatMessageIds.clear();
+  pendingOutgoingAdminChats.clear();
   try {
     localStorage.removeItem(STORAGE_SUPPORT_CHATS_CACHE);
+    localStorage.removeItem(STORAGE_ADMIN_PENDING_CHATS);
   } catch (e) {}
 
   renderAdminSupportMessages();
@@ -2674,7 +2904,7 @@ function clearOrResolveSupportChat() {
 }
 
 function setSupportChatMessages(msgs) {
-  supportChatMessages = Array.isArray(msgs) ? msgs : [];
+  supportChatMessages = mergeAndSortAdminChats(msgs);
 }
 
 function getSupportChatMessages() {
@@ -2682,8 +2912,13 @@ function getSupportChatMessages() {
 }
 
 document.addEventListener('click', (e) => {
+  if (!isSupportChatMenuOpen) return;
   const chatContainer = document.getElementById('supportChatContainer');
-  if (chatContainer && !chatContainer.contains(e.target)) {
+  const dropdown = document.getElementById('supportChatDropdown');
+  const btn = document.getElementById('btnSupportChat');
+  const insideBtn = (btn && btn.contains(e.target)) || (chatContainer && chatContainer.contains(e.target));
+  const insideDropdown = dropdown && dropdown.contains(e.target);
+  if (!insideBtn && !insideDropdown) {
     closeSupportChatMenu();
   }
 });
@@ -2699,6 +2934,10 @@ function handleMainAppConnectionWakeup() {
     }
     if (!mainOrdersUnsubscribe && db) {
       setupFirestoreRealtimeListeners();
+    } else if (!supportChatUnsubscribe && db) {
+      listenToSupportChats();
+    } else if (db) {
+      flushPendingAdminChatMessages();
     }
   }
 }
@@ -11369,7 +11608,7 @@ function showNotification(msg, undoCallback = null) {
 
   const toast = document.createElement('div');
   toast.id = 'appNotificationToast';
-  toast.className = 'fixed bottom-5 right-5 z-[99] max-w-md bg-[#09111e] text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-slate-700/80 transition-all duration-300 transform';
+  toast.className = 'fixed bottom-20 md:bottom-5 right-4 left-4 md:left-auto z-[99] md:max-w-md bg-[#09111e] text-white text-xs font-semibold px-4 py-3 rounded-2xl shadow-2xl flex items-center justify-between gap-3 border border-slate-700/80 transition-all duration-300 transform';
 
   if (undoCallback && typeof undoCallback === 'function') {
     toast.innerHTML = `
@@ -11405,6 +11644,26 @@ function showNotification(msg, undoCallback = null) {
       setTimeout(() => toast.remove(), 300);
     }, 8500);
 
+  } else if (undoCallback && typeof undoCallback === 'object' && typeof undoCallback.onClick === 'function') {
+    toast.classList.add('cursor-pointer', 'border-blue-500/60');
+    toast.innerHTML = `
+      <div class="flex items-center gap-2.5 min-w-0 pr-1">
+        <span class="text-blue-400 font-bold shrink-0">💬</span>
+        <span class="truncate text-slate-100">${escapeHtml(msg.replace(/^💬\s*/, ''))}</span>
+      </div>
+      <button type="button" id="toastChatOpenBtn" class="shrink-0 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 active:scale-95 text-white font-black rounded-xl text-xs shadow-md transition">Open</button>
+    `;
+    toast.onclick = (e) => {
+      e.stopPropagation();
+      toast.remove();
+      undoCallback.onClick();
+    };
+    document.body.appendChild(toast);
+
+    currentNotificationTimeout = setTimeout(() => {
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 6500);
   } else {
     toast.innerHTML = `
       <div class="flex items-center gap-2">
@@ -15229,4 +15488,6 @@ window.renderAdminSupportMessages = renderAdminSupportMessages;
 window.markAdminMessagesAsRead = markAdminMessagesAsRead;
 window.setSupportChatMessages = setSupportChatMessages;
 window.getSupportChatMessages = getSupportChatMessages;
+window.positionSupportChatDropdown = positionSupportChatDropdown;
+window.scrollAdminSupportToBottom = scrollAdminSupportToBottom;
 if (typeof supportChatMessages !== 'undefined') window.supportChatMessages = supportChatMessages;
