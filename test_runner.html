@@ -119,7 +119,17 @@
   <input type="text" id="qasShopName" />
   <select id="qasShopType"></select>
   <select id="qasTier"></select>
-  <input type="text" id="qasTown" />
+  <select id="qasDistrict">
+    <option value="Ernakulam" selected>Ernakulam</option>
+    <option value="Idukki">Idukki</option>
+    <option value="Kottayam">Kottayam</option>
+    <option value="Thrissur">Thrissur</option>
+  </select>
+  <input type="text" id="qasTown" list="qasTownsDatalist" />
+  <datalist id="qasTownsDatalist"></datalist>
+  <datalist id="custTownsDatalist"></datalist>
+  <datalist id="orderTownsDatalist"></datalist>
+  <datalist id="savedAreasDatalist"></datalist>
   <input type="tel" id="qasPhone" />
   <input type="text" id="qasNotes" />
   <input type="date" id="lhDateInput" />
@@ -216,6 +226,44 @@
   <span id="mobileDailyReportBadge" class="hidden"></span>
   <div id="mobileMoreDrawerOverlay" class="hidden"></div>
   <div id="mobileMoreDrawer" class="hidden"></div>
+
+  <!-- Customer Form & Settings Towns Fixtures -->
+  <div id="customerFormCard" class="hidden">
+    <form id="customerForm">
+      <input type="hidden" id="custEditId" />
+      <input type="text" id="custNameInput" />
+      <select id="custCategoryInput"><option value="Caterer" selected>Caterer</option><option value="Wholesaler">Wholesaler</option></select>
+      <select id="custDistrictSelect"><option value="Ernakulam" selected>Ernakulam</option><option value="Idukki">Idukki</option></select>
+      <input type="text" id="custTownInput" list="custTownsDatalist" />
+      <input type="text" id="custLandmarkInput" />
+      <input type="text" id="custPanchayathInput" />
+      <input type="text" id="custAreaInput" />
+      <input type="text" id="custPlaceInput" />
+      <input type="text" id="custLocationInput" />
+      <input type="text" id="custOwnerNameInput" />
+      <input type="text" id="custOwnerPhoneInput" />
+      <input type="text" id="custStaffNameInput" />
+      <select id="custStaffRoleInput"><option value="Chef / Cook" selected>Chef / Cook</option></select>
+      <input type="text" id="custStaffPhoneInput" />
+      <input type="text" id="custPhoneInput" />
+      <input type="text" id="custNotesInput" />
+      <span id="custFormTitleText"></span>
+      <span id="custSubmitText"></span>
+      <button type="button" id="custCancelEditBtn" class="hidden"></button>
+    </form>
+  </div>
+  <select id="settingsTownsFilterDistrict"><option value="all" selected>All</option><option value="Ernakulam">Ernakulam</option><option value="Idukki">Idukki</option></select>
+  <input type="text" id="settingsTownsSearchInput" />
+  <span id="settingsTownsCountBadge"></span>
+  <div id="settingsTownsListContainer"></div>
+  <select id="newTownDistrictSelect"><option value="Ernakulam" selected>Ernakulam</option><option value="Idukki">Idukki</option></select>
+  <input type="text" id="newTownNameInput" />
+  <div id="editTownModal" class="hidden">
+    <input type="hidden" id="editTownDistrict" />
+    <input type="text" id="editTownDistrictDisplay" />
+    <input type="hidden" id="editTownOriginalName" />
+    <input type="text" id="editTownNewName" />
+  </div>
 </div>
 
 <script>
@@ -1487,13 +1535,189 @@ window.onerror = function(msg, url, line, col, err) {
   orders = orders.filter(o => o.id !== 'ORD-TEST-WA1');
   closeOrderSuccessModal();
 
-  // Restore clean state
+  // Restore clean state before Town Normalization test
   setRealtimeDbForTest(origDb);
   resetRealtimeListenerHandlesForTest();
   orders = origOrders;
   updateDashboard();
   setSupportChatMessages([]);
   updateSupportChatUnreadBadge();
+
+  // TEST 22: Town Normalization, Invisible Unicode Cleanup & Duplicate Prevention
+  log("\n--- TEST 22: Town Normalization, Invisible Unicode Cleanup & Duplicate Prevention ---");
+  const snapCustomers = JSON.parse(JSON.stringify(customers));
+  const snapTowns = JSON.parse(JSON.stringify(savedDistrictTowns));
+  const snapOrders = JSON.parse(JSON.stringify(orders));
+  const snapLsTowns = localStorage.getItem(STORAGE_SAVED_TOWNS);
+  const snapLsCustomers = localStorage.getItem(STORAGE_CUSTOMERS);
+  const origConfirmFn = window.confirm;
+  const origAlertFn = window.alert;
+
+  try {
+    // 1. Canonical pre-November records must be free of invisible chars (U+2060)
+    const invRegex = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD]/;
+    ['c_hist_030', 'c_hist_041', 'c_hist_042', 'c_hist_043'].forEach(cid => {
+      const rec = PRE_NOVEMBER_CANONICAL_CUSTOMERS.find(c => c.id === cid);
+      assert(rec && rec.town === 'Kothamangalam' && !invRegex.test(rec.town) && rec.town.length === 13,
+        `Canonical customer ${cid} has clean Kothamangalam without U+2060`);
+    });
+
+    // 2. Helper sanitization & canonical lookup
+    assert(cleanInvisibleAndWhitespace('\u2060  Kothamangalam\u200B   ') === 'Kothamangalam',
+      "cleanInvisibleAndWhitespace strips U+2060, U+200B, and collapses whitespace");
+    assert(resolveCanonicalTownName('\u2060kothamangalam  ', 'Ernakulam') === 'Kothamangalam',
+      "resolveCanonicalTownName maps dirty lowercase+invisible variant to canonical Kothamangalam");
+
+    // 3. Map deduplication collapses invisible-char/case duplicates & removes Local/nil
+    const dirtyMapResult = deduplicateDistrictTownsMap({
+      Ernakulam: ['\u2060Kothamangalam', 'kothamangalam', 'Kothamangalam  ', 'Kothamangalam', 'aluva', 'Aluva', 'Local', 'nil', '']
+    });
+    const ernKothMatches = dirtyMapResult.map.Ernakulam.filter(t => getTownNormalizedKey(t) === 'kothamangalam');
+    const ernAluvaMatches = dirtyMapResult.map.Ernakulam.filter(t => getTownNormalizedKey(t) === 'aluva');
+    assert(dirtyMapResult.changed === true && ernKothMatches.length === 1 && ernKothMatches[0] === 'Kothamangalam' && ernKothMatches[0].length === 13,
+      "deduplicateDistrictTownsMap collapses all Kothamangalam variants into one clean entry");
+    assert(ernAluvaMatches.length === 1 && !dirtyMapResult.map.Ernakulam.some(t => t.toLowerCase() === 'local' || t.toLowerCase() === 'nil'),
+      "deduplicateDistrictTownsMap deduplicates case variants and excludes Local/nil");
+
+    // 4. saveNewDistrictTown reuses canonical entry and prevents duplicate towns
+    savedDistrictTowns = JSON.parse(JSON.stringify(dirtyMapResult.map));
+    const savedReturn = saveNewDistrictTown('Ernakulam', '  \u2060kothamangalam\u200B ');
+    assert(savedReturn === 'Kothamangalam' && savedDistrictTowns.Ernakulam.filter(t => getTownNormalizedKey(t) === 'kothamangalam').length === 1,
+      "saveNewDistrictTown resolves dirty manual entry to Kothamangalam without adding duplicate");
+
+    // 5. Datalists & dropdowns stay deduplicated across Directory, Orders & Daily Report
+    customers.push(
+      { id: 'c_dirty_t1', name: 'Dirty Town Shop 1', district: 'Ernakulam', town: '\u2060Kothamangalam', area: '\u2060Kothamangalam', location: '\u2060Kothamangalam, Ernakulam' },
+      { id: 'c_dirty_t2', name: 'Dirty Town Shop 2', district: 'Ernakulam', town: '  kothamangalam ', area: '  kothamangalam ', location: '  kothamangalam ' }
+    );
+    customers = deduplicateCustomersList(customers, false);
+    const cleanedCust1 = customers.find(c => c.id === 'c_dirty_t1');
+    const cleanedCust2 = customers.find(c => c.id === 'c_dirty_t2');
+    assert(cleanedCust1 && cleanedCust1.town === 'Kothamangalam' && !invRegex.test(cleanedCust1.location),
+      "deduplicateCustomersList strips U+2060 from customer town and location");
+    assert(cleanedCust2 && cleanedCust2.town === 'Kothamangalam',
+      "deduplicateCustomersList normalizes lowercase+spaced town to Kothamangalam");
+
+    updateTownDatalists();
+    populateDailyReportTownFilter();
+    const countKothInEl = (id) => Array.from(document.querySelectorAll(`#${id} option`))
+      .filter(opt => getTownNormalizedKey(opt.value) === 'kothamangalam').length;
+    assert(countKothInEl('custTownsDatalist') === 1, "custTownsDatalist contains strictly 1 Kothamangalam option");
+    assert(countKothInEl('orderTownsDatalist') === 1, "orderTownsDatalist contains strictly 1 Kothamangalam option");
+    assert(countKothInEl('savedAreasDatalist') === 1, "savedAreasDatalist contains strictly 1 Kothamangalam option");
+    assert(countKothInEl('qasTownsDatalist') === 1, "qasTownsDatalist contains strictly 1 Kothamangalam option");
+    assert(countKothInEl('custTownFilterSelect') === 1, "custTownFilterSelect contains strictly 1 Kothamangalam option");
+    assert(countKothInEl('orderAreaFilterSelect') === 1, "orderAreaFilterSelect contains strictly 1 Kothamangalam option");
+    assert(countKothInEl('dailyReportTownFilter') === 1, "dailyReportTownFilter contains strictly 1 Kothamangalam option");
+
+    // 6. Quick Add Shop (Daily Report route entry) normalizes town & respects district
+    const qasTypeEl = document.getElementById('qasShopType');
+    const qasTierEl = document.getElementById('qasTier');
+    if (qasTypeEl && qasTypeEl.options.length === 0) {
+      qasTypeEl.innerHTML = '<option value="prospect" selected>Prospect</option><option value="customer">Customer</option>';
+    }
+    if (qasTierEl && qasTierEl.options.length === 0) {
+      qasTierEl.innerHTML = '<option value="C" selected>C</option><option value="A">A</option>';
+    }
+    if (qasTypeEl) qasTypeEl.value = 'prospect';
+    if (qasTierEl) qasTierEl.value = 'C';
+    document.getElementById('qasShopName').value = 'Route Quick Add Shop';
+    document.getElementById('qasDistrict').value = 'Ernakulam';
+    document.getElementById('qasTown').value = '\u2060  kothamangalam  ';
+    document.getElementById('qasPhone').value = '9876500011';
+    document.getElementById('qasNotes').value = 'Route test';
+    handleQuickAddShopSubmit({ preventDefault: () => {} });
+    const addedQas = customers.find(c => c.name === 'Route Quick Add Shop');
+    assert(addedQas && addedQas.district === 'Ernakulam' && addedQas.town === 'Kothamangalam' && !invRegex.test(addedQas.location),
+      "Quick Add Shop resolves manual kothamangalam+invisible chars to canonical Kothamangalam");
+    assert(savedDistrictTowns.Ernakulam.filter(t => getTownNormalizedKey(t) === 'kothamangalam').length === 1,
+      "Quick Add Shop adds zero duplicate Kothamangalam entries to savedDistrictTowns");
+
+    // Quick Add Shop in different district (Idukki)
+    document.getElementById('qasShopName').value = 'Idukki Route Shop';
+    document.getElementById('qasDistrict').value = 'Idukki';
+    document.getElementById('qasTown').value = '  rajakkad  ';
+    handleQuickAddShopSubmit({ preventDefault: () => {} });
+    const addedIdukkiShop = customers.find(c => c.name === 'Idukki Route Shop');
+    assert(addedIdukkiShop && addedIdukkiShop.district === 'Idukki' && addedIdukkiShop.town === 'Rajakkad',
+      "Quick Add Shop preserves non-Ernakulam district (Idukki) and formats new town cleanly");
+    assert(Array.isArray(savedDistrictTowns.Idukki) && savedDistrictTowns.Idukki.includes('Rajakkad'),
+      "Quick Add Shop registers new town under selected district (Idukki)");
+
+    // 7. Customer Directory form submit normalizes manual town
+    window.alert = () => {};
+    document.getElementById('custEditId').value = '';
+    document.getElementById('custNameInput').value = 'Directory Canonical Shop';
+    document.getElementById('custDistrictSelect').value = 'Ernakulam';
+    document.getElementById('custTownInput').value = '  \u2060KOTHAMANGALAM  ';
+    handleCustomerFormSubmit({ preventDefault: () => {} });
+    const dirCust = customers.find(c => c.name === 'Directory Canonical Shop');
+    assert(dirCust && dirCust.town === 'Kothamangalam' && dirCust.area === 'Kothamangalam',
+      "handleCustomerFormSubmit stores canonical Kothamangalam when user types uppercase/invisible text");
+    assert(savedDistrictTowns.Ernakulam.filter(t => getTownNormalizedKey(t) === 'kothamangalam').length === 1,
+      "Customer Directory submit leaves strictly 1 Kothamangalam in savedDistrictTowns");
+
+    // 8. Daily Report & Directory town filters match all normalized customers
+    document.getElementById('dailyReportTownFilter').value = 'Kothamangalam';
+    renderDailyReportShopsList();
+    assert(document.getElementById('dailyReportShopsListContainer').innerHTML.includes('Route Quick Add Shop'),
+      "Daily Report town filter matches Kothamangalam shops consistently");
+    setCustomerTownFilter('Kothamangalam');
+    assert(document.getElementById('customersListContainer').innerHTML.includes('Directory Canonical Shop'),
+      "Customer Directory town filter matches Kothamangalam shops consistently");
+    setCustomerTownFilter('all');
+
+    // 9. Settings Edit Town supports merging typo/duplicate town into canonical Kothamangalam
+    window.confirm = () => true;
+    savedDistrictTowns.Ernakulam.push('Kothmanglam');
+    customers.push({ id: 'c_typo_town', name: 'Typo Town Shop', district: 'Ernakulam', town: 'Kothmanglam', area: 'Kothmanglam', location: 'Kothmanglam, Ernakulam' });
+    orders.push({ id: 'ORD-TYPO-1', date: '2026-11-25', customer: { id: 'c_typo_town', name: 'Typo Town Shop', district: 'Ernakulam', town: 'Kothmanglam', area: 'Kothmanglam', location: 'Kothmanglam, Ernakulam' }, items: [], totalBags: 1, totalKg: 26, totalAmount: 2000 });
+    document.getElementById('editTownDistrict').value = 'Ernakulam';
+    document.getElementById('editTownOriginalName').value = 'Kothmanglam';
+    document.getElementById('editTownNewName').value = 'kothamangalam';
+    submitEditTownName();
+    const fixedTypoCust = customers.find(c => c.id === 'c_typo_town');
+    const fixedTypoOrd = orders.find(o => o.id === 'ORD-TYPO-1');
+    assert(!savedDistrictTowns.Ernakulam.some(t => t === 'Kothmanglam') && savedDistrictTowns.Ernakulam.filter(t => getTownNormalizedKey(t) === 'kothamangalam').length === 1,
+      "submitEditTownName merges typo town into canonical Kothamangalam without duplicate");
+    assert(fixedTypoCust && fixedTypoCust.town === 'Kothamangalam' && fixedTypoOrd && fixedTypoOrd.customer.town === 'Kothamangalam',
+      "submitEditTownName cascades merged town update to customer and order records");
+
+    // 10. Firestore sanitization, order normalization & incoming cloud customer self-healing
+    const sanitizedDirtyOrder = sanitizeOrderForFirestore({
+      id: 'ORD-DIRTY-1',
+      customer: { id: 'c_dirty_ord', name: '  Clean Order Shop ', district: 'Ernakulam', town: '\u2060kothamangalam  ', area: '\u2060Kothamangalam', location: '\u2060Kothamangalam, Ernakulam' },
+      items: []
+    });
+    assert(sanitizedDirtyOrder.customer.town === 'Kothamangalam' && !invRegex.test(sanitizedDirtyOrder.customer.location),
+      "sanitizeOrderForFirestore strips invisible chars and canonicalizes customer town");
+
+    orders.push({ id: 'ORD-INV-1', date: '2026-11-25', customer: { id: 'c_inv_1', name: 'Inv Order Shop', district: 'Ernakulam', town: '\u2060Kothamangalam', area: '\u2060Kothamangalam', location: '\u2060Kothamangalam' }, items: [], totalBags: 1, totalKg: 26, totalAmount: 2000 });
+    const ordNormChanged = normalizeOrderCustomerNames();
+    const cleanedInvOrd = orders.find(o => o.id === 'ORD-INV-1');
+    assert(ordNormChanged === true && cleanedInvOrd && cleanedInvOrd.customer.town === 'Kothamangalam' && !invRegex.test(cleanedInvOrd.customer.location),
+      "normalizeOrderCustomerNames cleans invisible Unicode town characters from existing orders");
+
+    const dirtyCloudCust = { id: 'c_cloud_inv_1', name: 'Cloud Inv Shop', district: 'Ernakulam', town: '\u2060Kothamangalam', area: '\u2060Kothamangalam', location: '\u2060Kothamangalam, Ernakulam' };
+    processIncomingCloudCustomers([dirtyCloudCust]);
+    const mergedCloudCust = customers.find(c => c.id === 'c_cloud_inv_1');
+    assert(mergedCloudCust && mergedCloudCust.town === 'Kothamangalam' && !invRegex.test(mergedCloudCust.location),
+      "processIncomingCloudCustomers cleans U+2060 from incoming Firestore customer records");
+  } finally {
+    window.confirm = origConfirmFn;
+    window.alert = origAlertFn;
+    customers = snapCustomers;
+    savedDistrictTowns = snapTowns;
+    orders = snapOrders;
+    if (snapLsTowns !== null) localStorage.setItem(STORAGE_SAVED_TOWNS, snapLsTowns);
+    else localStorage.removeItem(STORAGE_SAVED_TOWNS);
+    if (snapLsCustomers !== null) localStorage.setItem(STORAGE_CUSTOMERS, snapLsCustomers);
+    else localStorage.removeItem(STORAGE_CUSTOMERS);
+    loadDistrictTowns();
+    updateTownDatalists();
+    populateDailyReportTownFilter();
+    updateDashboard();
+  }
 
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);

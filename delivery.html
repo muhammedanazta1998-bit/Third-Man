@@ -644,10 +644,19 @@
       return true;
     }
 
+    function cleanDeliveryLocationText(val) {
+      if (typeof val !== 'string') return '';
+      return val
+        .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD]/g, '')
+        .replace(/\u00A0/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
     function sanitizeOrderForDelivery(raw, docId) {
       if (!raw || !raw.id) return null;
       const c = (raw.customer && typeof raw.customer === 'object') ? raw.customer : {};
-      const custName = typeof raw.customer === 'string' ? raw.customer : (c.name || raw.customerName || 'Customer');
+      const custName = cleanDeliveryLocationText(typeof raw.customer === 'string' ? raw.customer : (c.name || raw.customerName || 'Customer')) || 'Customer';
       const contactPhone = c.phone || c.ownerPhone || c.staffPhone || '';
       const rawItems = Array.isArray(raw.items) ? raw.items : [];
       const cleanItems = rawItems.map(it => ({
@@ -672,11 +681,11 @@
         updatedAt: raw.updatedAt || '',
         customer: {
           name: custName,
-          town: c.town || c.area || c.location || '',
-          landmark: c.landmark || '',
-          place: c.place || '',
-          area: c.area || '',
-          location: c.location || '',
+          town: cleanDeliveryLocationText(c.town || c.area || c.location || ''),
+          landmark: cleanDeliveryLocationText(c.landmark || ''),
+          place: cleanDeliveryLocationText(c.place || ''),
+          area: cleanDeliveryLocationText(c.area || ''),
+          location: cleanDeliveryLocationText(c.location || ''),
           phone: contactPhone
         },
         items: cleanItems,
@@ -1626,20 +1635,25 @@
     function populateTownDropdown() {
       const select = document.getElementById('townFilterSelect');
       if (!select) return;
-      const towns = new Set();
+      const townMap = new Map();
       allOrders.forEach(o => {
         const cust = o.customer || {};
-        const t = (typeof cust === 'object') ? (cust.town || cust.location || '') : '';
-        if (t && t.toLowerCase() !== 'local') towns.add(t);
+        const rawT = (typeof cust === 'object') ? (cust.town || cust.location || '') : '';
+        const t = cleanDeliveryLocationText(rawT);
+        if (t && t.toLowerCase() !== 'local' && t.toLowerCase() !== 'nil') {
+          const key = t.toLowerCase();
+          if (!townMap.has(key)) townMap.set(key, t);
+        }
       });
-      const sorted = Array.from(towns).sort((a, b) => a.localeCompare(b));
-      const cur = select.value || 'all';
+      const sorted = Array.from(townMap.values()).sort((a, b) => a.localeCompare(b));
+      const cur = cleanDeliveryLocationText(select.value || 'all') || 'all';
       let html = '<option value="all">🏙️ All Towns</option>';
       sorted.forEach(t => {
         html += `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`;
       });
       select.innerHTML = html;
-      select.value = cur;
+      const curMatch = sorted.find(t => t.toLowerCase() === cur.toLowerCase());
+      select.value = curMatch || 'all';
     }
 
     function switchDeliveryTab(tab) {

@@ -250,7 +250,7 @@ const PRE_NOVEMBER_CANONICAL_CUSTOMERS = [
   { id: 'c_hist_027', name: 'MAMMOOTTY STORES MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_028', name: 'SRINIVASAKAPERUMAL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_029', name: 'MR TRADERS ADIMALI', town: 'Adimali', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_030', name: 'PARUTHIKKAATTIL', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_030', name: 'PARUTHIKKAATTIL', town: 'Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_031', name: 'Edakkat Enterprises Bypass', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_032', name: 'KCM TRADERS MUNNAR', town: 'Munnar', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_033', name: 'NADUKUDIYIL', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
@@ -261,9 +261,9 @@ const PRE_NOVEMBER_CANONICAL_CUSTOMERS = [
   { id: 'c_hist_038', name: 'KCA Angamaly', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_039', name: 'Union Basmati', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_040', name: 'Southern Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_041', name: 'Bismi Traders Kothamangalam', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
-  { id: 'c_hist_042', name: 'Sanchika', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Retailer', phone: '' },
-  { id: 'c_hist_043', name: 'ALUVA TRADING COMPANY', town: '⁠Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_041', name: 'Bismi Traders Kothamangalam', town: 'Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
+  { id: 'c_hist_042', name: 'Sanchika', town: 'Kothamangalam', district: 'Ernakulam', category: 'Retailer', phone: '' },
+  { id: 'c_hist_043', name: 'ALUVA TRADING COMPANY', town: 'Kothamangalam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_044', name: 'Marwa Aluva', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_045', name: 'KRP', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
   { id: 'c_hist_046', name: 'BHAVANI', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler', phone: '' },
@@ -1265,47 +1265,66 @@ function loadDataFromStorage() {
     // Filter out any tombstoned customer or trash customer
     customers = customers.filter(c => c && !isCustomerTombstoned(c.name, c.id) && !isCustomerInTrash(c.name, c.id));
 
+    let customersLocationNormalized = false;
+
     // Harmonize loaded customers with verified canonical records
     if (Array.isArray(customers) && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
       const canonMap = new Map(PRE_NOVEMBER_CANONICAL_CUSTOMERS.map(c => [c.id, c]));
       customers.forEach(c => {
         if (c && c.id && canonMap.has(c.id)) {
           const canon = canonMap.get(c.id);
+          if (c.name !== canon.name || c.town !== canon.town || c.district !== canon.district || c.category !== canon.category) {
+            customersLocationNormalized = true;
+          }
           c.name = canon.name;
           c.town = canon.town;
           c.district = canon.district;
           c.category = canon.category;
         }
       });
-      try {
-        localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
-      } catch (e) {}
     }
 
-    // Ensure all customers have normalized district, town, landmark, and members
+    // Ensure all customers have stripped/canonical district, town, landmark, and members before harvesting towns
     customers.forEach(c => {
-      if (!c.district) {
-        c.district = 'Ernakulam';
+      const nextDistrict = cleanInvisibleAndWhitespace(c.district) || 'Ernakulam';
+      const rawTownCandidate = cleanInvisibleAndWhitespace(c.town) ||
+        cleanInvisibleAndWhitespace(c.area) ||
+        (cleanInvisibleAndWhitespace(c.location) && getTownNormalizedKey(c.location) !== 'local' ? cleanInvisibleAndWhitespace(c.location) : 'Ernakulam');
+      const nextTown = resolveCanonicalTownName(rawTownCandidate, nextDistrict) || 'Ernakulam';
+      const nextLandmark = cleanInvisibleAndWhitespace(c.landmark || c.place || '');
+      const nextPanchayath = cleanInvisibleAndWhitespace(c.panchayath || '');
+      const rawAreaCandidate = cleanInvisibleAndWhitespace(c.area);
+      const nextArea = rawAreaCandidate ? (resolveCanonicalTownName(rawAreaCandidate, nextDistrict) || nextTown) : nextTown;
+      const nextPlace = cleanInvisibleAndWhitespace(c.place) || nextLandmark || nextTown;
+      const rawLoc = cleanInvisibleAndWhitespace(c.location);
+      const nextLocation = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
+        ? (resolveCanonicalTownName(rawLoc, nextDistrict) || nextTown)
+        : (rawLoc || nextTown);
+
+      if (c.district !== nextDistrict || c.town !== nextTown || c.landmark !== nextLandmark ||
+          c.panchayath !== nextPanchayath || c.area !== nextArea || c.place !== nextPlace ||
+          c.location !== nextLocation) {
+        customersLocationNormalized = true;
       }
-      if (!c.town) {
-        c.town = c.area || (c.location && c.location !== 'Local' ? c.location : 'Ernakulam');
-      }
-      if (!c.landmark) {
-        c.landmark = c.place || '';
-      }
-      if (!c.panchayath) {
-        c.panchayath = '';
-      }
-      if (!c.area) {
-        c.area = c.town;
-      }
-      if (!c.place) {
-        c.place = c.landmark || c.town;
-      }
+
+      c.district = nextDistrict;
+      c.town = nextTown;
+      c.landmark = nextLandmark;
+      c.panchayath = nextPanchayath;
+      c.area = nextArea;
+      c.place = nextPlace;
+      c.location = nextLocation;
+
       if (!Array.isArray(c.members) || c.members.length === 0) {
         c.members = getCustomerMembers(c);
       }
     });
+
+    if (customersLocationNormalized) {
+      try {
+        localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+      } catch (e) {}
+    }
 
     // Automatic customer deduplication pass
     if (typeof deduplicateCustomersList === 'function') {
@@ -1632,11 +1651,39 @@ function processIncomingCloudCustomers(remoteCustomers) {
       }
     }
 
-    const normName = (remoteCust.name || '').trim().toLowerCase();
+    const normName = cleanInvisibleAndWhitespace(remoteCust.name || '').toLowerCase();
     const localMatch = (remoteCust.id && localById.get(remoteCust.id)) ||
                        (normName && localByName.get(normName));
 
     let merged = { ...remoteCust };
+    let remoteTownCleaned = false;
+    const cleanDistrict = cleanInvisibleAndWhitespace(merged.district) || 'Ernakulam';
+    const rawTown = cleanInvisibleAndWhitespace(merged.town) ||
+      cleanInvisibleAndWhitespace(merged.area) ||
+      (cleanInvisibleAndWhitespace(merged.location) && getTownNormalizedKey(merged.location) !== 'local' ? cleanInvisibleAndWhitespace(merged.location) : '');
+    const cleanTown = rawTown ? resolveCanonicalTownName(rawTown, cleanDistrict) : '';
+    const cleanLandmark = cleanInvisibleAndWhitespace(merged.landmark || merged.place || '');
+    const cleanPanchayath = cleanInvisibleAndWhitespace(merged.panchayath || '');
+    const rawArea = cleanInvisibleAndWhitespace(merged.area || '');
+    const cleanArea = rawArea ? (resolveCanonicalTownName(rawArea, cleanDistrict) || cleanTown) : cleanTown;
+    const cleanPlace = cleanInvisibleAndWhitespace(merged.place || '') || cleanLandmark || cleanTown;
+    const rawLoc = cleanInvisibleAndWhitespace(merged.location || '');
+    const cleanLocation = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
+      ? (resolveCanonicalTownName(rawLoc, cleanDistrict) || cleanTown || 'Ernakulam')
+      : (rawLoc || cleanTown || 'Ernakulam');
+
+    if (merged.district !== cleanDistrict || (cleanTown && merged.town !== cleanTown) ||
+        merged.landmark !== cleanLandmark || merged.panchayath !== cleanPanchayath ||
+        merged.area !== cleanArea || merged.place !== cleanPlace || merged.location !== cleanLocation) {
+      remoteTownCleaned = true;
+    }
+    merged.district = cleanDistrict;
+    if (cleanTown) merged.town = cleanTown;
+    merged.landmark = cleanLandmark;
+    merged.panchayath = cleanPanchayath;
+    merged.area = cleanArea;
+    merged.place = cleanPlace;
+    merged.location = cleanLocation;
 
     if (localMatch) {
       // Merge members from both remote (cloud) and local (this device)
@@ -1669,13 +1716,16 @@ function processIncomingCloudCustomers(remoteCustomers) {
       if (!merged.phone && localMatch.phone) merged.phone = localMatch.phone;
       if (!merged.notes && localMatch.notes) merged.notes = localMatch.notes;
 
-      // If local device had new members that cloud didn't have, queue customer to upload to cloud
-      if (localHasNewMembers) {
+      // If local device had new members or remote had dirty town chars, queue customer to upload to cloud
+      if (localHasNewMembers || remoteTownCleaned) {
         needsCloudUpload.push(merged);
       }
     } else {
       if (!Array.isArray(merged.members) || merged.members.length === 0) {
         merged.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(merged) : [];
+      }
+      if (remoteTownCleaned) {
+        needsCloudUpload.push(merged);
       }
     }
 
@@ -3309,14 +3359,35 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
           populateBagSizesDropdown();
           if (typeof renderBagSizesBadges === 'function') renderBagSizesBadges();
         }
+        let shouldCleanCloudConfig = false;
         if (Array.isArray(cfg.savedAreas)) {
-          savedAreas = cfg.savedAreas;
+          const cleanedAreas = deduplicateTownStringsList(cfg.savedAreas);
+          if (JSON.stringify(cleanedAreas) !== JSON.stringify(cfg.savedAreas)) {
+            shouldCleanCloudConfig = true;
+          }
+          savedAreas = cleanedAreas;
           localStorage.setItem(STORAGE_SAVED_AREAS, JSON.stringify(savedAreas));
           populateSavedAreasDatalists();
         }
-        if (Array.isArray(cfg.savedDistrictTowns)) {
-          savedDistrictTowns = cfg.savedDistrictTowns;
+        if (cfg.savedDistrictTowns && typeof cfg.savedDistrictTowns === 'object' && !Array.isArray(cfg.savedDistrictTowns)) {
+          const dedupedCloudTowns = deduplicateDistrictTownsMap(cfg.savedDistrictTowns);
+          savedDistrictTowns = dedupedCloudTowns.map;
           localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
+          updateTownDatalists();
+          if (typeof renderSettingsTownsList === 'function') {
+            const settingsTownsTab = document.getElementById('settingsTabContent-towns');
+            if (settingsTownsTab && !settingsTownsTab.classList.contains('hidden')) {
+              renderSettingsTownsList();
+            }
+          }
+          if (dedupedCloudTowns.changed) {
+            shouldCleanCloudConfig = true;
+          }
+        }
+        if (shouldCleanCloudConfig && typeof syncCloudConfig === 'function') {
+          setTimeout(() => {
+            if (!isReceivingCloudSettings) syncCloudConfig(true);
+          }, 0);
         }
         let needsTrashCloudSync = false;
         if (Array.isArray(cfg.permanentlyDeletedTrashIds)) {
@@ -3651,17 +3722,30 @@ function sanitizeOrderForFirestore(order) {
   const nowIso = new Date().toISOString();
   const rawCust = order.customer || {};
 
+  const custDistrict = cleanInvisibleAndWhitespace(rawCust.district) || 'Ernakulam';
+  const rawTownCandidate = cleanInvisibleAndWhitespace(rawCust.town || rawCust.area || '');
+  const custTown = rawTownCandidate ? resolveCanonicalTownName(rawTownCandidate, custDistrict) : '';
+  const custLandmark = cleanInvisibleAndWhitespace(rawCust.landmark || '');
+  const custPanchayath = cleanInvisibleAndWhitespace(rawCust.panchayath || '');
+  const rawAreaCandidate = cleanInvisibleAndWhitespace(rawCust.area || '');
+  const custArea = rawAreaCandidate ? resolveCanonicalTownName(rawAreaCandidate, custDistrict) : custTown;
+  const custPlace = cleanInvisibleAndWhitespace(rawCust.place || '') || custLandmark || custTown;
+  const rawLoc = cleanInvisibleAndWhitespace(rawCust.location || '');
+  const custLocation = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
+    ? (resolveCanonicalTownName(rawLoc, custDistrict) || custTown || 'Ernakulam')
+    : (rawLoc || custTown || 'Ernakulam');
+
   const cleanCustomer = {
     id: String(rawCust.id || ('c_' + Date.now())),
-    name: String(rawCust.name || 'Customer').trim(),
+    name: cleanInvisibleAndWhitespace(rawCust.name || 'Customer') || 'Customer',
     category: String(rawCust.category || 'Caterer'),
-    district: String(rawCust.district || 'Ernakulam'),
-    town: String(rawCust.town || '').trim(),
-    landmark: String(rawCust.landmark || '').trim(),
-    panchayath: String(rawCust.panchayath || '').trim(),
-    area: String(rawCust.area || rawCust.town || '').trim(),
-    place: String(rawCust.place || rawCust.landmark || rawCust.town || '').trim(),
-    location: String(rawCust.location || 'Ernakulam').trim(),
+    district: custDistrict,
+    town: custTown,
+    landmark: custLandmark,
+    panchayath: custPanchayath,
+    area: custArea,
+    place: custPlace,
+    location: custLocation,
     ownerName: String(rawCust.ownerName || '').trim(),
     ownerPhone: String(rawCust.ownerPhone || '').trim(),
     staffName: String(rawCust.staffName || '').trim(),
@@ -3899,11 +3983,16 @@ function syncCloudConfig(immediate = false) {
 
     const sanitizedAppLogo = (currentLogo && (currentLogo.indexOf('data:image/svg') !== -1 || currentLogo.indexOf('<svg') !== -1 || currentLogo.indexOf('logo.svg') !== -1 || currentLogo.indexOf('TM') !== -1)) ? null : currentLogo;
 
+    const cleanConfigAreas = deduplicateTownStringsList(savedAreas || []);
+    const dedupedConfigTowns = deduplicateDistrictTownsMap(savedDistrictTowns || {});
+    savedAreas = cleanConfigAreas;
+    savedDistrictTowns = dedupedConfigTowns.map;
+
     db.collection('settings').doc('app_config').set(sanitizeForFirestore({
       products: products || [],
       bagSizes: bagSizes || [],
-      savedAreas: savedAreas || [],
-      savedDistrictTowns: savedDistrictTowns || [],
+      savedAreas: cleanConfigAreas,
+      savedDistrictTowns: dedupedConfigTowns.map,
       trashList: sanitizedTrash,
       permanentlyDeletedTrashIds: Array.from(permanentlyDeletedTrashIds),
       deletedCustomerTombstones: deletedCustomerTombstones || [],
@@ -3994,6 +4083,34 @@ function manualTriggerCloudSync(isQuiet = false) {
         if (Array.isArray(cfg.products) && cfg.products.length > 0) {
           const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
           products = deduplicateProductsList([...products, ...cleanCloudProducts], false);
+        }
+        let cleanManualConfig = false;
+        if (Array.isArray(cfg.savedAreas)) {
+          const cleanedAreas = deduplicateTownStringsList(cfg.savedAreas);
+          if (JSON.stringify(cleanedAreas) !== JSON.stringify(cfg.savedAreas)) {
+            cleanManualConfig = true;
+          }
+          savedAreas = cleanedAreas;
+          localStorage.setItem(STORAGE_SAVED_AREAS, JSON.stringify(savedAreas));
+          populateSavedAreasDatalists();
+        }
+        if (cfg.savedDistrictTowns && typeof cfg.savedDistrictTowns === 'object' && !Array.isArray(cfg.savedDistrictTowns)) {
+          const dedupedCloudTowns = deduplicateDistrictTownsMap(cfg.savedDistrictTowns);
+          savedDistrictTowns = dedupedCloudTowns.map;
+          localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
+          updateTownDatalists();
+          if (typeof renderSettingsTownsList === 'function') {
+            const settingsTownsTab = document.getElementById('settingsTabContent-towns');
+            if (settingsTownsTab && !settingsTownsTab.classList.contains('hidden')) {
+              renderSettingsTownsList();
+            }
+          }
+          if (dedupedCloudTowns.changed) {
+            cleanManualConfig = true;
+          }
+        }
+        if (cleanManualConfig && typeof syncCloudConfig === 'function') {
+          syncCloudConfig(true);
         }
       }
     }).catch(err => {
@@ -4236,35 +4353,167 @@ const DEFAULT_DISTRICT_TOWNS = {
   'Pathanamthitta': ['Pathanamthitta', 'Adoor', 'Thiruvalla', 'Ranni', 'Konni']
 };
 
+function cleanInvisibleAndWhitespace(str) {
+  if (typeof str !== 'string') return '';
+  return str
+    .replace(/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF\u00AD]/g, '')
+    .replace(/\u00A0/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function getTownNormalizedKey(rawTown) {
+  return cleanInvisibleAndWhitespace(rawTown).toLowerCase();
+}
+
+function formatCanonicalTownLabel(rawTown) {
+  const clean = cleanInvisibleAndWhitespace(rawTown);
+  if (!clean) return '';
+  return clean.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
+function deduplicateTownStringsList(townValues) {
+  const uniqueMap = new Map();
+  (Array.isArray(townValues) ? townValues : []).forEach(val => {
+    const clean = cleanInvisibleAndWhitespace(val);
+    if (!clean) return;
+    const key = clean.toLowerCase();
+    if (key === 'local' || key === 'nil') return;
+    if (!uniqueMap.has(key)) {
+      uniqueMap.set(key, formatCanonicalTownLabel(clean));
+    }
+  });
+  return Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b));
+}
+
+function resolveCanonicalTownName(rawTown, district = null) {
+  const clean = cleanInvisibleAndWhitespace(rawTown);
+  if (!clean) return '';
+  const key = clean.toLowerCase();
+  if (key === 'local' || key === 'nil') return clean;
+
+  const findInList = (list) => {
+    if (!Array.isArray(list)) return null;
+    for (let i = 0; i < list.length; i++) {
+      const candidate = cleanInvisibleAndWhitespace(list[i]);
+      if (candidate && candidate.toLowerCase() === key) {
+        return candidate;
+      }
+    }
+    return null;
+  };
+
+  if (district && savedDistrictTowns && Array.isArray(savedDistrictTowns[district])) {
+    const match = findInList(savedDistrictTowns[district]);
+    if (match) return match;
+  }
+  if (savedDistrictTowns && typeof savedDistrictTowns === 'object') {
+    for (const dKey of Object.keys(savedDistrictTowns)) {
+      const match = findInList(savedDistrictTowns[dKey]);
+      if (match) return match;
+    }
+  }
+  if (district && DEFAULT_DISTRICT_TOWNS && Array.isArray(DEFAULT_DISTRICT_TOWNS[district])) {
+    const match = findInList(DEFAULT_DISTRICT_TOWNS[district]);
+    if (match) return match;
+  }
+  if (DEFAULT_DISTRICT_TOWNS && typeof DEFAULT_DISTRICT_TOWNS === 'object') {
+    for (const dKey of Object.keys(DEFAULT_DISTRICT_TOWNS)) {
+      const match = findInList(DEFAULT_DISTRICT_TOWNS[dKey]);
+      if (match) return match;
+    }
+  }
+  return formatCanonicalTownLabel(clean);
+}
+
+function deduplicateDistrictTownsMap(rawMap) {
+  const cleanMap = {};
+  let changed = false;
+  const sourceMap = (rawMap && typeof rawMap === 'object' && !Array.isArray(rawMap)) ? rawMap : {};
+  const allDistrictKeys = new Set([
+    ...(typeof KERALA_DISTRICTS !== 'undefined' ? KERALA_DISTRICTS : []),
+    ...Object.keys(sourceMap)
+  ]);
+
+  allDistrictKeys.forEach(d => {
+    const srcArr = Array.isArray(sourceMap[d])
+      ? sourceMap[d]
+      : [...(DEFAULT_DISTRICT_TOWNS[d] || [d])];
+    if (!Array.isArray(sourceMap[d])) changed = true;
+
+    const byKey = new Map();
+    const defaultList = Array.isArray(DEFAULT_DISTRICT_TOWNS[d]) ? DEFAULT_DISTRICT_TOWNS[d] : [];
+
+    srcArr.forEach(rawItem => {
+      const clean = cleanInvisibleAndWhitespace(rawItem);
+      if (!clean) { changed = true; return; }
+      const key = clean.toLowerCase();
+      if (key === 'local' || key === 'nil') { changed = true; return; }
+
+      const defaultMatch = defaultList.find(dt => dt.toLowerCase() === key);
+      const preferredLabel = defaultMatch || formatCanonicalTownLabel(clean);
+      if (rawItem !== preferredLabel) changed = true;
+
+      if (byKey.has(key)) {
+        changed = true;
+      } else {
+        byKey.set(key, preferredLabel);
+      }
+    });
+
+    cleanMap[d] = Array.from(byKey.values()).sort((a, b) => a.localeCompare(b));
+  });
+
+  return { map: cleanMap, changed };
+}
+
+function normalizeTownInputElement(inputEl, district = null) {
+  if (!inputEl) return '';
+  const raw = inputEl.value || '';
+  const resolved = resolveCanonicalTownName(raw, district || null);
+  if (inputEl.value !== resolved) {
+    inputEl.value = resolved;
+  }
+  return resolved;
+}
+
 function getCustomerDistrict(cust) {
   if (!cust) return 'Ernakulam';
   if (typeof cust === 'object') {
-    if (cust.district && typeof cust.district === 'string' && cust.district.trim()) return cust.district.trim();
+    const cleanDist = cleanInvisibleAndWhitespace(cust.district || '');
+    if (cleanDist) return cleanDist;
   }
-  const name = typeof cust === 'string' ? cust : (cust.name || '');
+  const name = typeof cust === 'string' ? cleanInvisibleAndWhitespace(cust) : cleanInvisibleAndWhitespace(cust.name || '');
   if (name && Array.isArray(customers)) {
-    const clean = name.trim().toLowerCase();
-    const found = customers.find(c => c.name && c.name.trim().toLowerCase() === clean);
-    if (found && found.district) return found.district.trim();
+    const clean = name.toLowerCase();
+    const found = customers.find(c => c.name && cleanInvisibleAndWhitespace(c.name).toLowerCase() === clean);
+    if (found && found.district) {
+      const foundDist = cleanInvisibleAndWhitespace(found.district);
+      if (foundDist) return foundDist;
+    }
   }
   return 'Ernakulam';
 }
 
 function getCustomerTown(cust) {
+  const resolveValid = (val, dist) => {
+    const c = cleanInvisibleAndWhitespace(val);
+    if (!c || c.toLowerCase() === 'local' || c.toLowerCase() === 'nil') return '';
+    return resolveCanonicalTownName(c, dist);
+  };
   if (!cust) return '';
   if (typeof cust === 'object') {
-    if (cust.town && typeof cust.town === 'string' && cust.town.trim()) return cust.town.trim();
-    if (cust.area && typeof cust.area === 'string' && cust.area.trim()) return cust.area.trim();
-    if (cust.location && typeof cust.location === 'string' && cust.location.trim() && cust.location !== 'Local') return cust.location.trim();
+    const dist = cleanInvisibleAndWhitespace(cust.district || '') || 'Ernakulam';
+    const direct = resolveValid(cust.town, dist) || resolveValid(cust.area, dist) || resolveValid(cust.location, dist);
+    if (direct) return direct;
   }
-  const name = typeof cust === 'string' ? cust : (cust.name || '');
+  const name = typeof cust === 'string' ? cleanInvisibleAndWhitespace(cust) : cleanInvisibleAndWhitespace(cust.name || '');
   if (name && Array.isArray(customers)) {
-    const clean = name.trim().toLowerCase();
-    const found = customers.find(c => c.name && c.name.trim().toLowerCase() === clean);
+    const clean = name.toLowerCase();
+    const found = customers.find(c => c.name && cleanInvisibleAndWhitespace(c.name).toLowerCase() === clean);
     if (found) {
-      if (found.town && typeof found.town === 'string' && found.town.trim()) return found.town.trim();
-      if (found.area && typeof found.area === 'string' && found.area.trim()) return found.area.trim();
-      if (found.location && typeof found.location === 'string' && found.location.trim() && found.location !== 'Local') return found.location.trim();
+      const dist = cleanInvisibleAndWhitespace(found.district || '') || 'Ernakulam';
+      return resolveValid(found.town, dist) || resolveValid(found.area, dist) || resolveValid(found.location, dist);
     }
   }
   return '';
@@ -4273,16 +4522,21 @@ function getCustomerTown(cust) {
 function getCustomerLandmark(cust) {
   if (!cust) return '';
   if (typeof cust === 'object') {
-    if (cust.landmark && typeof cust.landmark === 'string' && cust.landmark.trim()) return cust.landmark.trim();
-    if (cust.place && typeof cust.place === 'string' && cust.place.trim() && cust.place !== cust.town && cust.place !== cust.area) return cust.place.trim();
+    const lm = cleanInvisibleAndWhitespace(cust.landmark || '');
+    if (lm) return lm;
+    const pl = cleanInvisibleAndWhitespace(cust.place || '');
+    const tKey = getTownNormalizedKey(cust.town || cust.area || '');
+    if (pl && pl.toLowerCase() !== tKey) return pl;
   }
-  const name = typeof cust === 'string' ? cust : (cust.name || '');
+  const name = typeof cust === 'string' ? cleanInvisibleAndWhitespace(cust) : cleanInvisibleAndWhitespace(cust.name || '');
   if (name && Array.isArray(customers)) {
-    const clean = name.trim().toLowerCase();
-    const found = customers.find(c => c.name && c.name.trim().toLowerCase() === clean);
+    const clean = name.toLowerCase();
+    const found = customers.find(c => c.name && cleanInvisibleAndWhitespace(c.name).toLowerCase() === clean);
     if (found) {
-      if (found.landmark && typeof found.landmark === 'string' && found.landmark.trim()) return found.landmark.trim();
-      if (found.place && typeof found.place === 'string' && found.place.trim()) return found.place.trim();
+      const lm = cleanInvisibleAndWhitespace(found.landmark || '');
+      if (lm) return lm;
+      const pl = cleanInvisibleAndWhitespace(found.place || '');
+      if (pl) return pl;
     }
   }
   return '';
@@ -4290,12 +4544,14 @@ function getCustomerLandmark(cust) {
 
 function getCustomerPanchayath(cust) {
   if (!cust) return '';
-  if (typeof cust === 'object' && cust.panchayath && typeof cust.panchayath === 'string') return cust.panchayath.trim();
-  const name = typeof cust === 'string' ? cust : (cust.name || '');
+  if (typeof cust === 'object' && cust.panchayath && typeof cust.panchayath === 'string') {
+    return cleanInvisibleAndWhitespace(cust.panchayath);
+  }
+  const name = typeof cust === 'string' ? cleanInvisibleAndWhitespace(cust) : cleanInvisibleAndWhitespace(cust.name || '');
   if (name && Array.isArray(customers)) {
-    const clean = name.trim().toLowerCase();
-    const found = customers.find(c => c.name && c.name.trim().toLowerCase() === clean);
-    if (found && found.panchayath) return found.panchayath.trim();
+    const clean = name.toLowerCase();
+    const found = customers.find(c => c.name && cleanInvisibleAndWhitespace(c.name).toLowerCase() === clean);
+    if (found && found.panchayath) return cleanInvisibleAndWhitespace(found.panchayath);
   }
   return '';
 }
@@ -4322,7 +4578,7 @@ function getCustomerLocation(cust) {
   if (pan) parts.push(`(${pan})`);
 
   if (parts.length > 0) return parts.join(', ');
-  return cust.location || 'Ernakulam';
+  return cleanInvisibleAndWhitespace(cust.location || '') || 'Ernakulam';
 }
 
 function loadDistrictTowns() {
@@ -4331,7 +4587,7 @@ function loadDistrictTowns() {
     const raw = localStorage.getItem(STORAGE_SAVED_TOWNS);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && typeof parsed === 'object') {
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         savedDistrictTowns = parsed;
       }
     } else {
@@ -4342,133 +4598,158 @@ function loadDistrictTowns() {
     isFirstLoad = true;
   }
 
-  if (!savedDistrictTowns || typeof savedDistrictTowns !== 'object') {
-    savedDistrictTowns = {};
-  }
-
-  // Ensure all 14 districts are initialized with arrays
-  KERALA_DISTRICTS.forEach(d => {
-    if (!Array.isArray(savedDistrictTowns[d])) {
-      savedDistrictTowns[d] = [...(DEFAULT_DISTRICT_TOWNS[d] || [d])];
-    }
-  });
+  const deduped = deduplicateDistrictTownsMap(savedDistrictTowns);
+  savedDistrictTowns = deduped.map;
+  let shouldSave = deduped.changed;
 
   // ONLY harvest existing towns from customer records on the very first initial load
   if (isFirstLoad && Array.isArray(customers)) {
     customers.forEach(c => {
-      const dist = c.district || 'Ernakulam';
-      const town = c.town || c.area || (c.location && c.location !== 'Local' ? c.location : '');
-      if (dist && town && typeof town === 'string' && town.trim()) {
-        const clean = town.trim();
+      const dist = getCustomerDistrict(c) || 'Ernakulam';
+      const clean = resolveCanonicalTownName(c.town || c.area || (c.location && c.location !== 'Local' ? c.location : ''), dist);
+      if (dist && clean && clean.toLowerCase() !== 'local' && clean.toLowerCase() !== 'nil') {
         if (!savedDistrictTowns[dist]) savedDistrictTowns[dist] = [];
-        if (!savedDistrictTowns[dist].some(t => t.toLowerCase() === clean.toLowerCase())) {
+        const key = clean.toLowerCase();
+        if (!savedDistrictTowns[dist].some(t => getTownNormalizedKey(t) === key)) {
           savedDistrictTowns[dist].push(clean);
+          shouldSave = true;
         }
       }
     });
+    const postHarvest = deduplicateDistrictTownsMap(savedDistrictTowns);
+    savedDistrictTowns = postHarvest.map;
+  }
+
+  if (shouldSave || isFirstLoad) {
     try {
       localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
     } catch (e) {}
   }
-
-  // Sort towns alphabetically per district
-  Object.keys(savedDistrictTowns).forEach(d => {
-    if (Array.isArray(savedDistrictTowns[d])) {
-      savedDistrictTowns[d].sort((a, b) => a.localeCompare(b));
-    }
-  });
 }
 
 function saveNewDistrictTown(district, townName) {
-  if (!townName || typeof townName !== 'string') return;
-  const dist = district || 'Ernakulam';
-  const trimmed = townName.trim();
-  if (!trimmed || trimmed.toLowerCase() === 'local' || trimmed.toLowerCase() === 'nil') return;
+  const clean = cleanInvisibleAndWhitespace(townName);
+  if (!clean) return '';
+  const lower = clean.toLowerCase();
+  if (lower === 'local' || lower === 'nil') return '';
 
-  // Title case formatting
-  const formatted = trimmed.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  const dist = cleanInvisibleAndWhitespace(district) || 'Ernakulam';
+  if (!Array.isArray(savedDistrictTowns[dist])) {
+    savedDistrictTowns[dist] = [...(DEFAULT_DISTRICT_TOWNS[dist] || [dist])];
+  }
 
-  if (!savedDistrictTowns[dist]) savedDistrictTowns[dist] = [];
-  if (!savedDistrictTowns[dist].some(t => t.toLowerCase() === formatted.toLowerCase())) {
-    savedDistrictTowns[dist].push(formatted);
-    savedDistrictTowns[dist].sort((a, b) => a.localeCompare(b));
+  const canonical = resolveCanonicalTownName(clean, dist);
+  const key = canonical.toLowerCase();
+  const alreadyPresent = savedDistrictTowns[dist].some(t => getTownNormalizedKey(t) === key);
+
+  if (!alreadyPresent) {
+    savedDistrictTowns[dist].push(canonical);
+    const cleaned = deduplicateDistrictTownsMap(savedDistrictTowns);
+    savedDistrictTowns = cleaned.map;
     try {
       localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
     } catch (e) {
       console.error('Error saving district towns to localStorage:', e);
     }
     updateTownDatalists();
+    if (typeof renderSettingsTownsList === 'function') {
+      const settingsTownsTab = document.getElementById('settingsTabContent-towns');
+      if (settingsTownsTab && !settingsTownsTab.classList.contains('hidden')) {
+        renderSettingsTownsList();
+      }
+    }
+    if (typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof syncCloudConfig === 'function') {
+      syncCloudConfig();
+    }
   }
+  return canonical;
+}
+
+function populateDistrictDatalistElement(datalistId, selectedDistrict) {
+  const datalist = document.getElementById(datalistId);
+  if (!datalist) return;
+  const dist = cleanInvisibleAndWhitespace(selectedDistrict) || 'Ernakulam';
+  const rawTowns = savedDistrictTowns[dist] || DEFAULT_DISTRICT_TOWNS[dist] || [];
+  const uniqueTowns = deduplicateTownStringsList(rawTowns);
+  datalist.innerHTML = uniqueTowns.map(t => `<option value="${escapeHtml(t)}"></option>`).join('');
 }
 
 function onCustDistrictChange(selectedDistrict) {
-  const dist = selectedDistrict || 'Ernakulam';
-  const datalist = document.getElementById('custTownsDatalist');
-  if (datalist) {
-    const towns = savedDistrictTowns[dist] || DEFAULT_DISTRICT_TOWNS[dist] || [];
-    datalist.innerHTML = towns.map(t => `<option value="${escapeHtml(t)}"></option>`).join('');
-  }
+  populateDistrictDatalistElement('custTownsDatalist', selectedDistrict);
 }
 
 function onOrderDistrictChange(selectedDistrict) {
-  const dist = selectedDistrict || 'Ernakulam';
-  const datalist = document.getElementById('orderTownsDatalist');
-  if (datalist) {
-    const towns = savedDistrictTowns[dist] || DEFAULT_DISTRICT_TOWNS[dist] || [];
-    datalist.innerHTML = towns.map(t => `<option value="${escapeHtml(t)}"></option>`).join('');
-  }
+  populateDistrictDatalistElement('orderTownsDatalist', selectedDistrict);
+}
+
+function onQasDistrictChange(selectedDistrict) {
+  populateDistrictDatalistElement('qasTownsDatalist', selectedDistrict);
 }
 
 function updateTownDatalists() {
+  // Clean savedDistrictTowns before populating dropdowns so duplicate/dirty entries never render
+  const cleaned = deduplicateDistrictTownsMap(savedDistrictTowns);
+  if (cleaned.changed) {
+    savedDistrictTowns = cleaned.map;
+    try {
+      localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
+    } catch (e) {}
+  }
+
   // 1. Populate Customer Form Datalist based on selected district
   const custDistEl = document.getElementById('custDistrictSelect');
-  const custDist = custDistEl ? custDistEl.value : 'Ernakulam';
-  onCustDistrictChange(custDist);
+  onCustDistrictChange(custDistEl ? custDistEl.value : 'Ernakulam');
 
   // 2. Populate Order Form Datalist based on selected district
   const orderDistEl = document.getElementById('orderDistrictSelect');
-  const orderDist = orderDistEl ? orderDistEl.value : 'Ernakulam';
-  onOrderDistrictChange(orderDist);
+  onOrderDistrictChange(orderDistEl ? orderDistEl.value : 'Ernakulam');
 
-  // 3. Populate Legacy savedAreasDatalist with all active towns
+  // 2.1 Populate Quick Add Shop / Lead Datalist based on selected district
+  const qasDistEl = document.getElementById('qasDistrict');
+  onQasDistrictChange(qasDistEl ? qasDistEl.value : 'Ernakulam');
+
+  // 3. Populate Legacy savedAreasDatalist with deduplicated active towns across all districts & customers
   const legacyDatalist = document.getElementById('savedAreasDatalist');
   if (legacyDatalist) {
-    const allTownsSet = new Set();
+    const allTownSources = [];
     Object.values(savedDistrictTowns).forEach(arr => {
-      if (Array.isArray(arr)) arr.forEach(t => allTownsSet.add(t));
+      if (Array.isArray(arr)) allTownSources.push(...arr);
     });
-    const sortedAll = Array.from(allTownsSet).sort((a, b) => a.localeCompare(b));
+    if (Array.isArray(customers)) {
+      customers.forEach(c => {
+        const t = getCustomerTown(c);
+        if (t) allTownSources.push(t);
+      });
+    }
+    const sortedAll = deduplicateTownStringsList(allTownSources);
     legacyDatalist.innerHTML = sortedAll.map(t => `<option value="${escapeHtml(t)}"></option>`).join('');
   }
 
   // 4. Populate Customer Directory Town Filter Select (#custTownFilterSelect)
   const townFilter = document.getElementById('custTownFilterSelect');
   if (townFilter) {
-    const currentVal = customerTownFilter || townFilter.value || 'all';
+    const rawCurrentVal = customerTownFilter || townFilter.value || 'all';
+    const currentVal = rawCurrentVal === 'all' ? 'all' : (resolveCanonicalTownName(rawCurrentVal) || 'all');
     const distFilterVal = customerDistrictFilter || 'all';
 
     let townsToShow = [];
     if (distFilterVal !== 'all' && savedDistrictTowns[distFilterVal]) {
-      townsToShow = savedDistrictTowns[distFilterVal];
+      townsToShow = deduplicateTownStringsList(savedDistrictTowns[distFilterVal]);
     } else {
-      const allSet = new Set();
-      if (Array.isArray(customers)) {
-        customers.forEach(c => {
-          const t = getCustomerTown(c);
-          if (t) allSet.add(t);
-        });
-      }
-      (savedDistrictTowns['Ernakulam'] || []).forEach(t => allSet.add(t));
-      townsToShow = Array.from(allSet).sort((a, b) => a.localeCompare(b));
+      const custTowns = Array.isArray(customers) ? customers.map(c => getCustomerTown(c)).filter(Boolean) : [];
+      townsToShow = deduplicateTownStringsList([
+        ...custTowns,
+        ...(savedDistrictTowns['Ernakulam'] || [])
+      ]);
     }
 
-    // Count customers per town
+    // Count customers per normalized town key
     const townCounts = {};
     if (Array.isArray(customers)) {
       customers.forEach(c => {
         const t = getCustomerTown(c);
         if (t) {
-          const key = t.toLowerCase();
+          const key = getTownNormalizedKey(t);
           townCounts[key] = (townCounts[key] || 0) + 1;
         }
       });
@@ -4476,34 +4757,31 @@ function updateTownDatalists() {
 
     let opts = `<option value="all">All Towns (${customers.length})</option>`;
     townsToShow.forEach(t => {
-      const count = townCounts[t.toLowerCase()] || 0;
+      const count = townCounts[getTownNormalizedKey(t)] || 0;
       opts += `<option value="${escapeHtml(t)}">${escapeHtml(t)}${count > 0 ? ` (${count})` : ''}</option>`;
     });
 
     townFilter.innerHTML = opts;
-    townFilter.value = currentVal;
+    townFilter.value = townsToShow.some(t => t === currentVal) ? currentVal : 'all';
   }
 
   // 5. Populate Main Orders Table Town Filter Select (#orderAreaFilterSelect)
   const orderFilter = document.getElementById('orderAreaFilterSelect');
   if (orderFilter) {
-    const currentVal = orderAreaFilter || orderFilter.value || 'all';
-    const allSet = new Set();
-    if (Array.isArray(orders)) {
-      orders.forEach(o => {
-        const t = getCustomerTown(o.customer);
-        if (t) allSet.add(t);
-      });
-    }
-    (savedDistrictTowns['Ernakulam'] || []).forEach(t => allSet.add(t));
-    const sorted = Array.from(allSet).sort((a, b) => a.localeCompare(b));
+    const rawCurrentVal = orderAreaFilter || orderFilter.value || 'all';
+    const currentVal = rawCurrentVal === 'all' ? 'all' : (resolveCanonicalTownName(rawCurrentVal) || 'all');
+    const orderTowns = Array.isArray(orders) ? orders.map(o => getCustomerTown(o.customer)).filter(Boolean) : [];
+    const sorted = deduplicateTownStringsList([
+      ...orderTowns,
+      ...(savedDistrictTowns['Ernakulam'] || [])
+    ]);
 
     const orderTownCounts = {};
     if (Array.isArray(orders)) {
       orders.forEach(o => {
         const t = getCustomerTown(o.customer);
         if (t) {
-          const key = t.toLowerCase();
+          const key = getTownNormalizedKey(t);
           orderTownCounts[key] = (orderTownCounts[key] || 0) + 1;
         }
       });
@@ -4511,12 +4789,12 @@ function updateTownDatalists() {
 
     let opts = `<option value="all">All Towns / Areas</option>`;
     sorted.forEach(t => {
-      const count = orderTownCounts[t.toLowerCase()] || 0;
+      const count = orderTownCounts[getTownNormalizedKey(t)] || 0;
       opts += `<option value="${escapeHtml(t)}">${escapeHtml(t)}${count > 0 ? ` (${count})` : ''}</option>`;
     });
 
     orderFilter.innerHTML = opts;
-    orderFilter.value = currentVal;
+    orderFilter.value = sorted.some(t => t === currentVal) ? currentVal : 'all';
   }
 }
 
@@ -4760,9 +5038,12 @@ const CANONICAL_CUSTOMER_ALIASES = {
 function normalizeOrderCustomerNames() {
   if (!Array.isArray(orders)) return false;
   let changed = false;
+  const modifiedOrders = [];
   orders.forEach(o => {
     if (!o) return;
-    const curName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim();
+    let orderChanged = false;
+    const rawCurName = typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '');
+    const curName = cleanInvisibleAndWhitespace(rawCurName);
     if (!curName) return;
     const rawLower = curName.toLowerCase();
     const alias = CANONICAL_CUSTOMER_ALIASES[rawLower];
@@ -4770,22 +5051,60 @@ function normalizeOrderCustomerNames() {
       if (typeof o.customer === 'object') {
         if (o.customer.name !== alias.canonicalName) {
           o.customer.name = alias.canonicalName;
-          changed = true;
+          orderChanged = true;
         }
-        if (!o.customer.town || o.customer.town === 'Ernakulam' || o.customer.town === 'Local') {
+        const curTownKey = getTownNormalizedKey(o.customer.town);
+        if (!curTownKey || curTownKey === 'ernakulam' || curTownKey === 'local') {
           o.customer.town = alias.town;
-          changed = true;
+          orderChanged = true;
         }
       } else {
         if (o.customer !== alias.canonicalName) {
           o.customer = alias.canonicalName;
-          changed = true;
+          orderChanged = true;
         }
       }
       if (o.customerName && o.customerName !== alias.canonicalName) {
         o.customerName = alias.canonicalName;
-        changed = true;
+        orderChanged = true;
       }
+    }
+
+    if (o.customer && typeof o.customer === 'object') {
+      const nextDist = cleanInvisibleAndWhitespace(o.customer.district) || 'Ernakulam';
+      const rawTownCandidate = cleanInvisibleAndWhitespace(o.customer.town || o.customer.area || '');
+      const nextTown = rawTownCandidate ? resolveCanonicalTownName(rawTownCandidate, nextDist) : '';
+      const nextLandmark = cleanInvisibleAndWhitespace(o.customer.landmark || '');
+      const nextPanchayath = cleanInvisibleAndWhitespace(o.customer.panchayath || '');
+      const rawAreaCandidate = cleanInvisibleAndWhitespace(o.customer.area || '');
+      const nextArea = rawAreaCandidate ? (resolveCanonicalTownName(rawAreaCandidate, nextDist) || nextTown) : nextTown;
+      const nextPlace = cleanInvisibleAndWhitespace(o.customer.place || '') || nextLandmark || nextTown;
+      const rawLoc = cleanInvisibleAndWhitespace(o.customer.location || '');
+      const nextLoc = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
+        ? (resolveCanonicalTownName(rawLoc, nextDist) || nextTown || 'Ernakulam')
+        : (rawLoc || nextTown || o.customer.location || '');
+
+      if (o.customer.district !== nextDist ||
+          (nextTown && o.customer.town !== nextTown) ||
+          (o.customer.landmark !== undefined && o.customer.landmark !== nextLandmark) ||
+          (o.customer.panchayath !== undefined && o.customer.panchayath !== nextPanchayath) ||
+          (o.customer.area !== undefined && o.customer.area !== nextArea) ||
+          (o.customer.place !== undefined && o.customer.place !== nextPlace) ||
+          (o.customer.location !== undefined && nextLoc && o.customer.location !== nextLoc)) {
+        orderChanged = true;
+      }
+      o.customer.district = nextDist;
+      if (nextTown) o.customer.town = nextTown;
+      if (o.customer.landmark !== undefined || nextLandmark) o.customer.landmark = nextLandmark;
+      if (o.customer.panchayath !== undefined || nextPanchayath) o.customer.panchayath = nextPanchayath;
+      if (o.customer.area !== undefined || nextArea) o.customer.area = nextArea;
+      if (o.customer.place !== undefined || nextPlace) o.customer.place = nextPlace;
+      if (nextLoc) o.customer.location = nextLoc;
+    }
+
+    if (orderChanged) {
+      changed = true;
+      modifiedOrders.push(o);
     }
   });
   if (changed) {
@@ -4793,10 +5112,8 @@ function normalizeOrderCustomerNames() {
       localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
     } catch (e) {}
     if (typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
-      orders.forEach(o => {
-        const cName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim();
-        const alias = CANONICAL_CUSTOMER_ALIASES[cName.toLowerCase()];
-        if (alias && o.id) {
+      modifiedOrders.forEach(o => {
+        if (o && o.id) {
           db.collection('orders').doc(o.id).set(sanitizeForFirestore(o), { merge: true }).catch(err => {});
         }
       });
@@ -4922,7 +5239,7 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
   sourceList.forEach(rawItem => {
     if (!rawItem) return;
     const item = { ...rawItem };
-    const rawName = (item.name || '').trim().replace(/\s+/g, ' ');
+    const rawName = cleanInvisibleAndWhitespace(item.name || '');
     if (!rawName && !item.id) return;
     item.name = rawName || 'Customer';
 
@@ -4935,10 +5252,37 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
     const aliasInfo = CANONICAL_CUSTOMER_ALIASES[rawLowerName];
     if (aliasInfo) {
       item.name = aliasInfo.canonicalName;
-      if (!item.town || item.town === 'Ernakulam' || item.town === 'Local') {
+      const curTownKey = getTownNormalizedKey(item.town);
+      if (!curTownKey || curTownKey === 'ernakulam' || curTownKey === 'local') {
         item.town = aliasInfo.town;
       }
     }
+
+    // Normalize all location / town strings (strips invisible chars & resolves canonical casing)
+    const cleanDist = cleanInvisibleAndWhitespace(item.district) || 'Ernakulam';
+    const rawTownStr = cleanInvisibleAndWhitespace(item.town || item.area || '');
+    const cleanTownStr = rawTownStr
+      ? resolveCanonicalTownName(rawTownStr, cleanDist)
+      : (cleanInvisibleAndWhitespace(item.location) && getTownNormalizedKey(item.location) !== 'local'
+          ? resolveCanonicalTownName(item.location, cleanDist)
+          : '');
+    const cleanLandmarkStr = cleanInvisibleAndWhitespace(item.landmark || '');
+    const cleanPanchayathStr = cleanInvisibleAndWhitespace(item.panchayath || '');
+    const rawAreaStr = cleanInvisibleAndWhitespace(item.area || '');
+    const cleanAreaStr = rawAreaStr ? (resolveCanonicalTownName(rawAreaStr, cleanDist) || cleanTownStr) : cleanTownStr;
+    const cleanPlaceStr = cleanInvisibleAndWhitespace(item.place || '') || cleanLandmarkStr || cleanTownStr;
+    const rawLocStr = cleanInvisibleAndWhitespace(item.location || '');
+    const cleanLocStr = (rawLocStr && getTownNormalizedKey(rawLocStr) !== 'local')
+      ? (resolveCanonicalTownName(rawLocStr, cleanDist) || cleanTownStr || 'Ernakulam')
+      : (rawLocStr || cleanTownStr || 'Ernakulam');
+
+    item.district = cleanDist;
+    if (cleanTownStr) item.town = cleanTownStr;
+    item.landmark = cleanLandmarkStr;
+    item.panchayath = cleanPanchayathStr;
+    if (cleanAreaStr) item.area = cleanAreaStr;
+    if (cleanPlaceStr) item.place = cleanPlaceStr;
+    item.location = cleanLocStr;
 
     const cleanP = cleanPhoneNumber(item.phone);
     const cleanOwn = cleanPhoneNumber(item.ownerPhone);
@@ -4955,7 +5299,7 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
 
     // 2. Match by exact normalized name (case-insensitive)
     if (matchIndex === -1 && lowerName) {
-      matchIndex = unique.findIndex(u => u.name && u.name.trim().toLowerCase() === lowerName);
+      matchIndex = unique.findIndex(u => u.name && cleanInvisibleAndWhitespace(u.name).toLowerCase() === lowerName);
     }
 
     // 3. Match by normalized 10-digit primary phone or owner phone
@@ -4975,17 +5319,23 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
       const target = unique[matchIndex];
 
       // Prefer non-default location fields
-      if ((!target.district || target.district === 'Ernakulam') && item.district && item.district !== 'Ernakulam') {
+      const tDistKey = getTownNormalizedKey(target.district);
+      const iDistKey = getTownNormalizedKey(item.district);
+      if ((!tDistKey || tDistKey === 'ernakulam') && item.district && iDistKey !== 'ernakulam') {
         target.district = item.district;
       }
-      if ((!target.town || target.town === 'Ernakulam' || target.town === 'Local') && item.town && item.town !== 'Ernakulam' && item.town !== 'Local') {
+      const tTownKey = getTownNormalizedKey(target.town);
+      const iTownKey = getTownNormalizedKey(item.town);
+      if ((!tTownKey || tTownKey === 'ernakulam' || tTownKey === 'local') && item.town && iTownKey !== 'ernakulam' && iTownKey !== 'local') {
         target.town = item.town;
       }
       if (!target.landmark && item.landmark) target.landmark = item.landmark;
       if (!target.panchayath && item.panchayath) target.panchayath = item.panchayath;
       if (!target.area && item.area) target.area = item.area;
       if (!target.place && item.place) target.place = item.place;
-      if ((!target.location || target.location === 'Local' || target.location === 'Ernakulam') && item.location && item.location !== 'Local') {
+      const tLocKey = getTownNormalizedKey(target.location);
+      const iLocKey = getTownNormalizedKey(item.location);
+      if ((!tLocKey || tLocKey === 'local' || tLocKey === 'ernakulam') && item.location && iLocKey !== 'local') {
         target.location = item.location;
       }
 
@@ -6215,7 +6565,7 @@ function onQuickCustNameInput(val) {
 }
 
 function saveQuickCustomerAndApply() {
-  const quickName = (document.getElementById('quickCustNameInput')?.value || '').trim();
+  const quickName = cleanInvisibleAndWhitespace(document.getElementById('quickCustNameInput')?.value || '');
   if (!quickName) {
     alert('Please enter a Customer or Shop Name.');
     return;
@@ -6226,8 +6576,11 @@ function saveQuickCustomerAndApply() {
   if (nameEl) nameEl.value = quickName;
   if (searchInput) searchInput.value = quickName;
 
-  const town = document.getElementById('orderTownInput')?.value.trim() || '';
-  const dist = document.getElementById('orderDistrictSelect')?.value || 'Ernakulam';
+  const dist = cleanInvisibleAndWhitespace(document.getElementById('orderDistrictSelect')?.value || '') || 'Ernakulam';
+  const rawTown = cleanInvisibleAndWhitespace(document.getElementById('orderTownInput')?.value || '');
+  const town = rawTown ? (saveNewDistrictTown(dist, rawTown) || resolveCanonicalTownName(rawTown, dist)) : '';
+  const orderTownEl = document.getElementById('orderTownInput');
+  if (orderTownEl && town) orderTownEl.value = town;
   const cat = document.getElementById('customerCategory')?.value || 'Caterer';
 
   updateCustomerPill(quickName, `${town || dist} • ${cat}`);
@@ -6239,8 +6592,8 @@ function saveQuickCustomerAndApply() {
     const staffName = document.getElementById('customerStaffName')?.value.trim() || '';
     const staffRole = document.getElementById('customerStaffRole')?.value || 'Chef / Cook';
     const staffPhone = cleanPhoneNumber(document.getElementById('customerStaffPhone')?.value.trim() || '');
-    const landmark = document.getElementById('orderLandmarkInput')?.value.trim() || '';
-    const panchayath = document.getElementById('orderPanchayathInput')?.value.trim() || '';
+    const landmark = cleanInvisibleAndWhitespace(document.getElementById('orderLandmarkInput')?.value || '');
+    const panchayath = cleanInvisibleAndWhitespace(document.getElementById('orderPanchayathInput')?.value || '');
 
     let locParts = [];
     if (landmark) locParts.push(landmark);
@@ -6277,6 +6630,8 @@ function saveQuickCustomerAndApply() {
         town: town,
         landmark: landmark,
         panchayath: panchayath,
+        area: town,
+        place: landmark || town,
         location: formattedLoc,
         ownerName: ownerName || customers[existingIndex].ownerName,
         ownerPhone: ownerPhone || customers[existingIndex].ownerPhone,
@@ -6297,6 +6652,8 @@ function saveQuickCustomerAndApply() {
         town: town,
         landmark: landmark,
         panchayath: panchayath,
+        area: town,
+        place: landmark || town,
         location: formattedLoc,
         ownerName: ownerName,
         ownerPhone: ownerPhone,
@@ -6383,27 +6740,32 @@ async function handleSaveOrder(event) {
     event.preventDefault();
   }
 
-  let customerName = document.getElementById('customerName')?.value.trim();
+  let customerName = cleanInvisibleAndWhitespace(document.getElementById('customerName')?.value || '');
   const customerCategory = document.getElementById('customerCategory')?.value || 'Caterer';
-  const customerDistrict = document.getElementById('orderDistrictSelect')?.value || 'Ernakulam';
-  let customerTown = document.getElementById('orderTownInput')?.value.trim() || document.getElementById('customerArea')?.value.trim() || '';
-  const customerLandmark = document.getElementById('orderLandmarkInput')?.value.trim() || document.getElementById('customerPlace')?.value.trim() || '';
-  const customerPanchayath = document.getElementById('orderPanchayathInput')?.value.trim() || '';
-  const customerLocationRaw = document.getElementById('customerLocation')?.value.trim() || '';
+  const customerDistrict = cleanInvisibleAndWhitespace(document.getElementById('orderDistrictSelect')?.value || '') || 'Ernakulam';
+  let customerTown = cleanInvisibleAndWhitespace(document.getElementById('orderTownInput')?.value || '') ||
+    cleanInvisibleAndWhitespace(document.getElementById('customerArea')?.value || '');
+  const customerLandmark = cleanInvisibleAndWhitespace(document.getElementById('orderLandmarkInput')?.value || '') ||
+    cleanInvisibleAndWhitespace(document.getElementById('customerPlace')?.value || '');
+  const customerPanchayath = cleanInvisibleAndWhitespace(document.getElementById('orderPanchayathInput')?.value || '');
+  const customerLocationRaw = cleanInvisibleAndWhitespace(document.getElementById('customerLocation')?.value || '');
 
   if (customerName) {
-    const cleanLower = customerName.trim().toLowerCase();
+    const cleanLower = customerName.toLowerCase();
     const aliasInfo = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[cleanLower];
     if (aliasInfo) {
       customerName = aliasInfo.canonicalName;
-      if (!customerTown || customerTown === 'Ernakulam' || customerTown === 'Local') {
+      const curTownKey = getTownNormalizedKey(customerTown);
+      if (!curTownKey || curTownKey === 'ernakulam' || curTownKey === 'local') {
         customerTown = aliasInfo.town;
       }
     }
   }
 
   if (customerTown) {
-    saveNewDistrictTown(customerDistrict, customerTown);
+    customerTown = saveNewDistrictTown(customerDistrict, customerTown) || resolveCanonicalTownName(customerTown, customerDistrict);
+    const orderTownInputEl = document.getElementById('orderTownInput');
+    if (orderTownInputEl) orderTownInputEl.value = customerTown;
   }
 
   // Location string formatting
@@ -9589,19 +9951,28 @@ function renderSettingsTownsList() {
   if (!container) return;
 
   const selectedDist = distFilterSelect ? distFilterSelect.value : 'all';
-  const query = (searchInput?.value || '').trim().toLowerCase();
+  const query = cleanInvisibleAndWhitespace(searchInput?.value || '').toLowerCase();
+
+  // Deduplicate savedDistrictTowns before rendering Settings Towns
+  const deduped = deduplicateDistrictTownsMap(savedDistrictTowns);
+  if (deduped.changed) {
+    savedDistrictTowns = deduped.map;
+    try {
+      localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
+    } catch (e) {}
+  }
 
   // Gather towns to display
   let townsList = [];
 
   if (selectedDist !== 'all') {
-    const list = savedDistrictTowns[selectedDist] || [];
+    const list = deduplicateTownStringsList(savedDistrictTowns[selectedDist] || []);
     list.forEach(name => {
       townsList.push({ district: selectedDist, name: name });
     });
   } else {
     KERALA_DISTRICTS.forEach(d => {
-      const list = savedDistrictTowns[d] || [];
+      const list = deduplicateTownStringsList(savedDistrictTowns[d] || []);
       list.forEach(name => {
         townsList.push({ district: d, name: name });
       });
@@ -9643,12 +10014,14 @@ function renderSettingsTownsList() {
 
   townsList.forEach(item => {
     // Count how many customers have this town
+    const itemNameKey = getTownNormalizedKey(item.name);
+    const itemDistKey = getTownNormalizedKey(item.district);
     const custCount = Array.isArray(customers)
       ? customers.filter(c => {
-          const cDist = getCustomerDistrict(c);
-          const cTown = getCustomerTown(c);
-          return (cDist.toLowerCase() === item.district.toLowerCase() || selectedDist === 'all') &&
-                 cTown.toLowerCase() === item.name.toLowerCase();
+          const cDistKey = getTownNormalizedKey(getCustomerDistrict(c));
+          const cTownKey = getTownNormalizedKey(getCustomerTown(c));
+          return (cDistKey === itemDistKey || selectedDist === 'all') &&
+                 cTownKey === itemNameKey;
         }).length
       : 0;
 
@@ -9694,27 +10067,32 @@ function addNewDistrictTown() {
   const distSelect = document.getElementById('newTownDistrictSelect');
   const nameInput = document.getElementById('newTownNameInput');
 
-  const dist = distSelect ? distSelect.value : 'Ernakulam';
-  const rawName = nameInput ? nameInput.value.trim() : '';
+  const dist = cleanInvisibleAndWhitespace(distSelect ? distSelect.value : 'Ernakulam') || 'Ernakulam';
+  const rawName = cleanInvisibleAndWhitespace(nameInput ? nameInput.value : '');
+  const key = rawName.toLowerCase();
 
-  if (!rawName) {
-    alert('Please enter a town name.');
+  if (!rawName || key === 'local' || key === 'nil') {
+    alert('Please enter a valid town name.');
     nameInput?.focus();
     return;
   }
 
-  const formatted = rawName.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  const formatted = formatCanonicalTownLabel(rawName);
 
-  if (!savedDistrictTowns[dist]) savedDistrictTowns[dist] = [];
+  if (!Array.isArray(savedDistrictTowns[dist])) {
+    savedDistrictTowns[dist] = [...(DEFAULT_DISTRICT_TOWNS[dist] || [dist])];
+  }
 
-  if (savedDistrictTowns[dist].some(t => t.toLowerCase() === formatted.toLowerCase())) {
-    alert(`Town "${formatted}" is already saved in ${dist}.`);
+  const existingMatch = savedDistrictTowns[dist].find(t => getTownNormalizedKey(t) === key);
+  if (existingMatch) {
+    alert(`Town "${existingMatch}" is already saved in ${dist}.`);
     nameInput?.focus();
     return;
   }
 
   savedDistrictTowns[dist].push(formatted);
-  savedDistrictTowns[dist].sort((a, b) => a.localeCompare(b));
+  const cleaned = deduplicateDistrictTownsMap(savedDistrictTowns);
+  savedDistrictTowns = cleaned.map;
 
   try {
     localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
@@ -9731,6 +10109,9 @@ function addNewDistrictTown() {
 
   updateTownDatalists();
   renderSettingsTownsList();
+  if (typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof syncCloudConfig === 'function') {
+    syncCloudConfig(true);
+  }
   showNotification(`✓ '${formatted}' added to ${dist} towns!`);
 }
 
@@ -9763,100 +10144,132 @@ function closeEditTownModal() {
 }
 
 function submitEditTownName() {
-  const dist = document.getElementById('editTownDistrict')?.value;
-  const oldName = document.getElementById('editTownOriginalName')?.value;
-  const newNameRaw = document.getElementById('editTownNewName')?.value.trim();
+  const dist = cleanInvisibleAndWhitespace(document.getElementById('editTownDistrict')?.value || '');
+  const origRaw = document.getElementById('editTownOriginalName')?.value || '';
+  const oldName = cleanInvisibleAndWhitespace(origRaw);
+  const newNameRaw = cleanInvisibleAndWhitespace(document.getElementById('editTownNewName')?.value || '');
+  const newKey = getTownNormalizedKey(newNameRaw);
 
-  if (!newNameRaw) {
-    alert('Please enter a town name.');
+  if (!newNameRaw || newKey === 'local' || newKey === 'nil') {
+    alert('Please enter a valid town name.');
     return;
   }
 
-  const newName = newNameRaw.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+  let targetName = formatCanonicalTownLabel(newNameRaw);
 
   if (!dist || !oldName) {
     closeEditTownModal();
     return;
   }
 
-  if (oldName.toLowerCase() === newName.toLowerCase()) {
+  const oldKey = getTownNormalizedKey(oldName);
+
+  // If exact normalized string already matches old value, just close
+  if (origRaw === targetName && oldKey === newKey) {
     closeEditTownModal();
     return;
   }
 
-  if (!savedDistrictTowns[dist]) savedDistrictTowns[dist] = [];
-
-  if (savedDistrictTowns[dist].some(t => t.toLowerCase() === newName.toLowerCase())) {
-    alert(`Town "${newName}" already exists in ${dist}.`);
-    return;
+  if (!Array.isArray(savedDistrictTowns[dist])) {
+    savedDistrictTowns[dist] = [...(DEFAULT_DISTRICT_TOWNS[dist] || [dist])];
   }
 
-  // Replace town in savedDistrictTowns
+  // Check if target already exists under a DIFFERENT key (merge duplicate/typo case)
+  const existingTarget = savedDistrictTowns[dist].find(t => getTownNormalizedKey(t) === newKey);
+  if (existingTarget && newKey !== oldKey) {
+    const shouldMerge = typeof confirm === 'function'
+      ? confirm(`Town "${existingTarget}" already exists in ${dist}. Merge "${oldName}" into "${existingTarget}" and update all customer and order records?`)
+      : true;
+    if (!shouldMerge) return;
+    targetName = cleanInvisibleAndWhitespace(existingTarget) || targetName;
+  }
+
+  // Replace town in savedDistrictTowns (allow case/whitespace cleanup when oldKey === newKey)
   savedDistrictTowns[dist] = savedDistrictTowns[dist].map(t =>
-    t.toLowerCase() === oldName.toLowerCase() ? newName : t
+    getTownNormalizedKey(t) === oldKey ? targetName : t
   );
-  savedDistrictTowns[dist].sort((a, b) => a.localeCompare(b));
+  const dedupedAfterEdit = deduplicateDistrictTownsMap(savedDistrictTowns);
+  savedDistrictTowns = dedupedAfterEdit.map;
 
   try {
     localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
   } catch (e) {}
 
   // Update existing customers
-  let customersUpdated = 0;
+  const distKey = getTownNormalizedKey(dist);
+  const modifiedCustomers = [];
   if (Array.isArray(customers)) {
     customers.forEach(c => {
-      const cDist = getCustomerDistrict(c);
-      const cTown = getCustomerTown(c);
-      if (cDist.toLowerCase() === dist.toLowerCase() && cTown.toLowerCase() === oldName.toLowerCase()) {
-        c.town = newName;
-        c.area = newName;
-        if (c.place && c.place.toLowerCase() === oldName.toLowerCase()) {
-          c.place = newName;
+      const cDistKey = getTownNormalizedKey(getCustomerDistrict(c));
+      const cTownKey = getTownNormalizedKey(getCustomerTown(c));
+      if (cDistKey === distKey && cTownKey === oldKey) {
+        c.town = targetName;
+        c.area = targetName;
+        if (c.place && getTownNormalizedKey(c.place) === oldKey) {
+          c.place = targetName;
         }
         c.location = getCustomerLocation(c);
-        customersUpdated++;
+        modifiedCustomers.push(c);
       }
     });
   }
 
   // Update existing orders
+  const modifiedOrders = [];
   if (Array.isArray(orders)) {
     orders.forEach(o => {
-      if (typeof o.customer === 'object') {
-        const oDist = getCustomerDistrict(o.customer);
-        const oTown = getCustomerTown(o.customer);
-        if (oDist.toLowerCase() === dist.toLowerCase() && oTown.toLowerCase() === oldName.toLowerCase()) {
-          o.customer.town = newName;
-          o.customer.area = newName;
-          if (o.customer.place && o.customer.place.toLowerCase() === oldName.toLowerCase()) {
-            o.customer.place = newName;
+      if (o && typeof o.customer === 'object') {
+        const oDistKey = getTownNormalizedKey(getCustomerDistrict(o.customer));
+        const oTownKey = getTownNormalizedKey(getCustomerTown(o.customer));
+        if (oDistKey === distKey && oTownKey === oldKey) {
+          o.customer.town = targetName;
+          o.customer.area = targetName;
+          if (o.customer.place && getTownNormalizedKey(o.customer.place) === oldKey) {
+            o.customer.place = targetName;
           }
           o.customer.location = getCustomerLocation(o.customer);
+          modifiedOrders.push(o);
         }
       }
     });
   }
 
   saveDataToStorage();
+  if (typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized) {
+    modifiedCustomers.forEach(c => {
+      if (typeof syncCloudCustomer === 'function') syncCloudCustomer(c);
+    });
+    if (typeof db !== 'undefined' && db) {
+      modifiedOrders.forEach(o => {
+        if (o && o.id) {
+          db.collection('orders').doc(o.id).set(sanitizeForFirestore(o), { merge: true }).catch(() => {});
+        }
+      });
+    }
+    if (typeof syncCloudConfig === 'function') syncCloudConfig(true);
+  }
+
   updateTownDatalists();
   renderSettingsTownsList();
   renderCustomersList();
   renderOrdersTable();
   closeEditTownModal();
 
-  showNotification(`✓ Town '${oldName}' renamed to '${newName}'!${customersUpdated > 0 ? ` (${customersUpdated} customer records updated)` : ''}`);
+  showNotification(`✓ Town '${oldName}' updated to '${targetName}'!${modifiedCustomers.length > 0 ? ` (${modifiedCustomers.length} customer records updated)` : ''}`);
 }
 
 function deleteDistrictTown(district, townName) {
-  const dist = district || 'Ernakulam';
-  const clean = townName.trim();
+  const dist = cleanInvisibleAndWhitespace(district) || 'Ernakulam';
+  const clean = cleanInvisibleAndWhitespace(townName || '');
+  const cleanKey = getTownNormalizedKey(clean);
+  const distKey = getTownNormalizedKey(dist);
 
   // Count customers currently using this town
   const usingCustomers = Array.isArray(customers)
     ? customers.filter(c => {
-        const cDist = getCustomerDistrict(c);
-        const cTown = getCustomerTown(c);
-        return cDist.toLowerCase() === dist.toLowerCase() && cTown.toLowerCase() === clean.toLowerCase();
+        const cDistKey = getTownNormalizedKey(getCustomerDistrict(c));
+        const cTownKey = getTownNormalizedKey(getCustomerTown(c));
+        return cDistKey === distKey && cTownKey === cleanKey;
       })
     : [];
 
@@ -9872,13 +10285,16 @@ function deleteDistrictTown(district, townName) {
     confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
     onConfirm: () => {
       if (savedDistrictTowns[dist]) {
-        savedDistrictTowns[dist] = savedDistrictTowns[dist].filter(t => t.toLowerCase() !== clean.toLowerCase());
+        savedDistrictTowns[dist] = savedDistrictTowns[dist].filter(t => getTownNormalizedKey(t) !== cleanKey);
         try {
           localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
         } catch (e) {}
 
         updateTownDatalists();
         renderSettingsTownsList();
+        if (typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof syncCloudConfig === 'function') {
+          syncCloudConfig(true);
+        }
 
         showNotification(`✓ '${clean}' removed from ${dist} saved towns.`, () => {
           saveNewDistrictTown(dist, clean);
@@ -9912,12 +10328,18 @@ function confirmResetDistrictTowns() {
         savedDistrictTowns[selectedDist] = [...(DEFAULT_DISTRICT_TOWNS[selectedDist] || [selectedDist])];
       }
 
+      const cleaned = deduplicateDistrictTownsMap(savedDistrictTowns);
+      savedDistrictTowns = cleaned.map;
+
       try {
         localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
       } catch (e) {}
 
       updateTownDatalists();
       renderSettingsTownsList();
+      if (typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof syncCloudConfig === 'function') {
+        syncCloudConfig(true);
+      }
       showNotification(`✓ Default towns restored for ${targetLabel}!`);
     }
   });
@@ -10685,13 +11107,15 @@ function handleCustomerFormSubmit(event) {
   event.preventDefault();
   try {
     const editId = document.getElementById('custEditId')?.value.trim();
-    const name = document.getElementById('custNameInput')?.value.trim();
+    const name = cleanInvisibleAndWhitespace(document.getElementById('custNameInput')?.value || '');
     const category = document.getElementById('custCategoryInput')?.value || 'Caterer';
-    const district = document.getElementById('custDistrictSelect')?.value || 'Ernakulam';
-    const town = document.getElementById('custTownInput')?.value.trim() || document.getElementById('custAreaInput')?.value.trim() || '';
-    const landmark = document.getElementById('custLandmarkInput')?.value.trim() || document.getElementById('custPlaceInput')?.value.trim() || '';
-    const panchayath = document.getElementById('custPanchayathInput')?.value.trim() || '';
-    const loc = document.getElementById('custLocationInput')?.value.trim();
+    const district = cleanInvisibleAndWhitespace(document.getElementById('custDistrictSelect')?.value || '') || 'Ernakulam';
+    const rawTown = cleanInvisibleAndWhitespace(document.getElementById('custTownInput')?.value || '') ||
+      cleanInvisibleAndWhitespace(document.getElementById('custAreaInput')?.value || '');
+    const landmark = cleanInvisibleAndWhitespace(document.getElementById('custLandmarkInput')?.value || '') ||
+      cleanInvisibleAndWhitespace(document.getElementById('custPlaceInput')?.value || '');
+    const panchayath = cleanInvisibleAndWhitespace(document.getElementById('custPanchayathInput')?.value || '');
+    const loc = cleanInvisibleAndWhitespace(document.getElementById('custLocationInput')?.value || '');
     const ownerName = document.getElementById('custOwnerNameInput')?.value.trim() || '';
     const rawOwnerPhone = document.getElementById('custOwnerPhoneInput')?.value.trim() || '';
     const staffName = document.getElementById('custStaffNameInput')?.value.trim() || '';
@@ -10705,9 +11129,9 @@ function handleCustomerFormSubmit(event) {
       return;
     }
 
-    if (town) {
-      saveNewDistrictTown(district, town);
-    }
+    const town = rawTown ? (saveNewDistrictTown(district, rawTown) || resolveCanonicalTownName(rawTown, district)) : '';
+    const custTownInputEl = document.getElementById('custTownInput');
+    if (custTownInputEl && town) custTownInputEl.value = town;
 
     let locParts = [];
     if (landmark) locParts.push(landmark);
@@ -10953,21 +11377,24 @@ function editCustomer(customerId) {
     const submitText = document.getElementById('custSubmitText');
     const cancelBtn = document.getElementById('custCancelEditBtn');
 
-    const custDist = cust.district || 'Ernakulam';
+    const custDist = getCustomerDistrict(cust);
+    const custTown = getCustomerTown(cust);
+    const custLandmark = getCustomerLandmark(cust);
+    const custPanchayath = getCustomerPanchayath(cust);
     if (distSelect) {
       distSelect.value = custDist;
       onCustDistrictChange(custDist);
     }
-    if (townInput) townInput.value = cust.town || cust.area || '';
-    if (landmarkInput) landmarkInput.value = cust.landmark || cust.place || '';
-    if (panchayathInput) panchayathInput.value = cust.panchayath || '';
+    if (townInput) townInput.value = custTown;
+    if (landmarkInput) landmarkInput.value = custLandmark;
+    if (panchayathInput) panchayathInput.value = custPanchayath;
 
     if (editIdInput) editIdInput.value = cust.id;
-    if (nameInput) nameInput.value = cust.name || '';
+    if (nameInput) nameInput.value = cleanInvisibleAndWhitespace(cust.name || '');
     if (catInput) catInput.value = cust.category || 'Caterer';
-    if (areaInput) areaInput.value = cust.town || cust.area || cust.location || '';
-    if (placeInput) placeInput.value = cust.landmark || cust.place || '';
-    if (locInput) locInput.value = cust.location || '';
+    if (areaInput) areaInput.value = custTown || getCustomerLocation(cust);
+    if (placeInput) placeInput.value = custLandmark;
+    if (locInput) locInput.value = getCustomerLocation(cust);
     if (ownerNameInput) ownerNameInput.value = cust.ownerName || '';
     if (ownerPhoneInput) ownerPhoneInput.value = cust.ownerPhone || (cust.phone || '');
     if (staffNameInput) staffNameInput.value = cust.staffName || '';
@@ -11088,18 +11515,18 @@ function renderCustomersList() {
   const filtered = customers.filter(c => {
     // District Filter
     if (customerDistrictFilter !== 'all') {
-      const cDist = getCustomerDistrict(c).toLowerCase();
-      if (cDist !== customerDistrictFilter.toLowerCase()) return false;
+      const cDistKey = getTownNormalizedKey(getCustomerDistrict(c));
+      if (cDistKey !== getTownNormalizedKey(customerDistrictFilter)) return false;
     }
 
     // Town / Area Filter
     const activeTownFilter = (customerTownFilter !== 'all' ? customerTownFilter : customerAreaFilter);
     if (activeTownFilter !== 'all') {
-      const cTown = getCustomerTown(c).toLowerCase();
-      const cArea = getCustomerArea(c).toLowerCase();
-      const cLoc = getCustomerLocation(c).toLowerCase();
-      const filterVal = activeTownFilter.toLowerCase();
-      if (cTown !== filterVal && cArea !== filterVal && !cLoc.includes(filterVal)) return false;
+      const cTownKey = getTownNormalizedKey(getCustomerTown(c));
+      const cAreaKey = getTownNormalizedKey(getCustomerArea(c));
+      const cLocClean = cleanInvisibleAndWhitespace(getCustomerLocation(c)).toLowerCase();
+      const filterVal = getTownNormalizedKey(activeTownFilter);
+      if (cTownKey !== filterVal && cAreaKey !== filterVal && !cLocClean.includes(filterVal)) return false;
     }
 
     // Category Filter
@@ -11918,14 +12345,14 @@ function handleImportDataJSON(event) {
       if (Array.isArray(data.bagSizes) && data.bagSizes.length > 0) {
         bagSizes = data.bagSizes;
       }
-      if (data.savedDistrictTowns && typeof data.savedDistrictTowns === 'object') {
-        savedDistrictTowns = data.savedDistrictTowns;
+      if (data.savedDistrictTowns && typeof data.savedDistrictTowns === 'object' && !Array.isArray(data.savedDistrictTowns)) {
+        savedDistrictTowns = deduplicateDistrictTownsMap(data.savedDistrictTowns).map;
         try {
           localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
         } catch (err) {}
       }
       if (Array.isArray(data.savedAreas)) {
-        savedAreas = data.savedAreas;
+        savedAreas = deduplicateTownStringsList(data.savedAreas);
         try {
           localStorage.setItem(STORAGE_SAVED_AREAS, JSON.stringify(savedAreas));
         } catch (err) {}
@@ -14710,6 +15137,7 @@ function mergeIncomingCloudVisits(remoteVisits) {
       return;
     }
     rv.date = standardizeDateString(rv.date || rv.timestamp || rv.createdAt);
+    if (rv.town) rv.town = resolveCanonicalTownName(rv.town, rv.district);
     visitMap.set(cleanId, rv);
   });
 
@@ -14719,6 +15147,7 @@ function mergeIncomingCloudVisits(remoteVisits) {
     const cleanId = String(lv.id).trim();
     if (isVisitTombstoned(cleanId)) return;
 
+    if (lv.town) lv.town = resolveCanonicalTownName(lv.town, lv.district);
     if (!visitMap.has(cleanId)) {
       // Local visit is not in remote snapshot yet (e.g. backdated or newly added offline)
       // Keep it and push it to cloud so other devices receive it!
@@ -14729,6 +15158,7 @@ function mergeIncomingCloudVisits(remoteVisits) {
       const remote = visitMap.get(cleanId);
       const merged = { ...remote, ...lv };
       merged.date = standardizeDateString(merged.date || remote.date || lv.date);
+      if (merged.town) merged.town = resolveCanonicalTownName(merged.town, merged.district);
       visitMap.set(cleanId, merged);
     }
   });
@@ -15213,21 +15643,27 @@ function populateDailyReportTownFilter() {
   if (!select) return;
 
   const currentVal = select.value || 'all';
-  const towns = new Set();
+  const townSources = [];
   if (Array.isArray(customers)) {
     customers.forEach(c => {
-      const t = c.town || c.area || c.location;
-      if (t && typeof t === 'string' && t.trim()) towns.add(t.trim());
+      const t = getCustomerTown(c);
+      if (t) townSources.push(t);
     });
   }
-  const sorted = Array.from(towns).sort((a, b) => a.localeCompare(b));
+  const sorted = deduplicateTownStringsList(townSources);
 
   let opts = '<option value="all">All Towns</option>';
   sorted.forEach(t => {
     opts += `<option value="${escapeHtml(t)}">${escapeHtml(t)}</option>`;
   });
   select.innerHTML = opts;
-  select.value = currentVal;
+  if (currentVal && currentVal !== 'all') {
+    const targetKey = getTownNormalizedKey(resolveCanonicalTownName(currentVal));
+    const matched = sorted.find(t => getTownNormalizedKey(t) === targetKey);
+    select.value = matched || 'all';
+  } else {
+    select.value = 'all';
+  }
 }
 
 function setDailyReportFilterStatus(status) {
@@ -15243,7 +15679,7 @@ function renderDailyReportShopsList() {
   const countBadge = document.getElementById('dailyReportShopsCountBadge');
   if (!container) return;
 
-  const searchQuery = (document.getElementById('dailyReportSearchInput')?.value || '').trim().toLowerCase();
+  const searchQuery = cleanInvisibleAndWhitespace(document.getElementById('dailyReportSearchInput')?.value || '').toLowerCase();
   const townFilter = document.getElementById('dailyReportTownFilter')?.value || 'all';
   const typeFilter = document.getElementById('dailyReportTypeFilter')?.value || 'all';
   const tierFilter = document.getElementById('dailyReportTierFilter')?.value || 'all';
@@ -15265,11 +15701,12 @@ function renderDailyReportShopsList() {
   // Filter and compute cadence for all shops
   const list = [];
   const todayStr = getLocalTodayDateString();
+  const townFilterKey = townFilter !== 'all' ? getTownNormalizedKey(townFilter) : '';
 
   customers.forEach(shop => {
     if (!shop || !shop.name) return;
-    const name = (shop.name || '').toLowerCase();
-    const town = (shop.town || shop.area || '').toLowerCase();
+    const name = cleanInvisibleAndWhitespace(shop.name || '').toLowerCase();
+    const town = getTownNormalizedKey(getCustomerTown(shop));
     const phone = (shop.ownerPhone || shop.phone || '').toLowerCase();
 
     // 1. Search Query
@@ -15281,7 +15718,7 @@ function renderDailyReportShopsList() {
 
     // 2. Town Filter
     if (townFilter !== 'all') {
-      if ((shop.town || shop.area || '').toLowerCase() !== townFilter.toLowerCase()) {
+      if (town !== townFilterKey) {
         return;
       }
     }
@@ -15738,7 +16175,12 @@ function openQuickAddShopModal(prefillName = '') {
   const nameInput = document.getElementById('qasShopName');
   const form = document.getElementById('quickAddShopForm');
   if (form) form.reset();
-  if (nameInput && prefillName) nameInput.value = prefillName;
+  const qasDistEl = document.getElementById('qasDistrict');
+  if (qasDistEl) qasDistEl.value = 'Ernakulam';
+  if (typeof onQasDistrictChange === 'function') {
+    onQasDistrictChange(qasDistEl ? qasDistEl.value : 'Ernakulam');
+  }
+  if (nameInput && prefillName) nameInput.value = cleanInvisibleAndWhitespace(prefillName);
   if (modal) modal.classList.remove('hidden');
 }
 
@@ -15749,23 +16191,32 @@ function closeQuickAddShopModal() {
 
 function handleQuickAddShopSubmit(event) {
   event.preventDefault();
-  const name = document.getElementById('qasShopName')?.value.trim();
+  const name = cleanInvisibleAndWhitespace(document.getElementById('qasShopName')?.value || '');
   const shopType = document.getElementById('qasShopType')?.value || 'prospect';
   const tier = document.getElementById('qasTier')?.value || 'C';
-  const town = document.getElementById('qasTown')?.value.trim() || 'Ernakulam';
+  const district = cleanInvisibleAndWhitespace(document.getElementById('qasDistrict')?.value || '') || 'Ernakulam';
+  const rawTown = cleanInvisibleAndWhitespace(document.getElementById('qasTown')?.value || '');
+  const town = rawTown ? (saveNewDistrictTown(district, rawTown) || resolveCanonicalTownName(rawTown, district)) : 'Ernakulam';
+  const qasTownEl = document.getElementById('qasTown');
+  if (qasTownEl) qasTownEl.value = town;
   const phone = document.getElementById('qasPhone')?.value.trim() || '';
   const notes = document.getElementById('qasNotes')?.value.trim() || '';
 
   if (!name) return;
 
+  const formattedLocation = (district && district.toLowerCase() !== town.toLowerCase())
+    ? `${town}, ${district}`
+    : town;
+
   const newShop = {
     id: 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4),
     name: name,
     category: 'Wholesaler',
-    district: 'Ernakulam',
+    district: district,
     town: town,
     area: town,
-    location: town,
+    place: town,
+    location: formattedLocation,
     phone: phone,
     ownerPhone: phone,
     tier: tier,
@@ -15782,6 +16233,12 @@ function handleQuickAddShopSubmit(event) {
 
   if (typeof populateSavedAreasDatalists === 'function') {
     populateSavedAreasDatalists();
+  }
+  if (typeof populateCustomerDropdown === 'function') {
+    populateCustomerDropdown();
+  }
+  if (typeof renderCustomersList === 'function') {
+    renderCustomersList();
   }
 
   closeQuickAddShopModal();
