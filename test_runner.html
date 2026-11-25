@@ -1415,8 +1415,39 @@ window.onerror = function(msg, url, line, col, err) {
   assert(snapCounts.support_chats === 2, "Detached listener cleanly re-attaches on recovery");
   assert(snapCounts.orders === prevOrdersSnapCount, "Healthy orders listener is not torn down when only support_chats recovers");
 
+  // 6. Scoped foreground order catch-up queries only active & today-delivered slices
+  assert(typeof fetchScopedOrdersCatchupForAdmin === 'function', "fetchScopedOrdersCatchupForAdmin function exists");
+  const scopedWhereFields = [];
+  let disableNetworkCalls = 0;
+  let enableNetworkCalls = 0;
+  const scopedMockDb = {
+    disableNetwork: () => { disableNetworkCalls++; return Promise.resolve(); },
+    enableNetwork: () => { enableNetworkCalls++; return Promise.resolve(); },
+    collection: (name) => ({
+      where: (field) => {
+        scopedWhereFields.push(field);
+        return {
+          get: (opts) => {
+            if (opts && opts.source === 'server') serverGetCalls[name] = (serverGetCalls[name] || 0) + 1;
+            return Promise.resolve(makeMockSnap([]));
+          }
+        };
+      },
+      doc: (docId) => mockRealtimeDb.collection(name).doc(docId),
+      onSnapshot: (onNext, onErr) => mockRealtimeDb.collection(name).onSnapshot(onNext, onErr),
+      get: (opts) => mockRealtimeDb.collection(name).get(opts)
+    })
+  };
+  setRealtimeDbForTest(scopedMockDb);
+  fetchScopedOrdersCatchupForAdmin();
+  assert(scopedWhereFields.includes('dispatchStatus') && scopedWhereFields.includes('deliveredAt'), "Foreground catch-up scopes orders query to active and today-delivered slices");
+  resetRealtimeListenerHandlesForTest();
+  handleMainAppConnectionWakeup({ type: 'online' });
+  assert(disableNetworkCalls >= 1, "Online resume invokes disableNetwork socket cycle before re-syncing");
+
   // Restore clean state
   setRealtimeDbForTest(origDb);
+  resetRealtimeListenerHandlesForTest();
   orders = origOrders;
   updateDashboard();
   setSupportChatMessages([]);

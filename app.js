@@ -3023,7 +3023,7 @@ function applyRemoteOrdersSnapshotList(remoteOrders, options = {}) {
     extractCustomersFromOrdersIfMissing(true);
   }
   if (typeof deduplicateCustomersList === 'function') {
-    customers = deduplicateCustomersList(customers, true);
+    customers = deduplicateCustomersList(customers, false);
   }
 
   purgeUnwantedDummyProducts(false);
@@ -3102,28 +3102,73 @@ function refreshMainRealtimeFromServer(forceRefresh = false) {
   });
 }
 
+let mainWentHiddenAt = 0;
+let mainLastSocketCycleAt = 0;
+
+function cycleMainFirestoreNetwork(onRestored) {
+  if (!db) return Promise.resolve();
+  const finish = () => {
+    if (typeof onRestored === 'function') onRestored();
+  };
+  if (typeof db.disableNetwork === 'function' && typeof db.enableNetwork === 'function') {
+    return db.disableNetwork()
+      .catch(() => {})
+      .then(() => db.enableNetwork().catch(() => {}))
+      .then(() => finish());
+  }
+  if (typeof db.enableNetwork === 'function') {
+    return db.enableNetwork().catch(() => {}).then(() => finish());
+  }
+  finish();
+  return Promise.resolve();
+}
+
+let lastMainOnlineWakeupAt = 0;
+
 function handleMainAppConnectionWakeup(evt) {
   const evtType = evt && evt.type ? evt.type : 'manual';
+  const now = Date.now();
   if (evtType === 'visibilitychange' && typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    mainWentHiddenAt = now;
     return;
   }
   const isOnlineEvent = evtType === 'online';
+  const isPersistedRestore = (evtType === 'pageshow' && evt && evt.persisted === true);
   const isVisible = (typeof document === 'undefined') || document.visibilityState === 'visible';
   if (!isVisible && !isOnlineEvent) return;
 
-  const now = Date.now();
-  if (now - lastMainWakeupAt < 250) return;
+  if (isOnlineEvent) {
+    if (now - lastMainOnlineWakeupAt < 250) return;
+    lastMainOnlineWakeupAt = now;
+  } else {
+    if (now - lastMainWakeupAt < 250) return;
+  }
   lastMainWakeupAt = now;
 
   if (!db) return;
-  if (typeof db.enableNetwork === 'function') {
-    db.enableNetwork().catch(() => {});
-  }
+  const hiddenDuration = mainWentHiddenAt > 0 ? (now - mainWentHiddenAt) : 0;
+  if (isVisible) mainWentHiddenAt = 0;
 
-  // Re-attach ONLY detached listeners (active healthy listeners remain attached cleanly)
+  const shouldCycleSocket = (isOnlineEvent || isPersistedRestore || hiddenDuration >= 1500) &&
+    (now - mainLastSocketCycleAt >= 3000) &&
+    typeof db.disableNetwork === 'function';
+
+  // Ensure detached listeners & pending chats flush immediately
   setupFirestoreRealtimeListeners(false);
   flushPendingAdminChatMessages();
 
+  if (shouldCycleSocket) {
+    mainLastSocketCycleAt = now;
+    cycleMainFirestoreNetwork(() => {
+      setupFirestoreRealtimeListeners(false);
+      refreshMainRealtimeFromServer(true);
+    });
+    return;
+  }
+
+  if (typeof db.enableNetwork === 'function') {
+    db.enableNetwork().catch(() => {});
+  }
   // Immediately pull latest server state for orders, delivery status, and support chats
   refreshMainRealtimeFromServer(isOnlineEvent);
 }
@@ -3736,6 +3781,9 @@ async function syncCloudOrder(order) {
   const docRef = currentDb.collection('orders').doc(docId);
 
   try {
+    if (typeof currentDb.enableNetwork === 'function') {
+      currentDb.enableNetwork().catch(() => {});
+    }
     await docRef.set(cleanOrder, { merge: true });
     updateCloudSyncStatus('synced', 'Live Synced 🟢');
     return cleanOrder;
@@ -4033,14 +4081,114 @@ function manualTriggerCloudSync(isQuiet = false) {
   });
 }
 
-// Periodic foreground heartbeat every 45 seconds to keep Firestore socket & listeners alive without re-detaching active ones
+let isAdminScopedCatchupInFlight = false;
+
+function buildAdminOrderCatchupFingerprint(o) {
+  if (!o) return '';
+  return [
+    o.dispatchStatus || '',
+    o.deliveryStatus || '',
+    o.deliveryNote || '',
+    o.notes || '',
+    o.updatedAt || '',
+    o.deliveredAt || '',
+    o.bagQty !== undefined ? o.bagQty : '',
+    o.totalKg !== undefined ? o.totalKg : '',
+    o.totalAmount !== undefined ? o.totalAmount : '',
+    o.customer ? (o.customer.name || '') : '',
+    JSON.stringify(o.items || [])
+  ].join('|');
+}
+
+function fetchScopedOrdersCatchupForAdmin() {
+  if (!db || isAdminScopedCatchupInFlight) return Promise.resolve(false);
+  const ordersCol = db.collection('orders');
+  if (!ordersCol || typeof ordersCol.where !== 'function') return Promise.resolve(false);
+
+  isAdminScopedCatchupInFlight = true;
+  const windowStartIso = new Date(Date.now() - 36 * 3600 * 1000).toISOString().split('T')[0] + 'T00:00:00.000Z';
+
+  return Promise.all([
+    ordersCol.where('dispatchStatus', 'in', ['Pending', 'OutForDelivery']).get({ source: 'server' }).catch(() => null),
+    ordersCol.where('deliveredAt', '>=', windowStartIso).get({ source: 'server' }).catch(() => null)
+  ]).then(([activeSnap, deliveredSnap]) => {
+    const incomingMap = new Map();
+    [activeSnap, deliveredSnap].forEach(snap => {
+      if (!snap || typeof snap.forEach !== 'function') return;
+      snap.forEach(doc => {
+        const d = doc.data();
+        if (d && d.id && !isOrderTombstoned(d.id)) {
+          d._firestoreDocId = doc.id;
+          incomingMap.set(d.id, d);
+        }
+      });
+    });
+
+    if (incomingMap.size === 0) return false;
+
+    let hasDelta = false;
+    incomingMap.forEach((remoteOrd, id) => {
+      const idx = orders.findIndex(o => o && o.id === id);
+      const newStatus = remoteOrd.dispatchStatus || 'Pending';
+      const prevKnownStatus = knownOrderDeliveryStatuses.get(id);
+
+      if (idx === -1) {
+        orders.unshift(remoteOrd);
+        hasDelta = true;
+        if (!isInitialOrdersListenerRun && prevKnownStatus && prevKnownStatus !== 'Delivered' && newStatus === 'Delivered') {
+          triggerOrderDeliveredAlert(remoteOrd);
+        }
+      } else {
+        const localOrd = orders[idx];
+        const prevSig = buildAdminOrderCatchupFingerprint(localOrd);
+        const nextSig = buildAdminOrderCatchupFingerprint(remoteOrd);
+        if (prevSig !== nextSig) {
+          const prevLocalStatus = localOrd.dispatchStatus || prevKnownStatus || 'Pending';
+          orders[idx] = remoteOrd;
+          hasDelta = true;
+          if (!isInitialOrdersListenerRun && prevLocalStatus !== 'Delivered' && newStatus === 'Delivered') {
+            triggerOrderDeliveredAlert(remoteOrd);
+          }
+        }
+      }
+      knownOrderDeliveryStatuses.set(id, newStatus);
+      mainOrdersStateMap[id] = {
+        updatedAt: remoteOrd.updatedAt || remoteOrd.createdAt || '',
+        dispatchStatus: newStatus,
+        itemsHash: JSON.stringify(remoteOrd.items || []),
+        bagQty: (remoteOrd.bagQty !== undefined) ? remoteOrd.bagQty : (remoteOrd.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+        notes: remoteOrd.notes || '',
+        rate: remoteOrd.perKgRate || 0
+      };
+    });
+
+    if (hasDelta) {
+      orders.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+      try {
+        localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+      } catch (e) {}
+      updateDashboard();
+      updateCloudSyncStatus('synced', 'Live Synced 🟢');
+    }
+    return hasDelta;
+  }).catch(() => false).finally(() => {
+    isAdminScopedCatchupInFlight = false;
+  });
+}
+
+// Active foreground heartbeat & lightweight server catch-up every 15 seconds while visible
 if (typeof window !== 'undefined') {
   setInterval(() => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible' && db) {
+    if (typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine !== false && db) {
       if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
       setupFirestoreRealtimeListeners(false);
+      flushPendingAdminChatMessages();
+      if (typeof fetchAdminSupportChatsDirect === 'function') {
+        fetchAdminSupportChatsDirect();
+      }
+      fetchScopedOrdersCatchupForAdmin();
     }
-  }, 45000);
+  }, 15000);
 }
 
 // ==================== HELPER ACCESSORS ====================
@@ -15654,6 +15802,7 @@ window.applyAdminSupportChatSnapshot = applyAdminSupportChatSnapshot;
 window.fetchAdminSupportChatsDirect = fetchAdminSupportChatsDirect;
 window.applyRemoteOrdersSnapshotList = applyRemoteOrdersSnapshotList;
 window.refreshMainRealtimeFromServer = refreshMainRealtimeFromServer;
+window.fetchScopedOrdersCatchupForAdmin = fetchScopedOrdersCatchupForAdmin;
 window.handleMainAppConnectionWakeup = handleMainAppConnectionWakeup;
 window.setupFirestoreRealtimeListeners = setupFirestoreRealtimeListeners;
 window.listenToSupportChats = listenToSupportChats;
@@ -15667,7 +15816,11 @@ window.resetRealtimeListenerHandlesForTest = () => {
   mainReportsUnsubscribe = null;
   supportChatUnsubscribe = null;
   lastMainWakeupAt = 0;
+  lastMainOnlineWakeupAt = 0;
+  mainWentHiddenAt = 0;
+  mainLastSocketCycleAt = 0;
   isMainServerRefreshInFlight = false;
   mainServerRefreshStartedAt = 0;
+  isAdminScopedCatchupInFlight = false;
 };
 if (typeof supportChatMessages !== 'undefined') window.supportChatMessages = supportChatMessages;

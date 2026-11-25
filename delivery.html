@@ -1159,7 +1159,26 @@
       }
     }
 
-    function rebuildMergedDeliveryOrders() {
+    let lastDeliveryRenderSignature = '';
+
+    function buildDeliveryOrdersSignature(list) {
+      return (list || []).map(o => [
+        o.id,
+        o.dispatchStatus || '',
+        o.deliveryStatus || '',
+        o.deliveryNote || '',
+        o.notes || '',
+        o.updatedAt || '',
+        o.deliveredAt || '',
+        o.bagQty !== undefined ? o.bagQty : '',
+        o.totalKg || 0,
+        o.totalAmount || 0,
+        getCustName(o),
+        JSON.stringify(o.items || [])
+      ].join('|')).join(';;');
+    }
+
+    function rebuildMergedDeliveryOrders(forceDomRender = false) {
       loadDeletedOrderTombstones();
       const merged = new Map();
       deliveredTodayOrdersMap.forEach((ord, id) => {
@@ -1175,6 +1194,9 @@
 
       const loaded = Array.from(merged.values());
       sortOrders(loaded);
+      const nextSignature = buildDeliveryOrdersSignature(loaded);
+      const hasChanges = forceDomRender || nextSignature !== lastDeliveryRenderSignature;
+      lastDeliveryRenderSignature = nextSignature;
       allOrders = loaded;
 
       try {
@@ -1182,9 +1204,11 @@
       } catch (e) {}
 
       updateSyncStatus('synced', 'Live Synced 🟢');
-      populateTownDropdown();
-      updateTabBadges();
-      renderOrders();
+      if (hasChanges) {
+        populateTownDropdown();
+        updateTabBadges();
+        renderOrders();
+      }
     }
 
     function applyActiveOrdersSnapshot(snapshot) {
@@ -1256,7 +1280,8 @@
                     itemsHash: JSON.stringify(d.items || []),
                     bagQty: (d.bagQty !== undefined) ? d.bagQty : (d.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
                     notes: d.notes || '',
-                    rate: d.perKgRate || 0
+                    rate: d.perKgRate || 0,
+                    totalAmount: d.totalAmount || 0
                   };
                 }
               });
@@ -1288,7 +1313,8 @@
                       itemsHash: JSON.stringify(order.items || []),
                       bagQty: (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
                       notes: order.notes || '',
-                      rate: order.perKgRate || 0
+                      rate: order.perKgRate || 0,
+                      totalAmount: order.totalAmount || 0
                     };
                     if (order.dispatchStatus !== 'Delivered') {
                       triggerNewOrderAlert(order);
@@ -1308,8 +1334,10 @@
                     (order.notes || '') !== (prev.notes || '') ||
                     (order.deliveryNote || '') !== (prev.deliveryNote || '') ||
                     (order.deliveryStatus || '') !== (prev.deliveryStatus || '') ||
+                    (order.dispatchStatus || '') !== (prev.dispatchStatus || '') ||
                     currentCustName !== (prev.customerName || '') ||
-                    (order.perKgRate || 0) !== (prev.rate || 0)
+                    (order.perKgRate || 0) !== (prev.rate || 0) ||
+                    (order.totalAmount || 0) !== (prev.totalAmount || 0)
                   );
 
                   previousOrdersStateMap[order.id] = {
@@ -1321,7 +1349,8 @@
                     itemsHash: currentItemsHash,
                     bagQty: currentBagQty,
                     notes: order.notes || '',
-                    rate: order.perKgRate || 0
+                    rate: order.perKgRate || 0,
+                    totalAmount: order.totalAmount || 0
                   };
 
                   if (isContentChanged && order.dispatchStatus !== 'Delivered') {
@@ -2526,6 +2555,9 @@
         rebuildMergedDeliveryOrders();
       }
 
+      if (typeof db.enableNetwork === 'function') {
+        db.enableNetwork().catch(() => {});
+      }
       db.collection('orders').doc(targetDocId).update(updatePayload).then(() => {
         showToast(activeActionType === 'delivered' ? `✅ Order ${submittedOrderId} delivered!` : `📝 Note updated!`);
         closeDeliveryActionModal();
@@ -2537,23 +2569,29 @@
 
     // Auto-resync & socket wake-up when returning to delivery portal (e.g. mobile unlock, tab focus, online event)
     let lastDeliveryWakeupAt = 0;
-    function handleDeliveryConnectionWakeup(evt) {
-      const evtType = evt && evt.type ? evt.type : 'manual';
-      if (evtType === 'visibilitychange' && document.visibilityState === 'hidden') {
-        return;
+    let deliveryWentHiddenAt = 0;
+    let deliveryLastSocketCycleAt = 0;
+
+    function cycleDeliveryFirestoreNetwork(onRestored) {
+      if (!db) return Promise.resolve();
+      const finish = () => {
+        if (typeof onRestored === 'function') onRestored();
+      };
+      if (typeof db.disableNetwork === 'function' && typeof db.enableNetwork === 'function') {
+        return db.disableNetwork()
+          .catch(() => {})
+          .then(() => db.enableNetwork().catch(() => {}))
+          .then(() => finish());
       }
-      const isOnlineEvent = evtType === 'online';
-      if (document.visibilityState !== 'visible' && !isOnlineEvent) return;
-
-      const now = Date.now();
-      if (now - lastDeliveryWakeupAt < 250) return;
-      lastDeliveryWakeupAt = now;
-
-      if (!db) return;
       if (typeof db.enableNetwork === 'function') {
-        db.enableNetwork().catch(() => {});
+        return db.enableNetwork().catch(() => {}).then(() => finish());
       }
-      // Attach ONLY missing/errored listeners; leave healthy active listeners intact
+      finish();
+      return Promise.resolve();
+    }
+
+    function recoverDeliveryListenersAndFetchDirect() {
+      if (!db) return;
       if (!deliveryActiveOrdersUnsubscribe || !deliveryDeliveredTodayUnsubscribe) {
         listenToOrders(false);
       }
@@ -2565,11 +2603,52 @@
       } else {
         flushPendingDeliveryChatMessages();
       }
-      // Immediately pull fresh server state for both orders and support chats
       fetchOrdersDirect();
       if (typeof fetchDeliverySupportChatsDirect === 'function') {
         fetchDeliverySupportChatsDirect();
       }
+    }
+
+    let lastDeliveryOnlineWakeupAt = 0;
+
+    function handleDeliveryConnectionWakeup(evt) {
+      const evtType = evt && evt.type ? evt.type : 'manual';
+      const now = Date.now();
+      if (evtType === 'visibilitychange' && document.visibilityState === 'hidden') {
+        deliveryWentHiddenAt = now;
+        return;
+      }
+      const isOnlineEvent = evtType === 'online';
+      const isPersistedRestore = (evtType === 'pageshow' && evt && evt.persisted === true);
+      const isVisible = document.visibilityState === 'visible';
+      if (!isVisible && !isOnlineEvent) return;
+
+      if (isOnlineEvent) {
+        if (now - lastDeliveryOnlineWakeupAt < 250) return;
+        lastDeliveryOnlineWakeupAt = now;
+      } else {
+        if (now - lastDeliveryWakeupAt < 250) return;
+      }
+      lastDeliveryWakeupAt = now;
+
+      if (!db) return;
+      const hiddenDuration = deliveryWentHiddenAt > 0 ? (now - deliveryWentHiddenAt) : 0;
+      if (isVisible) deliveryWentHiddenAt = 0;
+
+      const shouldCycleSocket = (isOnlineEvent || isPersistedRestore || hiddenDuration >= 1500) &&
+        (now - deliveryLastSocketCycleAt >= 3000) &&
+        typeof db.disableNetwork === 'function';
+
+      if (shouldCycleSocket) {
+        deliveryLastSocketCycleAt = now;
+        cycleDeliveryFirestoreNetwork(() => recoverDeliveryListenersAndFetchDirect());
+        return;
+      }
+
+      if (typeof db.enableNetwork === 'function') {
+        db.enableNetwork().catch(() => {});
+      }
+      recoverDeliveryListenersAndFetchDirect();
     }
 
     document.addEventListener('visibilitychange', handleDeliveryConnectionWakeup);
@@ -2577,14 +2656,13 @@
     window.addEventListener('focus', handleDeliveryConnectionWakeup);
     window.addEventListener('pageshow', handleDeliveryConnectionWakeup);
 
+    // Active foreground heartbeat & lightweight scoped catch-up every 15s while visible
     setInterval(() => {
-      if (document.visibilityState === 'visible' && db) {
+      if (document.visibilityState === 'visible' && navigator.onLine !== false && db) {
         if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-        if (!deliveryActiveOrdersUnsubscribe || !deliveryDeliveredTodayUnsubscribe) listenToOrders(false);
-        if (!deliveryChatUnsubscribe) listenToDeliverySupportChats(false);
-        if (!deliveryConfigUnsubscribe) syncDeliveryConfigFromCloud(false);
+        recoverDeliveryListenersAndFetchDirect();
       }
-    }, 45000);
+    }, 15000);
 
     // ==================== TWO-WAY SUPPORT & HELPLINE CHAT (DELIVERY SIDE) ====================
 
@@ -3184,6 +3262,10 @@
       if (typeof deliveryConfigUnsubscribe === 'function') { try { deliveryConfigUnsubscribe(); } catch (e) {} }
       deliveryConfigUnsubscribe = null;
       lastDeliveryWakeupAt = 0;
+      lastDeliveryOnlineWakeupAt = 0;
+      deliveryWentHiddenAt = 0;
+      deliveryLastSocketCycleAt = 0;
+      lastDeliveryRenderSignature = '';
     };
 
     function startDeliveryApp() {
