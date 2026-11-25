@@ -90,6 +90,51 @@
         touch-action: manipulation;
       }
     }
+    #deliveryChatDrawer.hidden {
+      display: none !important;
+    }
+    #deliveryChatDrawer {
+      position: fixed;
+      z-index: 51;
+      transition: transform 0.25s ease, opacity 0.2s ease;
+    }
+    @media (max-width: 639px) {
+      #deliveryChatDrawer {
+        left: 0;
+        right: 0;
+        bottom: 0;
+        top: auto;
+        width: 100%;
+        max-width: 100%;
+        max-height: min(85vh, calc(100dvh - 16px));
+        border-radius: 1.5rem 1.5rem 0 0;
+        transform: translate3d(0, 0, 0);
+        opacity: 1;
+      }
+      #deliveryChatDrawer.is-chat-closed {
+        transform: translate3d(0, 100%, 0);
+        opacity: 0;
+      }
+    }
+    @media (min-width: 640px) {
+      #deliveryChatDrawer {
+        top: 50%;
+        left: 50%;
+        right: auto;
+        bottom: auto;
+        width: min(512px, calc(100vw - 32px));
+        max-width: 512px;
+        max-height: min(600px, calc(100vh - 32px));
+        max-height: min(600px, calc(100dvh - 32px));
+        border-radius: 1.5rem;
+        transform: translate(-50%, -50%) scale(1);
+        opacity: 1;
+      }
+      #deliveryChatDrawer.is-chat-closed {
+        transform: translate(-50%, -46%) scale(0.97);
+        opacity: 0;
+      }
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col bg-slate-100 text-slate-800">
@@ -406,7 +451,7 @@
   <!-- ==================== DELIVERY SUPPORT CHAT DRAWER ==================== -->
   <div id="deliveryChatOverlay" onclick="closeDeliveryChatDrawer()" class="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs transition-opacity duration-300 hidden opacity-0 print:hidden"></div>
 
-  <div id="deliveryChatDrawer" class="fixed bottom-0 sm:bottom-auto sm:top-1/2 sm:left-1/2 sm:-translate-x-1/2 sm:-translate-y-1/2 left-0 right-0 z-[51] bg-white rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200/90 w-full max-w-full sm:max-w-lg max-h-[85vh] max-h-[85dvh] sm:max-h-[640px] flex flex-col overflow-hidden transition-all duration-300 transform translate-y-full sm:translate-y-0 hidden print:hidden" style="padding-bottom: max(12px, env(safe-area-inset-bottom));">
+  <div id="deliveryChatDrawer" class="is-chat-closed hidden fixed z-[51] bg-white shadow-2xl border border-slate-200/90 flex flex-col overflow-hidden print:hidden">
     
     <!-- Drawer Header -->
     <div class="p-3.5 px-4 bg-slate-900 text-white rounded-t-3xl sm:rounded-t-3xl flex items-center justify-between border-b border-slate-800 shrink-0">
@@ -431,7 +476,7 @@
     </div>
 
     <!-- Messages Container -->
-    <div id="deliveryChatMessageList" class="flex-1 p-3.5 sm:p-4 space-y-3 overflow-y-auto overflow-x-hidden bg-slate-50/60 min-h-[120px] max-h-[50dvh] sm:max-h-[400px] text-xs" style="-webkit-overflow-scrolling: touch; overscroll-behavior: contain;">
+    <div id="deliveryChatMessageList" class="flex-1 min-h-0 p-3.5 sm:p-4 space-y-3 overflow-y-auto overflow-x-hidden bg-slate-50/60 text-xs" style="-webkit-overflow-scrolling: touch; overscroll-behavior: contain;">
       <div id="deliveryChatEmptyState" class="py-8 text-center text-slate-400">
         <i data-lucide="message-square" class="w-8 h-8 mx-auto mb-2 text-slate-300"></i>
         <p class="font-bold">Need help with an order or app bug?</p>
@@ -440,7 +485,7 @@
     </div>
 
     <!-- Bottom Action & Input Area -->
-    <div class="p-3 sm:p-3.5 bg-white border-t border-slate-200 space-y-2.5 shrink-0">
+    <div class="p-3 sm:p-3.5 bg-white border-t border-slate-200 space-y-2.5 shrink-0" style="padding-bottom: max(12px, env(safe-area-inset-bottom));">
       <!-- 1-Tap Quick Issue Chips -->
       <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5 scrollbar-none">
         <button type="button" onclick="selectDeliveryChatTag('Bug')" class="delivery-chat-tag-chip px-2.5 py-1 rounded-full text-[10px] font-bold border transition shrink-0 flex items-center gap-1 bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" data-tag="Bug">
@@ -2811,23 +2856,29 @@
       const drawer = document.getElementById('deliveryChatDrawer');
       const container = document.getElementById('deliveryChatMessageList');
       if (!drawer || !isDeliveryChatDrawerOpen) return;
-      if (window.visualViewport && window.innerWidth < 640) {
-        const vv = window.visualViewport;
-        const availH = Math.max(260, Math.floor(vv.height - 16));
+      const vv = window.visualViewport;
+      const vh = vv ? vv.height : (window.innerHeight || document.documentElement.clientHeight || 720);
+      const vw = vv ? vv.width : (window.innerWidth || document.documentElement.clientWidth || 1024);
+      if (vw < 640) {
+        const availH = Math.max(220, Math.floor(vh - 16));
         drawer.style.maxHeight = availH + 'px';
         if (container) {
-          container.style.maxHeight = Math.max(110, availH - 175) + 'px';
+          container.style.maxHeight = Math.max(80, availH - 175) + 'px';
         }
         scrollDeliveryChatToBottom();
       } else {
-        drawer.style.maxHeight = '';
-        if (container) container.style.maxHeight = '';
+        const availH = Math.min(600, Math.max(240, Math.floor(vh - 32)));
+        drawer.style.maxHeight = availH + 'px';
+        if (container) {
+          container.style.maxHeight = '';
+        }
       }
     }
 
     if (window.visualViewport) {
       window.visualViewport.addEventListener('resize', adjustDeliveryChatDrawerForViewport);
     }
+    window.addEventListener('resize', adjustDeliveryChatDrawerForViewport);
 
     function playSupportChatChime() {
       if (typeof isDeliveryAlertSoundEnabled === 'function' && !isDeliveryAlertSoundEnabled()) return;
@@ -3007,7 +3058,7 @@
       overlay.classList.remove('hidden');
       setTimeout(() => overlay.classList.add('opacity-100'), 10);
 
-      drawer.classList.remove('hidden', 'translate-y-full');
+      drawer.classList.remove('hidden', 'translate-y-full', 'is-chat-closed');
       isDeliveryChatDrawerOpen = true;
 
       if (db && !deliveryChatUnsubscribe) {
@@ -3040,7 +3091,7 @@
       if (!drawer || !overlay) return;
 
       overlay.classList.remove('opacity-100');
-      drawer.classList.add('translate-y-full');
+      drawer.classList.add('is-chat-closed');
       isDeliveryChatDrawerOpen = false;
 
       if (closeDeliveryChatTimer) clearTimeout(closeDeliveryChatTimer);
@@ -3048,7 +3099,9 @@
         overlay.classList.add('hidden');
         drawer.classList.add('hidden');
         drawer.style.maxHeight = '';
-      }, 300);
+        const container = document.getElementById('deliveryChatMessageList');
+        if (container) container.style.maxHeight = '';
+      }, 260);
     }
 
     function selectDeliveryChatTag(tag) {
