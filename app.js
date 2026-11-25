@@ -1534,6 +1534,9 @@ function updateCloudSyncStatus(status, text) {
   }
 }
 
+let mainFirebaseBootedAt = 0;
+let isMainNetworkCycling = false;
+
 function initFirebaseSync() {
   if (typeof firebase === 'undefined') {
     console.warn('Firebase SDK not loaded, operating in offline/localStorage mode.');
@@ -1556,6 +1559,7 @@ function initFirebaseSync() {
     }
 
     isFirestoreInitialized = true;
+    mainFirebaseBootedAt = Date.now();
     updateCloudSyncStatus('syncing', 'Connecting to Cloud...');
 
     setupFirestoreRealtimeListeners(false);
@@ -2884,7 +2888,6 @@ function sendAdminSupportReply() {
   scrollAdminSupportToBottom();
 
   if (db) {
-    if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
     db.collection('support_chats').doc(clientId).set(replyData).then(() => {
       pendingOutgoingAdminChats.delete(clientId);
       savePendingAdminChatsToStorage();
@@ -3043,10 +3046,6 @@ function refreshMainRealtimeFromServer(forceRefresh = false) {
   mainServerRefreshStartedAt = now;
   const refreshSeq = ++mainServerRefreshSeq;
 
-  if (typeof db.enableNetwork === 'function') {
-    db.enableNetwork().catch(() => {});
-  }
-
   const ordersFetch = db.collection('orders').get({ source: 'server' })
     .catch(() => db.collection('orders').get())
     .then(snapshot => {
@@ -3111,13 +3110,13 @@ function cycleMainFirestoreNetwork(onRestored) {
     if (typeof onRestored === 'function') onRestored();
   };
   if (typeof db.disableNetwork === 'function' && typeof db.enableNetwork === 'function') {
+    if (isMainNetworkCycling) return Promise.resolve();
+    isMainNetworkCycling = true;
     return db.disableNetwork()
       .catch(() => {})
       .then(() => db.enableNetwork().catch(() => {}))
+      .finally(() => { isMainNetworkCycling = false; })
       .then(() => finish());
-  }
-  if (typeof db.enableNetwork === 'function') {
-    return db.enableNetwork().catch(() => {}).then(() => finish());
   }
   finish();
   return Promise.resolve();
@@ -3134,6 +3133,9 @@ function handleMainAppConnectionWakeup(evt) {
   }
   const isOnlineEvent = evtType === 'online';
   const isPersistedRestore = (evtType === 'pageshow' && evt && evt.persisted === true);
+  if ((evtType === 'focus' || (evtType === 'pageshow' && !isPersistedRestore)) && mainFirebaseBootedAt > 0 && (now - mainFirebaseBootedAt < 1500)) {
+    return;
+  }
   const isVisible = (typeof document === 'undefined') || document.visibilityState === 'visible';
   if (!isVisible && !isOnlineEvent) return;
 
@@ -3166,9 +3168,6 @@ function handleMainAppConnectionWakeup(evt) {
     return;
   }
 
-  if (typeof db.enableNetwork === 'function') {
-    db.enableNetwork().catch(() => {});
-  }
   // Immediately pull latest server state for orders, delivery status, and support chats
   refreshMainRealtimeFromServer(isOnlineEvent);
 }
@@ -3256,9 +3255,6 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
       updateCloudSyncStatus('offline', 'Reconnecting...');
       if (reconnectMainOrdersTimeout) clearTimeout(reconnectMainOrdersTimeout);
       reconnectMainOrdersTimeout = setTimeout(() => {
-        try {
-          if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-        } catch (e) {}
         setupFirestoreRealtimeListeners(false);
       }, 2000);
     });
@@ -3781,9 +3777,6 @@ async function syncCloudOrder(order) {
   const docRef = currentDb.collection('orders').doc(docId);
 
   try {
-    if (typeof currentDb.enableNetwork === 'function') {
-      currentDb.enableNetwork().catch(() => {});
-    }
     await docRef.set(cleanOrder, { merge: true });
     updateCloudSyncStatus('synced', 'Live Synced 🟢');
     return cleanOrder;
@@ -3942,11 +3935,6 @@ function manualTriggerCloudSync(isQuiet = false) {
     initFirebaseSync();
     if (refreshIcon) setTimeout(() => refreshIcon.classList.remove('animate-spin'), 600);
     return;
-  }
-
-  // Wake up network if sleeping (e.g. mobile screen unlock)
-  if (typeof db.enableNetwork === 'function') {
-    db.enableNetwork().catch(() => {});
   }
 
   // Ensure all real-time listeners remain attached
@@ -4180,7 +4168,6 @@ function fetchScopedOrdersCatchupForAdmin() {
 if (typeof window !== 'undefined') {
   setInterval(() => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine !== false && db) {
-      if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
       setupFirestoreRealtimeListeners(false);
       flushPendingAdminChatMessages();
       if (typeof fetchAdminSupportChatsDirect === 'function') {
@@ -15819,6 +15806,8 @@ window.resetRealtimeListenerHandlesForTest = () => {
   lastMainOnlineWakeupAt = 0;
   mainWentHiddenAt = 0;
   mainLastSocketCycleAt = 0;
+  mainFirebaseBootedAt = 0;
+  isMainNetworkCycling = false;
   isMainServerRefreshInFlight = false;
   mainServerRefreshStartedAt = 0;
   isAdminScopedCatchupInFlight = false;
