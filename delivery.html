@@ -9,7 +9,7 @@
   <meta name="apple-mobile-web-app-title" content="Third Man Delivery">
   <meta name="theme-color" content="#0f172a">
   <title>Third Man - Staff Delivery & Dispatch Portal</title>
-  <link rel="manifest" href="manifest.json?v=4">
+  <link rel="manifest" href="delivery-manifest.json?v=4">
   <link rel="icon" type="image/x-icon" href="favicon.ico?v=4">
   <link rel="icon" type="image/png" sizes="16x16" href="uploaded-logo.png?v=4">
   <link rel="icon" type="image/png" sizes="32x32" href="uploaded-logo.png?v=4">
@@ -29,9 +29,9 @@
 
     (function() {
       try {
-        var customLogo = localStorage.getItem('thirdman_app_logo');
+        var customLogo = localStorage.getItem('thirdman_delivery_logo');
         if (customLogo && (customLogo.indexOf('data:image/svg') !== -1 || customLogo.indexOf('<svg') !== -1 || customLogo.indexOf('logo.svg') !== -1 || customLogo.indexOf('TM') !== -1)) {
-          localStorage.removeItem('thirdman_app_logo');
+          localStorage.removeItem('thirdman_delivery_logo');
           customLogo = null;
         }
 
@@ -94,18 +94,22 @@
 </head>
 <body class="min-h-screen flex flex-col bg-slate-100 text-slate-800">
 
-  <!-- TOP HEADER -->
+  <!-- TOP HEADER (Strictly Isolated — Non-navigable Branding Only) -->
   <header class="bg-slate-900 text-white sticky top-0 z-40 shadow-lg border-b border-slate-800" style="padding-top: max(0px, env(safe-area-inset-top, 0px));">
     <div class="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 sm:py-3 flex items-center justify-between gap-2 sm:gap-3">
-      <!-- Clickable Logo & Brand Title (Standard Link to Main Dashboard) -->
-      <a href="index.html" id="btnHeaderReturnToDashboard" class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden group hover:opacity-95 transition-all duration-150 cursor-pointer select-none" title="Return to Third Man Dashboard" aria-label="Return to Third Man Dashboard">
+      <!-- Static Logo & Brand Title (Isolated Delivery Portal Header) -->
+      <div id="deliveryBrandHeader" class="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden select-none">
         <div class="relative shrink-0">
-          <img id="deliveryHeaderLogo" src="uploaded-logo.png?v=2" onerror="this.onerror=null;this.src='icon-192.png?v=2';" alt="Third Man Logo" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-md object-contain bg-slate-900 p-0.5 border border-slate-700/80 group-hover:border-cyan-400 group-hover:shadow-cyan-950/40 transition-all duration-150">
+          <img id="deliveryHeaderLogo" src="uploaded-logo.png?v=4" onerror="this.onerror=null;this.src='icon-192.png?v=4';" alt="Third Man Logo" class="w-9 h-9 sm:w-10 sm:h-10 rounded-xl shadow-md object-contain bg-slate-900 p-0.5 border border-slate-700/80">
         </div>
         <script>
           (function() {
             try {
-              var customLogo = localStorage.getItem('thirdman_app_logo');
+              var customLogo = localStorage.getItem('thirdman_delivery_logo');
+              if (customLogo && (customLogo.indexOf('data:image/svg') !== -1 || customLogo.indexOf('<svg') !== -1 || customLogo.indexOf('logo.svg') !== -1 || customLogo.indexOf('TM') !== -1)) {
+                localStorage.removeItem('thirdman_delivery_logo');
+                customLogo = null;
+              }
               var img = document.getElementById('deliveryHeaderLogo');
               if (img && customLogo) {
                 img.src = customLogo;
@@ -115,15 +119,12 @@
         </script>
         <div class="min-w-0 overflow-hidden">
           <div class="flex items-center gap-1.5 sm:gap-2 flex-wrap">
-            <h1 class="font-black text-xs sm:text-base tracking-tight text-white group-hover:text-cyan-300 transition-colors truncate">THIRD MAN</h1>
+            <h1 class="font-black text-xs sm:text-base tracking-tight text-white truncate">THIRD MAN</h1>
             <span class="px-1.5 sm:px-2 py-0.5 rounded-full text-[9px] sm:text-[10px] font-extrabold bg-blue-500/20 text-blue-300 border border-blue-400/30 shrink-0">Delivery</span>
           </div>
-          <p class="text-[10px] sm:text-[11px] text-slate-400 group-hover:text-slate-300 transition-colors truncate flex items-center gap-1">
-            <span>Staff Dispatch &amp; Delivery</span>
-            <span class="text-cyan-400/90 font-bold hidden sm:inline text-[10px]">• ◂ Return to Dashboard</span>
-          </p>
+          <p class="text-[10px] sm:text-[11px] text-slate-400 truncate">Staff Dispatch &amp; Delivery</p>
         </div>
-      </a>
+      </div>
 
       <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <!-- Support Helpline & Chat Header Button -->
@@ -138,12 +139,6 @@
           <i id="deliverySoundIcon" data-lucide="bell" class="w-3.5 h-3.5 text-emerald-400 pointer-events-none"></i>
           <span id="deliverySoundLabel" class="hidden sm:inline pointer-events-none">Alerts ON</span>
         </button>
-
-        <!-- Return to Dashboard Quick Action Button -->
-        <a href="index.html" id="btnBackToDashboardAction" class="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white border border-slate-700 text-xs font-bold transition-all duration-150 active:scale-95 flex items-center gap-1.5 shadow-xs cursor-pointer" title="Return to Main Dashboard">
-          <i data-lucide="arrow-left" class="w-3.5 h-3.5 text-cyan-400 pointer-events-none"></i>
-          <span class="hidden sm:inline pointer-events-none">Dashboard</span>
-        </a>
 
         <!-- Live Cloud Sync Status -->
         <div id="syncBadge" class="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-xl bg-slate-800 border border-slate-700 text-[11px] font-semibold text-slate-300 shadow-inner">
@@ -214,7 +209,7 @@
         </div>
       </div>
 
-      <!-- Filter Tabs: Pending (Default) vs Delivered vs All -->
+      <!-- Filter Tabs: Pending Deliveries vs Delivered Today ONLY (No Historical Ledger) -->
       <div class="flex items-center gap-2 overflow-x-auto pb-1">
         <button type="button" id="tabBtnPending" onclick="switchDeliveryTab('pending')" class="flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-blue-600 text-white shadow-sm">
           <i data-lucide="clock" class="w-3.5 h-3.5"></i>
@@ -225,10 +220,6 @@
           <i data-lucide="check-circle-2" class="w-3.5 h-3.5 text-emerald-600"></i>
           <span>Delivered Today</span>
           <span id="badgeDeliveredCount" class="ml-1 px-1.5 py-0.2 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-full">0</span>
-        </button>
-        <button type="button" id="tabBtnAll" onclick="switchDeliveryTab('all')" class="py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200 shrink-0">
-          <i data-lucide="list" class="w-3.5 h-3.5"></i>
-          <span>All (<span id="badgeAllCount">0</span>)</span>
         </button>
       </div>
 
@@ -249,7 +240,7 @@
       </div>
     </div>
 
-    <!-- Live Dispatch Stats Bar: Total Orders, Total Bags, Total Weight (KG) -->
+    <!-- Live Dispatch Stats Bar: Active Load Summary (Orders, Bags, Weight KG) -->
     <div id="dispatchStatsBanner" class="bg-gradient-to-r from-blue-900 to-indigo-950 text-white p-3.5 sm:p-4 rounded-2xl shadow-md flex items-center justify-between gap-3 border border-blue-800/40">
       <div class="flex items-center gap-3">
         <div class="w-10 h-10 rounded-xl bg-white/10 flex items-center justify-center shrink-0 border border-white/10">
@@ -265,11 +256,6 @@
         </div>
       </div>
       <div class="flex items-center gap-2.5">
-        <button type="button" id="btnMarkAllPendingDelivered" onclick="markAllPendingDelivered()" class="hidden px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-bold rounded-xl transition shadow-sm active:scale-95 flex items-center gap-1">
-          <i data-lucide="check-check" class="w-3.5 h-3.5"></i>
-          <span class="hidden sm:inline">Mark All Delivered</span>
-          <span class="sm:hidden">Deliver All</span>
-        </button>
         <div class="text-right">
           <span class="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total Load Weight</span>
           <span id="statFilteredKgCount" class="text-base sm:text-lg font-black text-white">0 <span class="text-xs text-cyan-300 font-bold">kg</span></span>
@@ -494,14 +480,16 @@
       appId: "1:928547046358:web:723643e5a083a81f66da77"
     };
 
-    const STORAGE_ORDERS = 'biriyani_rice_orders_fresh_v2';
     const STORAGE_DELIVERY_CACHE = 'third_man_delivery_orders_cache';
     const STORAGE_DELETED_ORDERS = 'third_man_deleted_orders_v1';
     const STORAGE_DELIVERY_ALERT_SOUND = 'thirdman_delivery_alert_sound';
+    const STORAGE_DELIVERY_LOGO = 'thirdman_delivery_logo';
 
     let db = null;
     let allOrders = [];
-    let currentTab = 'pending'; // 'pending', 'delivered_today', 'all'
+    const activeOrdersMap = new Map();
+    const deliveredTodayOrdersMap = new Map();
+    let currentTab = 'pending'; // Strictly limited to 'pending' or 'delivered_today'
     let searchQuery = '';
     let selectedTown = 'all';
     let selectedUrgency = 'all';
@@ -542,17 +530,6 @@
       });
     }
 
-    function removeOrderTombstone(orderId) {
-      if (!orderId) return;
-      const cleanId = String(orderId).trim().toLowerCase();
-      if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
-      deletedOrderTombstones = deletedOrderTombstones.filter(t => {
-        const tid = typeof t === 'string' ? t : (t.id || '');
-        return String(tid).trim().toLowerCase() !== cleanId;
-      });
-      saveDeletedOrderTombstones();
-    }
-
     function mergeDeletedOrderTombstones(incoming) {
       if (!Array.isArray(incoming)) return;
       if (!Array.isArray(deletedOrderTombstones)) deletedOrderTombstones = [];
@@ -570,9 +547,22 @@
       });
       if (added) {
         saveDeletedOrderTombstones();
+        let mapChanged = false;
+        activeOrdersMap.forEach((_, key) => {
+          if (isOrderTombstoned(key)) {
+            activeOrdersMap.delete(key);
+            mapChanged = true;
+          }
+        });
+        deliveredTodayOrdersMap.forEach((_, key) => {
+          if (isOrderTombstoned(key)) {
+            deliveredTodayOrdersMap.delete(key);
+            mapChanged = true;
+          }
+        });
         const prevCount = allOrders.length;
         allOrders = allOrders.filter(o => o && o.id && !isOrderTombstoned(o.id));
-        if (allOrders.length !== prevCount) {
+        if (mapChanged || allOrders.length !== prevCount) {
           try {
             localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
           } catch (e) {}
@@ -585,6 +575,87 @@
 
     loadDeletedOrderTombstones();
 
+    function getDeliveryTodayWindowStartIso() {
+      const d = new Date(Date.now() - 36 * 3600 * 1000);
+      return d.toISOString().split('T')[0] + 'T00:00:00.000Z';
+    }
+
+    function isDeliveredToday(order) {
+      if (!order || order.dispatchStatus !== 'Delivered') return false;
+      if (!order.deliveredAt) return false;
+      const today = new Date().toISOString().split('T')[0];
+      return String(order.deliveredAt).startsWith(today);
+    }
+
+    function isDeliveryRelevantOrder(o) {
+      if (!o || !o.id) return false;
+      if (isOrderTombstoned(o.id)) return false;
+      const status = o.dispatchStatus || 'Pending';
+      if (status === 'Cancelled') return false;
+      if (status === 'Delivered') {
+        return isDeliveredToday(o);
+      }
+      if (o.date && o.date <= '2026-11-21') return false;
+      return true;
+    }
+
+    function sanitizeOrderForDelivery(raw, docId) {
+      if (!raw || !raw.id) return null;
+      const c = (raw.customer && typeof raw.customer === 'object') ? raw.customer : {};
+      const custName = typeof raw.customer === 'string' ? raw.customer : (c.name || raw.customerName || 'Customer');
+      const contactPhone = c.phone || c.ownerPhone || c.staffPhone || '';
+      const rawItems = Array.isArray(raw.items) ? raw.items : [];
+      const cleanItems = rawItems.map(it => ({
+        productName: it.productName || 'Rice',
+        bagSize: parseFloat(it.bagSize) || 25,
+        bagQty: parseFloat(it.bagQty) || 0,
+        perKgRate: parseFloat(it.perKgRate) || 0,
+        totalKg: (it.totalKg !== undefined && it.totalKg !== null) ? parseFloat(it.totalKg) : ((parseFloat(it.bagQty) || 0) * (parseFloat(it.bagSize) || 25)),
+        totalAmount: (it.totalAmount !== undefined && it.totalAmount !== null) ? parseFloat(it.totalAmount) : 0
+      }));
+
+      const sanitized = {
+        id: String(raw.id),
+        _firestoreDocId: docId ? String(docId) : (raw._firestoreDocId ? String(raw._firestoreDocId) : String(raw.id)),
+        date: raw.date ? String(raw.date) : '',
+        deliveryStatus: raw.deliveryStatus || 'Normal',
+        dispatchStatus: raw.dispatchStatus || 'Pending',
+        deliveredAt: raw.deliveredAt || null,
+        deliveryNote: raw.deliveryNote || '',
+        notes: raw.notes || '',
+        createdAt: raw.createdAt || '',
+        updatedAt: raw.updatedAt || '',
+        customer: {
+          name: custName,
+          town: c.town || c.area || c.location || '',
+          landmark: c.landmark || '',
+          place: c.place || '',
+          area: c.area || '',
+          location: c.location || '',
+          phone: contactPhone
+        },
+        items: cleanItems,
+        product: raw.product ? { name: raw.product.name || '' } : null,
+        bagSize: parseFloat(raw.bagSize) || (cleanItems[0]?.bagSize || 25),
+        bagQty: raw.bagQty,
+        totalKg: raw.totalKg,
+        perKgRate: raw.perKgRate,
+        totalAmount: raw.totalAmount
+      };
+      return normalizeDeliveryOrder(sanitized);
+    }
+
+    function normalizeDeliveryOrder(o) {
+      if (!o) return o;
+      const curName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim();
+      const curLower = curName.toLowerCase();
+      if (curLower === 'thanima' || curLower === 'hotel thanima') {
+        if (typeof o.customer === 'object') o.customer.name = 'Thanima Hotel';
+        else o.customer = { name: 'Thanima Hotel' };
+      }
+      return o;
+    }
+
     function sortOrders(arr) {
       if (!Array.isArray(arr)) return;
       arr.sort((a, b) => {
@@ -593,56 +664,6 @@
         if (bUrg !== aUrg) return bUrg - aUrg;
         return (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || '');
       });
-    }
-
-    function normalizeHistoricalOrders(list) {
-      if (!Array.isArray(list)) return [];
-      const needsSync = [];
-      const nowIso = new Date().toISOString();
-      list.forEach(o => {
-        if (!o || isOrderTombstoned(o.id)) return;
-        // Business rule: All orders placed on or before 2026-11-21 are DELIVERED
-        if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
-          o.dispatchStatus = 'Delivered';
-          o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
-          needsSync.push(o);
-        }
-        // Normalize customer alias (e.g. 'Thanima' -> 'Thanima Hotel')
-        const curName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim();
-        const curLower = curName.toLowerCase();
-        if (curLower === 'thanima' || curLower === 'hotel thanima') {
-          if (typeof o.customer === 'object') o.customer.name = 'Thanima Hotel';
-          else o.customer = 'Thanima Hotel';
-          o.customerName = 'Thanima Hotel';
-          needsSync.push(o);
-        }
-      });
-      return needsSync;
-    }
-
-    function syncOrdersDispatchStatusToFirestore(orderList) {
-      if (!db || !Array.isArray(orderList) || orderList.length === 0) return;
-      const validOrders = orderList.filter(o => o && o.id && !isOrderTombstoned(o.id));
-      if (validOrders.length === 0) return;
-      const CHUNK_SIZE = 400;
-      for (let i = 0; i < validOrders.length; i += CHUNK_SIZE) {
-        const chunk = validOrders.slice(i, i + CHUNK_SIZE);
-        try {
-          const batch = db.batch();
-          chunk.forEach(o => {
-            if (o && o.id && !isOrderTombstoned(o.id)) {
-              const ref = db.collection('orders').doc(o._firestoreDocId || o.id);
-              batch.set(ref, {
-                dispatchStatus: 'Delivered',
-                deliveredAt: o.deliveredAt || new Date().toISOString()
-              }, { merge: true });
-            }
-          });
-          batch.commit().catch(err => console.warn('Delivery batch mark notice:', err));
-        } catch (e) {
-          console.warn('Batch write error:', e);
-        }
-      }
     }
 
     // ==================== WEB AUDIO API SOUND & NOTIFICATION ENGINE ====================
@@ -953,7 +974,7 @@
 
       const searchInput = document.getElementById('deliverySearchInput');
       if (searchInput) searchInput.value = '';
-      setFilter('pending');
+      switchDeliveryTab('pending');
 
       setTimeout(() => {
         const card = document.getElementById(`order-card-${targetId}`);
@@ -970,20 +991,38 @@
     function loadInitialOrdersFromCache() {
       try {
         loadDeletedOrderTombstones();
-        const raw = localStorage.getItem(STORAGE_DELIVERY_CACHE) || localStorage.getItem(STORAGE_ORDERS);
+        // Isolated cache ONLY (never reads Sales App STORAGE_ORDERS or customer directory keys)
+        const raw = localStorage.getItem(STORAGE_DELIVERY_CACHE);
         if (raw) {
           const parsed = JSON.parse(raw);
           if (Array.isArray(parsed) && parsed.length > 0) {
-            const cleanOrders = parsed.filter(o => o && o.id && !isOrderTombstoned(o.id));
-            normalizeHistoricalOrders(cleanOrders);
+            const cleanOrders = [];
+            parsed.forEach(item => {
+              const sanitized = sanitizeOrderForDelivery(item);
+              if (sanitized && isDeliveryRelevantOrder(sanitized)) {
+                cleanOrders.push(sanitized);
+              }
+            });
+            activeOrdersMap.clear();
+            deliveredTodayOrdersMap.clear();
+            cleanOrders.forEach(o => {
+              knownDeliveryOrderIds.add(o.id);
+              if (o.dispatchStatus === 'Delivered') {
+                deliveredTodayOrdersMap.set(o.id, o);
+              } else {
+                activeOrdersMap.set(o.id, o);
+              }
+            });
             allOrders = cleanOrders;
-            cleanOrders.forEach(o => { if (o && o.id) knownDeliveryOrderIds.add(o.id); });
             sortOrders(allOrders);
+            try {
+              localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
+            } catch (e) {}
             populateTownDropdown();
             updateTabBadges();
             renderOrders();
             updateSyncStatus('syncing', 'Syncing cloud...');
-            return true;
+            return cleanOrders.length > 0;
           }
         }
       } catch (e) {
@@ -1056,7 +1095,7 @@
     }
 
     function initFirebase() {
-      // 1. Instantly display orders from local cache if available (0ms load time!)
+      // 1. Instantly display active/today orders from isolated delivery cache
       const hasCached = loadInitialOrdersFromCache();
 
       if (typeof firebase === 'undefined') {
@@ -1074,32 +1113,39 @@
         }
         db = firebase.firestore();
 
-        db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-          console.warn('Persistence mode notice:', err ? err.code : 'disabled');
-        });
+        // Direct independent live connection per tab with auto-detected long-polling
+        // (avoids multi-tab IndexedDB lease stalls while localStorage handles instant 0ms hydration)
+        try {
+          db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+        } catch (settingsErr) {
+          console.warn('Firestore settings notice:', settingsErr ? settingsErr.message : 'default');
+        }
 
         updateSyncStatus('syncing', 'Connecting Cloud...');
 
-        // 2. Start realtime listener
-        listenToOrders();
-        listenToDeliverySupportChats();
+        // 2. Start scoped delivery-only realtime listeners once cleanly (NO full historical ledger or admin app_config)
+        listenToOrders(false);
+        listenToDeliverySupportChats(false);
+        syncDeliveryConfigFromCloud(false);
 
-        // 3. Concurrently trigger direct get() fetch so we don't depend solely on onSnapshot stream
+        // 3. Concurrently trigger scoped direct server get() fetches for orders & chats
         fetchOrdersDirect();
-        syncQuickRemarksFromCloud();
-        syncLogoFromCloud();
+        fetchDeliverySupportChatsDirect();
 
-        // 4. REST fallback after 2.5 seconds if cloud connection is lagging
+        // 4. Scoped REST fallback after 2.5 seconds if cloud connection is lagging
         setTimeout(() => {
           if (allOrders.length === 0) {
             fetchOrdersFromRestFallback();
           }
         }, 2500);
 
-        // 5. Timeout watchdog: If after 6 seconds still 0 orders, show retry UI
+        // 5. Timeout watchdog: If after 6 seconds still 0 orders, check active state
         setTimeout(() => {
-          if (allOrders.length === 0) {
-            showEmptyOrErrorState('Connecting to cloud is taking longer than usual.');
+          if (allOrders.length === 0 && activeOrdersMap.size === 0 && deliveredTodayOrdersMap.size === 0) {
+            updateSyncStatus('synced', 'Live Synced (0 Pending)');
+            populateTownDropdown();
+            updateTabBadges();
+            renderOrders();
           }
         }, 6000);
 
@@ -1113,22 +1159,21 @@
       }
     }
 
-    function processIncomingOrdersSnapshot(snapshot) {
-      if (!snapshot) return;
+    function rebuildMergedDeliveryOrders() {
       loadDeletedOrderTombstones();
-      const loaded = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d && d.id) {
-          if (isOrderTombstoned(d.id)) {
-            return;
-          }
-          d._firestoreDocId = doc.id;
-          loaded.push(d);
+      const merged = new Map();
+      deliveredTodayOrdersMap.forEach((ord, id) => {
+        if (ord && isDeliveryRelevantOrder(ord)) {
+          merged.set(id, ord);
+        }
+      });
+      activeOrdersMap.forEach((ord, id) => {
+        if (ord && isDeliveryRelevantOrder(ord)) {
+          merged.set(id, ord);
         }
       });
 
-      const needsCloudSync = normalizeHistoricalOrders(loaded);
+      const loaded = Array.from(merged.values());
       sortOrders(loaded);
       allOrders = loaded;
 
@@ -1136,124 +1181,203 @@
         localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(loaded));
       } catch (e) {}
 
-      if (needsCloudSync.length > 0 && db) {
-        syncOrdersDispatchStatusToFirestore(needsCloudSync);
-      }
-
       updateSyncStatus('synced', 'Live Synced 🟢');
       populateTownDropdown();
       updateTabBadges();
       renderOrders();
     }
 
-    let deliveryOrdersUnsubscribe = null;
+    function applyActiveOrdersSnapshot(snapshot) {
+      if (!snapshot) return;
+      loadDeletedOrderTombstones();
+      activeOrdersMap.clear();
+      snapshot.forEach(doc => {
+        const clean = sanitizeOrderForDelivery(doc.data(), doc.id);
+        if (clean && isDeliveryRelevantOrder(clean) && clean.dispatchStatus !== 'Delivered') {
+          activeOrdersMap.set(clean.id, clean);
+        }
+      });
+      rebuildMergedDeliveryOrders();
+    }
+
+    function applyDeliveredTodaySnapshot(snapshot) {
+      if (!snapshot) return;
+      loadDeletedOrderTombstones();
+      deliveredTodayOrdersMap.clear();
+      snapshot.forEach(doc => {
+        const clean = sanitizeOrderForDelivery(doc.data(), doc.id);
+        if (clean && clean.dispatchStatus === 'Delivered' && isDeliveryRelevantOrder(clean)) {
+          deliveredTodayOrdersMap.set(clean.id, clean);
+        }
+      });
+      rebuildMergedDeliveryOrders();
+    }
+
+    let deliveryActiveOrdersUnsubscribe = null;
+    let deliveryDeliveredTodayUnsubscribe = null;
     let reconnectOrdersTimeout = null;
     const previousOrdersStateMap = {};
+    let isInitialDeliveredTodayLoad = true;
 
-    function listenToOrders() {
+    function listenToOrders(forceReattach = false) {
       if (!db) return;
-      if (deliveryOrdersUnsubscribe) {
-        try { deliveryOrdersUnsubscribe(); } catch (e) {}
-        deliveryOrdersUnsubscribe = null;
+      if (forceReattach) {
+        if (deliveryActiveOrdersUnsubscribe) {
+          try { deliveryActiveOrdersUnsubscribe(); } catch (e) {}
+          deliveryActiveOrdersUnsubscribe = null;
+        }
+        if (deliveryDeliveredTodayUnsubscribe) {
+          try { deliveryDeliveredTodayUnsubscribe(); } catch (e) {}
+          deliveryDeliveredTodayUnsubscribe = null;
+        }
       }
       if (reconnectOrdersTimeout) {
         clearTimeout(reconnectOrdersTimeout);
         reconnectOrdersTimeout = null;
       }
 
-      deliveryOrdersUnsubscribe = db.collection('orders').onSnapshot(snapshot => {
-        updateSyncStatus('synced', 'Live Synced 🟢');
-        if (isInitialDeliveryOrdersLoad) {
-          snapshot.forEach(doc => {
-            const d = doc.data();
-            if (d && d.id) {
-              if (isOrderTombstoned(d.id)) return;
-              d._firestoreDocId = doc.id;
-              knownDeliveryOrderIds.add(d.id);
-              previousOrdersStateMap[d.id] = {
-                updatedAt: d.updatedAt || d.createdAt || '',
-                dispatchStatus: d.dispatchStatus || '',
-                itemsHash: JSON.stringify(d.items || []),
-                bagQty: (d.bagQty !== undefined) ? d.bagQty : (d.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
-                notes: d.notes || '',
-                rate: d.perKgRate || 0
-              };
-            }
-          });
-          isInitialDeliveryOrdersLoad = false;
-        } else {
-          // Detect real-time additions and modifications
-          snapshot.docChanges().forEach(change => {
-            const order = change.doc.data();
-            if (!order || !order.id) return;
-            if (isOrderTombstoned(order.id)) return;
-
-            if (change.type === 'added') {
-              if (!knownDeliveryOrderIds.has(order.id)) {
-                knownDeliveryOrderIds.add(order.id);
-                previousOrdersStateMap[order.id] = {
-                  updatedAt: order.updatedAt || order.createdAt || '',
-                  dispatchStatus: order.dispatchStatus || '',
-                  itemsHash: JSON.stringify(order.items || []),
-                  bagQty: (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
-                  notes: order.notes || '',
-                  rate: order.perKgRate || 0
-                };
-                if (order.dispatchStatus !== 'Delivered') {
-                  triggerNewOrderAlert(order);
+      // Query 1: Strictly active Pending / OutForDelivery orders (attach only if missing)
+      if (!deliveryActiveOrdersUnsubscribe) {
+        deliveryActiveOrdersUnsubscribe = db.collection('orders')
+          .where('dispatchStatus', 'in', ['Pending', 'OutForDelivery'])
+          .onSnapshot(snapshot => {
+            updateSyncStatus('synced', 'Live Synced 🟢');
+            if (isInitialDeliveryOrdersLoad) {
+              snapshot.forEach(doc => {
+                const d = sanitizeOrderForDelivery(doc.data(), doc.id);
+                if (d && isDeliveryRelevantOrder(d)) {
+                  knownDeliveryOrderIds.add(d.id);
+                  previousOrdersStateMap[d.id] = {
+                    updatedAt: d.updatedAt || d.createdAt || '',
+                    dispatchStatus: d.dispatchStatus || '',
+                    deliveryStatus: d.deliveryStatus || '',
+                    deliveryNote: d.deliveryNote || '',
+                    customerName: getCustName(d),
+                    itemsHash: JSON.stringify(d.items || []),
+                    bagQty: (d.bagQty !== undefined) ? d.bagQty : (d.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+                    notes: d.notes || '',
+                    rate: d.perKgRate || 0
+                  };
                 }
-              }
-            } else if (change.type === 'modified') {
-              const prev = previousOrdersStateMap[order.id] || {};
-              const currentItemsHash = JSON.stringify(order.items || []);
-              const currentBagQty = (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
-              const currentUpdatedAt = order.updatedAt || '';
+              });
+              isInitialDeliveryOrdersLoad = false;
+            } else {
+              // Detect real-time additions, edits, and removals on active orders
+              snapshot.docChanges().forEach(change => {
+                const raw = change.doc.data();
+                if (!raw || !raw.id) return;
+                if (isOrderTombstoned(raw.id)) return;
 
-              const isContentChanged = (
-                (currentUpdatedAt && currentUpdatedAt !== prev.updatedAt) ||
-                currentItemsHash !== prev.itemsHash ||
-                currentBagQty !== prev.bagQty ||
-                (order.notes || '') !== (prev.notes || '') ||
-                (order.perKgRate || 0) !== (prev.rate || 0)
-              );
+                if (change.type === 'removed') {
+                  activeOrdersMap.delete(raw.id);
+                  return;
+                }
 
-              previousOrdersStateMap[order.id] = {
-                updatedAt: currentUpdatedAt,
-                dispatchStatus: order.dispatchStatus || '',
-                itemsHash: currentItemsHash,
-                bagQty: currentBagQty,
-                notes: order.notes || '',
-                rate: order.perKgRate || 0
-              };
+                const order = sanitizeOrderForDelivery(raw, change.doc.id);
+                if (!order || !isDeliveryRelevantOrder(order)) return;
 
-              if (isContentChanged && order.dispatchStatus !== 'Delivered') {
-                triggerOrderUpdatedAlert(order);
-              }
-            } else if (change.type === 'removed') {
-              knownDeliveryOrderIds.delete(order.id);
-              delete previousOrdersStateMap[order.id];
-              allOrders = allOrders.filter(o => o && o.id !== order.id);
-              try {
-                localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
-              } catch (e) {}
-              populateTownDropdown();
-              updateTabBadges();
-              renderOrders();
+                if (change.type === 'added') {
+                  if (!knownDeliveryOrderIds.has(order.id)) {
+                    knownDeliveryOrderIds.add(order.id);
+                    previousOrdersStateMap[order.id] = {
+                      updatedAt: order.updatedAt || order.createdAt || '',
+                      dispatchStatus: order.dispatchStatus || '',
+                      deliveryStatus: order.deliveryStatus || '',
+                      deliveryNote: order.deliveryNote || '',
+                      customerName: getCustName(order),
+                      itemsHash: JSON.stringify(order.items || []),
+                      bagQty: (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+                      notes: order.notes || '',
+                      rate: order.perKgRate || 0
+                    };
+                    if (order.dispatchStatus !== 'Delivered') {
+                      triggerNewOrderAlert(order);
+                    }
+                  }
+                } else if (change.type === 'modified') {
+                  const prev = previousOrdersStateMap[order.id] || {};
+                  const currentItemsHash = JSON.stringify(order.items || []);
+                  const currentBagQty = (order.bagQty !== undefined) ? order.bagQty : (order.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
+                  const currentUpdatedAt = order.updatedAt || '';
+                  const currentCustName = getCustName(order);
+
+                  const isContentChanged = (
+                    (currentUpdatedAt && currentUpdatedAt !== prev.updatedAt) ||
+                    currentItemsHash !== prev.itemsHash ||
+                    currentBagQty !== prev.bagQty ||
+                    (order.notes || '') !== (prev.notes || '') ||
+                    (order.deliveryNote || '') !== (prev.deliveryNote || '') ||
+                    (order.deliveryStatus || '') !== (prev.deliveryStatus || '') ||
+                    currentCustName !== (prev.customerName || '') ||
+                    (order.perKgRate || 0) !== (prev.rate || 0)
+                  );
+
+                  previousOrdersStateMap[order.id] = {
+                    updatedAt: currentUpdatedAt,
+                    dispatchStatus: order.dispatchStatus || '',
+                    deliveryStatus: order.deliveryStatus || '',
+                    deliveryNote: order.deliveryNote || '',
+                    customerName: currentCustName,
+                    itemsHash: currentItemsHash,
+                    bagQty: currentBagQty,
+                    notes: order.notes || '',
+                    rate: order.perKgRate || 0
+                  };
+
+                  if (isContentChanged && order.dispatchStatus !== 'Delivered') {
+                    triggerOrderUpdatedAlert(order);
+                  }
+                }
+              });
             }
+            applyActiveOrdersSnapshot(snapshot);
+          }, err => {
+            console.warn('Active orders onSnapshot error, scheduling auto-reconnect:', err);
+            deliveryActiveOrdersUnsubscribe = null;
+            updateSyncStatus('syncing', 'Reconnecting...');
+            reconnectOrdersTimeout = setTimeout(() => {
+              try {
+                if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+              } catch (e) {}
+              listenToOrders(false);
+            }, 2000);
           });
-        }
-        processIncomingOrdersSnapshot(snapshot);
-      }, err => {
-        console.warn('Orders onSnapshot error, scheduling auto-reconnect:', err);
-        updateSyncStatus('syncing', 'Reconnecting...');
-        // Auto-reconnect with 2.5s backoff
-        reconnectOrdersTimeout = setTimeout(() => {
-          try {
-            if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-          } catch (e) {}
-          listenToOrders();
-        }, 2500);
-      });
+      }
+
+      // Query 2: Strictly Today's Completed Deliveries (attach only if missing)
+      if (!deliveryDeliveredTodayUnsubscribe) {
+        deliveryDeliveredTodayUnsubscribe = db.collection('orders')
+          .where('deliveredAt', '>=', getDeliveryTodayWindowStartIso())
+          .onSnapshot(snapshot => {
+            snapshot.forEach(doc => {
+              const d = sanitizeOrderForDelivery(doc.data(), doc.id);
+              if (d && d.id) {
+                knownDeliveryOrderIds.add(d.id);
+                previousOrdersStateMap[d.id] = {
+                  updatedAt: d.updatedAt || d.createdAt || '',
+                  dispatchStatus: d.dispatchStatus || '',
+                  deliveryStatus: d.deliveryStatus || '',
+                  deliveryNote: d.deliveryNote || '',
+                  customerName: getCustName(d),
+                  itemsHash: JSON.stringify(d.items || []),
+                  bagQty: (d.bagQty !== undefined) ? d.bagQty : (d.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+                  notes: d.notes || '',
+                  rate: d.perKgRate || 0
+                };
+              }
+            });
+            isInitialDeliveredTodayLoad = false;
+            applyDeliveredTodaySnapshot(snapshot);
+          }, err => {
+            console.warn('Delivered today onSnapshot error, scheduling auto-reconnect:', err);
+            deliveryDeliveredTodayUnsubscribe = null;
+            setTimeout(() => {
+              if (db && !deliveryDeliveredTodayUnsubscribe) {
+                listenToOrders(false);
+              }
+            }, 2000);
+          });
+      }
     }
 
     function fetchOrdersDirect() {
@@ -1261,23 +1385,29 @@
         fetchOrdersFromRestFallback();
         return;
       }
-      // Force server source first, fallback to default cache if network offline
-      db.collection('orders').get({ source: 'server' }).catch(() => db.collection('orders').get()).then(snapshot => {
-        if (!snapshot.empty) {
-          snapshot.forEach(doc => {
+      const pendingQuery = db.collection('orders').where('dispatchStatus', 'in', ['Pending', 'OutForDelivery']);
+      const todayQuery = db.collection('orders').where('deliveredAt', '>=', getDeliveryTodayWindowStartIso());
+
+      Promise.all([
+        pendingQuery.get({ source: 'server' }).catch(() => pendingQuery.get()),
+        todayQuery.get({ source: 'server' }).catch(() => todayQuery.get())
+      ]).then(([pendingSnap, todaySnap]) => {
+        if (pendingSnap) {
+          pendingSnap.forEach(doc => {
             const d = doc.data();
             if (d && d.id) knownDeliveryOrderIds.add(d.id);
           });
-          processIncomingOrdersSnapshot(snapshot);
-        } else if (allOrders.length === 0) {
-          allOrders = [];
-          updateSyncStatus('synced', 'Live Synced (0 Orders)');
-          populateTownDropdown();
-          updateTabBadges();
-          renderOrders();
+          applyActiveOrdersSnapshot(pendingSnap);
+        }
+        if (todaySnap) {
+          todaySnap.forEach(doc => {
+            const d = doc.data();
+            if (d && d.id) knownDeliveryOrderIds.add(d.id);
+          });
+          applyDeliveredTodaySnapshot(todaySnap);
         }
       }).catch(err => {
-        console.warn('Direct get orders notice:', err);
+        console.warn('Direct scoped get orders notice:', err);
         fetchOrdersFromRestFallback();
       });
     }
@@ -1285,10 +1415,44 @@
     async function fetchOrdersFromRestFallback() {
       if (allOrders.length > 0) return;
       try {
-        const resp = await fetch('https://firestore.googleapis.com/v1/projects/third-man-1998/databases/(default)/documents/orders?pageSize=300');
-        if (!resp.ok) return;
-        const json = await resp.json();
-        if (!json || !Array.isArray(json.documents) || json.documents.length === 0) return;
+        const restUrl = 'https://firestore.googleapis.com/v1/projects/third-man-1998/databases/(default)/documents:runQuery';
+        const qPending = {
+          structuredQuery: {
+            from: [{ collectionId: 'orders' }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'dispatchStatus' },
+                op: 'IN',
+                value: { arrayValue: { values: [{ stringValue: 'Pending' }, { stringValue: 'OutForDelivery' }] } }
+              }
+            }
+          }
+        };
+        const qDeliveredToday = {
+          structuredQuery: {
+            from: [{ collectionId: 'orders' }],
+            where: {
+              fieldFilter: {
+                field: { fieldPath: 'deliveredAt' },
+                op: 'GREATER_THAN_OR_EQUAL',
+                value: { stringValue: getDeliveryTodayWindowStartIso() }
+              }
+            }
+          }
+        };
+
+        const [resp1, resp2] = await Promise.all([
+          fetch(restUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(qPending) }),
+          fetch(restUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(qDeliveredToday) })
+        ]);
+
+        const rows1 = resp1.ok ? await resp1.json() : [];
+        const rows2 = resp2.ok ? await resp2.json() : [];
+        const docs = [...(Array.isArray(rows1) ? rows1 : []), ...(Array.isArray(rows2) ? rows2 : [])]
+          .map(r => r && r.document)
+          .filter(Boolean);
+
+        if (docs.length === 0) return;
 
         function parseRestVal(v) {
           if (!v) return null;
@@ -1312,30 +1476,35 @@
           return null;
         }
 
-        const restOrders = json.documents.map(doc => {
+        const restOrders = [];
+        docs.forEach(doc => {
           const fields = doc.fields || {};
           const obj = {};
           for (const k in fields) {
             obj[k] = parseRestVal(fields[k]);
           }
-          return obj;
-        }).filter(o => o && o.id);
+          const docId = doc.name ? doc.name.split('/').pop() : obj.id;
+          const clean = sanitizeOrderForDelivery(obj, docId);
+          if (clean && isDeliveryRelevantOrder(clean)) {
+            restOrders.push(clean);
+          }
+        });
 
         if (restOrders.length > 0 && allOrders.length === 0) {
-          normalizeHistoricalOrders(restOrders);
-          restOrders.forEach(o => { if (o && o.id) knownDeliveryOrderIds.add(o.id); });
-          sortOrders(restOrders);
-          allOrders = restOrders;
-          try {
-            localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(restOrders));
-          } catch (e) {}
-          updateSyncStatus('synced', 'Live Synced 🟢');
-          populateTownDropdown();
-          updateTabBadges();
-          renderOrders();
+          activeOrdersMap.clear();
+          deliveredTodayOrdersMap.clear();
+          restOrders.forEach(o => {
+            knownDeliveryOrderIds.add(o.id);
+            if (o.dispatchStatus === 'Delivered') {
+              deliveredTodayOrdersMap.set(o.id, o);
+            } else {
+              activeOrdersMap.set(o.id, o);
+            }
+          });
+          rebuildMergedDeliveryOrders();
         }
       } catch (err) {
-        console.warn('REST fallback fetch notice:', err);
+        console.warn('REST scoped fallback fetch notice:', err);
       }
     }
 
@@ -1399,22 +1568,19 @@
     }
 
     function switchDeliveryTab(tab) {
-      currentTab = tab;
+      currentTab = (tab === 'delivered_today') ? 'delivered_today' : 'pending';
       const btnPending = document.getElementById('tabBtnPending');
       const btnDelivered = document.getElementById('tabBtnDelivered');
-      const btnAll = document.getElementById('tabBtnAll');
 
-      [btnPending, btnDelivered, btnAll].forEach(btn => {
+      [btnPending, btnDelivered].forEach(btn => {
         if (!btn) return;
-        btn.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200';
+        btn.className = 'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-100 text-slate-600 hover:bg-slate-200';
       });
 
-      if (tab === 'pending') {
-        btnPending.className = 'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-blue-600 text-white shadow-sm';
-      } else if (tab === 'delivered_today') {
-        btnDelivered.className = 'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-sm';
+      if (currentTab === 'pending') {
+        if (btnPending) btnPending.className = 'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-blue-600 text-white shadow-sm';
       } else {
-        btnAll.className = 'py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-slate-900 text-white shadow-sm';
+        if (btnDelivered) btnDelivered.className = 'flex-1 py-2 px-3 rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 bg-emerald-600 text-white shadow-sm';
       }
 
       renderOrders();
@@ -1435,38 +1601,28 @@
       renderOrders();
     }
 
-    function isDeliveredToday(order) {
-      if (order.dispatchStatus !== 'Delivered') return false;
-      if (!order.deliveredAt) return false;
-      const today = new Date().toISOString().split('T')[0];
-      return String(order.deliveredAt).startsWith(today);
-    }
-
     function updateTabBadges() {
       const pendingCount = allOrders.filter(o => o.dispatchStatus !== 'Delivered').length;
       const deliveredCount = allOrders.filter(isDeliveredToday).length;
-      const allCount = allOrders.length;
 
       const pEl = document.getElementById('badgePendingCount');
       const dEl = document.getElementById('badgeDeliveredCount');
-      const aEl = document.getElementById('badgeAllCount');
 
       if (pEl) pEl.textContent = pendingCount;
       if (dEl) dEl.textContent = deliveredCount;
-      if (aEl) aEl.textContent = allCount;
     }
 
     function renderOrders() {
       const container = document.getElementById('ordersListContainer');
       if (!container) return;
 
-      const todayStr = new Date().toISOString().split('T')[0];
-
       const filtered = allOrders.filter(o => {
-        // Tab Filter
+        if (!isDeliveryRelevantOrder(o)) return false;
+
+        // Tab Filter (Strictly Pending Deliveries vs Delivered Today)
         if (currentTab === 'pending') {
           if (o.dispatchStatus === 'Delivered') return false;
-        } else if (currentTab === 'delivered_today') {
+        } else {
           if (!isDeliveredToday(o)) return false;
         }
 
@@ -1497,7 +1653,7 @@
         return true;
       });
 
-      // Calculate Load Totals
+      // Calculate Active Delivery Load Totals
       const totalFilteredBags = filtered.reduce((s, o) => {
         return s + ((o.bagQty !== undefined) ? (parseFloat(o.bagQty) || 0) : (o.items || []).reduce((is, it) => is + (parseFloat(it.bagQty) || 0), 0));
       }, 0);
@@ -1514,16 +1670,7 @@
       if (statBagsEl) statBagsEl.textContent = `${Math.round(totalFilteredBags).toLocaleString('en-IN')} Bags`;
       if (statKgEl) statKgEl.innerHTML = `${Math.round(totalFilteredKg).toLocaleString('en-IN')} <span class="text-xs text-cyan-300 font-bold">kg</span>`;
       if (statTitleEl) {
-        statTitleEl.textContent = currentTab === 'pending' ? 'Pending Load Summary' : (currentTab === 'delivered_today' ? 'Delivered Today Summary' : 'Total Load Summary');
-      }
-
-      const btnMarkAll = document.getElementById('btnMarkAllPendingDelivered');
-      if (btnMarkAll) {
-        if (currentTab === 'pending' && filtered.length > 0) {
-          btnMarkAll.classList.remove('hidden');
-        } else {
-          btnMarkAll.classList.add('hidden');
-        }
+        statTitleEl.textContent = currentTab === 'pending' ? 'Pending Load Summary' : 'Delivered Today Summary';
       }
 
       if (filtered.length === 0) {
@@ -1532,9 +1679,6 @@
         if (currentTab === 'delivered_today') {
           emptyTitle = 'No Deliveries Completed Today';
           emptyDesc = 'Orders marked as Delivered today will be recorded here.';
-        } else if (currentTab === 'all') {
-          emptyTitle = 'No Orders Found';
-          emptyDesc = 'Try changing search keywords or filters.';
         }
 
         container.className = 'space-y-3';
@@ -1945,35 +2089,15 @@
 
     function getCustLandmark(o) {
       if (!o || !o.customer) return '';
-      let lm = '';
       if (typeof o.customer === 'object') {
         if (o.customer.landmark && typeof o.customer.landmark === 'string' && o.customer.landmark.trim()) {
-          lm = o.customer.landmark.trim();
-        } else if (o.customer.place && typeof o.customer.place === 'string' && o.customer.place.trim() && o.customer.place !== o.customer.town && o.customer.place !== o.customer.area) {
-          lm = o.customer.place.trim();
+          return o.customer.landmark.trim();
+        }
+        if (o.customer.place && typeof o.customer.place === 'string' && o.customer.place.trim() && o.customer.place !== o.customer.town && o.customer.place !== o.customer.area) {
+          return o.customer.place.trim();
         }
       }
-      if (!lm) {
-        try {
-          const rawCusts = localStorage.getItem('biriyani_rice_customers');
-          if (rawCusts) {
-            const custs = JSON.parse(rawCusts);
-            if (Array.isArray(custs)) {
-              const cName = getCustName(o).toLowerCase();
-              const cId = (typeof o.customer === 'object' && o.customer.id) ? o.customer.id : null;
-              const found = custs.find(c => (cId && c.id === cId) || (c.name && c.name.toLowerCase() === cName));
-              if (found) {
-                if (found.landmark && typeof found.landmark === 'string' && found.landmark.trim()) {
-                  lm = found.landmark.trim();
-                } else if (found.place && typeof found.place === 'string' && found.place.trim() && found.place !== found.town && found.place !== found.area) {
-                  lm = found.place.trim();
-                }
-              }
-            }
-          }
-        } catch (e) {}
-      }
-      return lm || '';
+      return '';
     }
 
     function getCustPhone(o) {
@@ -2007,9 +2131,10 @@
     function setOutForDelivery(orderId) {
       if (!db || !orderId) return;
       const o = allOrders.find(item => item.id === orderId);
-      if (!o) return;
+      if (!o || isOrderTombstoned(orderId)) return;
+      const targetDocId = o._firestoreDocId || orderId;
 
-      db.collection('orders').doc(orderId).update({
+      db.collection('orders').doc(targetDocId).update({
         dispatchStatus: 'OutForDelivery'
       }).then(() => {
         showToast(`🚚 Order ${orderId} marked: Out for Delivery`);
@@ -2020,8 +2145,12 @@
     }
 
     function revertToPending(orderId) {
+      if (!db || !orderId) return;
+      const o = allOrders.find(item => item.id === orderId);
+      if (!o || !isDeliveredToday(o)) return;
       if (!confirm(`Move ${orderId} back to Pending Deliveries?`)) return;
-      db.collection('orders').doc(orderId).update({
+      const targetDocId = o._firestoreDocId || orderId;
+      db.collection('orders').doc(targetDocId).update({
         dispatchStatus: 'Pending',
         deliveredAt: null
       }).then(() => {
@@ -2069,37 +2198,34 @@
       renderQuickRemarkChips();
     }
 
-    function syncQuickRemarksFromCloud() {
+    let deliveryConfigUnsubscribe = null;
+    function syncDeliveryConfigFromCloud(forceReattach = false) {
       if (!db) return;
+      if (deliveryConfigUnsubscribe && !forceReattach) return;
+      if (deliveryConfigUnsubscribe) {
+        try { deliveryConfigUnsubscribe(); } catch (e) {}
+        deliveryConfigUnsubscribe = null;
+      }
       try {
-        db.collection('settings').doc('delivery_config').get().then(doc => {
+        // Strictly scoped to delivery_config ONLY (never accesses admin settings/app_config)
+        deliveryConfigUnsubscribe = db.collection('settings').doc('delivery_config').onSnapshot(doc => {
           if (doc && doc.exists) {
-            const data = doc.data();
-            if (data && Array.isArray(data.quickRemarks) && data.quickRemarks.length > 0) {
-              localStorage.setItem(STORAGE_QUICK_REMARKS, JSON.stringify(data.quickRemarks));
+            const cfg = doc.data() || {};
+            if (Array.isArray(cfg.quickRemarks) && cfg.quickRemarks.length > 0) {
+              try {
+                localStorage.setItem(STORAGE_QUICK_REMARKS, JSON.stringify(cfg.quickRemarks));
+              } catch (e) {}
               renderQuickRemarkChips();
             }
-          }
-        }).catch(() => {});
-      } catch (e) {}
-    }
-
-    function syncLogoFromCloud() {
-      if (!db) return;
-      try {
-        db.collection('settings').doc('app_config').onSnapshot(doc => {
-          if (doc && doc.exists) {
-            const cfg = doc.data();
             if (Array.isArray(cfg.deletedOrderTombstones)) {
               mergeDeletedOrderTombstones(cfg.deletedOrderTombstones);
             }
-            if (cfg && cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
+            if (cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
               if (cfg.appLogo.indexOf('data:image/svg') !== -1 || cfg.appLogo.indexOf('<svg') !== -1 || cfg.appLogo.indexOf('logo.svg') !== -1 || cfg.appLogo.indexOf('TM') !== -1) {
-                // Ignore legacy blue TM SVG
                 return;
               }
               try {
-                localStorage.setItem('thirdman_app_logo', cfg.appLogo);
+                localStorage.setItem(STORAGE_DELIVERY_LOGO, cfg.appLogo);
               } catch (e) {}
               const logoEl = document.getElementById('deliveryHeaderLogo');
               if (logoEl) logoEl.src = cfg.appLogo;
@@ -2109,8 +2235,13 @@
               atIcons.forEach(link => { link.href = cfg.appLogo; });
             }
           }
-        }, err => console.warn('Could not sync logo in delivery portal:', err));
-      } catch (e) {}
+        }, err => {
+          console.warn('Could not sync delivery_config:', err);
+          deliveryConfigUnsubscribe = null;
+        });
+      } catch (e) {
+        deliveryConfigUnsubscribe = null;
+      }
     }
 
     function isRemarkSelected(fullText, remark) {
@@ -2360,6 +2491,10 @@
 
     function submitDeliveryAction() {
       if (!db || !activeActionOrderId) return;
+      if (isOrderTombstoned(activeActionOrderId)) {
+        closeDeliveryActionModal();
+        return;
+      }
       const noteInput = document.getElementById('modalDeliveryNoteInput');
       const noteText = (noteInput?.value || '').trim();
 
@@ -2376,21 +2511,23 @@
       markOrderAsViewed(activeActionOrderId, nowIso);
 
       const targetOrder = allOrders.find(o => o.id === activeActionOrderId);
+      const targetDocId = (targetOrder && targetOrder._firestoreDocId) ? targetOrder._firestoreDocId : activeActionOrderId;
+      const submittedOrderId = activeActionOrderId;
+
       if (targetOrder) {
         targetOrder.deliveryNote = noteText;
+        targetOrder.updatedAt = nowIso;
         if (activeActionType === 'delivered') {
           targetOrder.dispatchStatus = 'Delivered';
           targetOrder.deliveredAt = updatePayload.deliveredAt;
+          activeOrdersMap.delete(targetOrder.id);
+          deliveredTodayOrdersMap.set(targetOrder.id, targetOrder);
         }
-        try {
-          localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
-        } catch (e) {}
-        updateTabBadges();
-        renderOrders();
+        rebuildMergedDeliveryOrders();
       }
 
-      db.collection('orders').doc(activeActionOrderId).update(updatePayload).then(() => {
-        showToast(activeActionType === 'delivered' ? `✅ Order ${activeActionOrderId} delivered!` : `📝 Note updated!`);
+      db.collection('orders').doc(targetDocId).update(updatePayload).then(() => {
+        showToast(activeActionType === 'delivered' ? `✅ Order ${submittedOrderId} delivered!` : `📝 Note updated!`);
         closeDeliveryActionModal();
       }).catch(err => {
         console.error('Error saving delivery status:', err);
@@ -2398,46 +2535,40 @@
       });
     }
 
-    function markAllPendingDelivered() {
-      const pendingOrders = allOrders.filter(o => o.dispatchStatus !== 'Delivered');
-      if (pendingOrders.length === 0) {
-        alert('പെൻഡിങ് ഡെലിവറികൾ ഒന്നുമില്ല! (No pending deliveries to mark)');
-        return;
-      }
-      if (!confirm(`നിലവിലുള്ള ${pendingOrders.length} പെൻഡിങ് ഓർഡറുകളും 'Delivered' ആയി മാർക്ക് ചെയ്യണമോ?\n(Mark all ${pendingOrders.length} pending orders as Delivered?)`)) {
-        return;
-      }
-      const nowIso = new Date().toISOString();
-      pendingOrders.forEach(o => {
-        o.dispatchStatus = 'Delivered';
-        o.deliveredAt = o.deliveredAt || nowIso;
-      });
-      try {
-        localStorage.setItem(STORAGE_DELIVERY_CACHE, JSON.stringify(allOrders));
-      } catch (e) {}
-      if (db) {
-        syncOrdersDispatchStatusToFirestore(pendingOrders);
-      }
-      showToast(`✅ ${pendingOrders.length} orders marked as Delivered!`);
-      updateTabBadges();
-      renderOrders();
-    }
-
     // Auto-resync & socket wake-up when returning to delivery portal (e.g. mobile unlock, tab focus, online event)
-    function handleDeliveryConnectionWakeup() {
-      if (document.visibilityState === 'visible' || navigator.onLine) {
-        if (db && typeof db.enableNetwork === 'function') {
-          db.enableNetwork().catch(() => {});
-        }
-        if (!deliveryOrdersUnsubscribe && db) {
-          listenToOrders();
-        }
-        if (!deliveryChatUnsubscribe && db) {
-          listenToDeliverySupportChats();
-        } else if (db) {
-          flushPendingDeliveryChatMessages();
-        }
-        fetchOrdersDirect();
+    let lastDeliveryWakeupAt = 0;
+    function handleDeliveryConnectionWakeup(evt) {
+      const evtType = evt && evt.type ? evt.type : 'manual';
+      if (evtType === 'visibilitychange' && document.visibilityState === 'hidden') {
+        return;
+      }
+      const isOnlineEvent = evtType === 'online';
+      if (document.visibilityState !== 'visible' && !isOnlineEvent) return;
+
+      const now = Date.now();
+      if (now - lastDeliveryWakeupAt < 250) return;
+      lastDeliveryWakeupAt = now;
+
+      if (!db) return;
+      if (typeof db.enableNetwork === 'function') {
+        db.enableNetwork().catch(() => {});
+      }
+      // Attach ONLY missing/errored listeners; leave healthy active listeners intact
+      if (!deliveryActiveOrdersUnsubscribe || !deliveryDeliveredTodayUnsubscribe) {
+        listenToOrders(false);
+      }
+      if (!deliveryConfigUnsubscribe) {
+        syncDeliveryConfigFromCloud(false);
+      }
+      if (!deliveryChatUnsubscribe) {
+        listenToDeliverySupportChats(false);
+      } else {
+        flushPendingDeliveryChatMessages();
+      }
+      // Immediately pull fresh server state for both orders and support chats
+      fetchOrdersDirect();
+      if (typeof fetchDeliverySupportChatsDirect === 'function') {
+        fetchDeliverySupportChatsDirect();
       }
     }
 
@@ -2447,8 +2578,11 @@
     window.addEventListener('pageshow', handleDeliveryConnectionWakeup);
 
     setInterval(() => {
-      if (document.visibilityState === 'visible' && db && typeof db.enableNetwork === 'function') {
-        db.enableNetwork().catch(() => {});
+      if (document.visibilityState === 'visible' && db) {
+        if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+        if (!deliveryActiveOrdersUnsubscribe || !deliveryDeliveredTodayUnsubscribe) listenToOrders(false);
+        if (!deliveryChatUnsubscribe) listenToDeliverySupportChats(false);
+        if (!deliveryConfigUnsubscribe) syncDeliveryConfigFromCloud(false);
       }
     }, 45000);
 
@@ -2651,8 +2785,86 @@
       }
     }
 
-    function listenToDeliverySupportChats() {
+    function applyDeliverySupportChatSnapshot(snapshot) {
+      if (!snapshot) return;
+
+      const fromServer = snapshot.metadata ? !snapshot.metadata.fromCache : true;
+      const loaded = [];
+      let newIncomingAdminCount = 0;
+
+      snapshot.forEach(doc => {
+        const d = doc.data() || {};
+        const iso = normalizeChatTimestampIso(d.timestamp, d.createdAt);
+        const ms = typeof d.createdAtMs === 'number' ? d.createdAtMs : new Date(iso).getTime();
+        const msg = {
+          id: doc.id,
+          text: d.text || '',
+          tag: d.tag || 'Help',
+          sender: d.sender || 'delivery',
+          senderName: d.senderName || 'Delivery Team',
+          timestamp: iso,
+          createdAt: d.createdAt || iso,
+          createdAtMs: isNaN(ms) ? Date.now() : ms,
+          readByAdmin: d.readByAdmin === true,
+          readByDelivery: d.readByDelivery === true
+        };
+        loaded.push(msg);
+
+        // Once confirmed in snapshot (and committed when online), remove from pending map
+        if (pendingOutgoingDeliveryChats.has(doc.id) && fromServer && !(snapshot.metadata && snapshot.metadata.hasPendingWrites)) {
+          pendingOutgoingDeliveryChats.delete(doc.id);
+          savePendingOutgoingChatsToStorage();
+        }
+
+        // Check for new incoming admin message
+        if (!knownDeliveryChatMessageIds.has(doc.id)) {
+          knownDeliveryChatMessageIds.add(doc.id);
+          if (!isInitialDeliveryChatLoad && msg.sender === 'admin') {
+            newIncomingAdminCount++;
+          }
+        }
+      });
+
+      // Merge with any optimistic outgoing messages not yet returned in snapshot
+      deliveryChatMessages = mergeAndSortDeliveryChats(loaded);
+      try {
+        localStorage.setItem(STORAGE_DELIVERY_SUPPORT_CHATS, JSON.stringify(deliveryChatMessages));
+      } catch (e) {}
+
+      // Play alert chime and show toast if admin replied
+      if (!isInitialDeliveryChatLoad && newIncomingAdminCount > 0) {
+        playSupportChatChime();
+        const latestAdminMsg = deliveryChatMessages.filter(m => m.sender === 'admin').slice(-1)[0];
+        if (latestAdminMsg && typeof showToast === 'function') {
+          showToast(`💬 Admin: ${latestAdminMsg.text || 'New message'}`);
+        }
+      }
+
+      updateDeliveryChatBadges();
+
+      if (isDeliveryChatDrawerOpen) {
+        renderDeliveryChatMessages();
+        markDeliveryMessagesAsRead();
+      }
+
+      isInitialDeliveryChatLoad = false;
+    }
+
+    function fetchDeliverySupportChatsDirect() {
+      if (!db) return Promise.resolve();
+      return db.collection('support_chats').get({ source: 'server' })
+        .catch(() => db.collection('support_chats').get())
+        .then(snapshot => {
+          if (snapshot) applyDeliverySupportChatSnapshot(snapshot);
+        })
+        .catch(err => {
+          console.warn('Direct support_chats server fetch notice in delivery portal:', err);
+        });
+    }
+
+    function listenToDeliverySupportChats(forceReattach = false) {
       if (!db) return;
+      if (deliveryChatUnsubscribe && !forceReattach) return;
       if (deliveryChatUnsubscribe) {
         try { deliveryChatUnsubscribe(); } catch (e) {}
         deliveryChatUnsubscribe = null;
@@ -2667,78 +2879,15 @@
 
       try {
         deliveryChatUnsubscribe = db.collection('support_chats').onSnapshot(snapshot => {
-          if (!snapshot) return;
-
-          const fromServer = snapshot.metadata ? !snapshot.metadata.fromCache : true;
-          const loaded = [];
-          const seenSnapshotIds = new Set();
-          let newIncomingAdminCount = 0;
-
-          snapshot.forEach(doc => {
-            const d = doc.data() || {};
-            const iso = normalizeChatTimestampIso(d.timestamp, d.createdAt);
-            const ms = typeof d.createdAtMs === 'number' ? d.createdAtMs : new Date(iso).getTime();
-            const msg = {
-              id: doc.id,
-              text: d.text || '',
-              tag: d.tag || 'Help',
-              sender: d.sender || 'delivery',
-              senderName: d.senderName || 'Delivery Team',
-              timestamp: iso,
-              createdAt: d.createdAt || iso,
-              createdAtMs: isNaN(ms) ? Date.now() : ms,
-              readByAdmin: d.readByAdmin === true,
-              readByDelivery: d.readByDelivery === true
-            };
-            loaded.push(msg);
-            seenSnapshotIds.add(doc.id);
-
-            // Once confirmed in snapshot (and committed when online), remove from pending map
-            if (pendingOutgoingDeliveryChats.has(doc.id) && fromServer && !(snapshot.metadata && snapshot.metadata.hasPendingWrites)) {
-              pendingOutgoingDeliveryChats.delete(doc.id);
-              savePendingOutgoingChatsToStorage();
-            }
-
-            // Check for new incoming admin message
-            if (!knownDeliveryChatMessageIds.has(doc.id)) {
-              knownDeliveryChatMessageIds.add(doc.id);
-              if (!isInitialDeliveryChatLoad && msg.sender === 'admin') {
-                newIncomingAdminCount++;
-              }
-            }
-          });
-
-          // Merge with any optimistic outgoing messages not yet returned in snapshot (prevents disappearing on stale PWA cache)
-          deliveryChatMessages = mergeAndSortDeliveryChats(loaded);
-          try {
-            localStorage.setItem(STORAGE_DELIVERY_SUPPORT_CHATS, JSON.stringify(deliveryChatMessages));
-          } catch (e) {}
-
-          // Play alert chime and show toast if admin replied
-          if (!isInitialDeliveryChatLoad && newIncomingAdminCount > 0) {
-            playSupportChatChime();
-            const latestAdminMsg = deliveryChatMessages.filter(m => m.sender === 'admin').slice(-1)[0];
-            if (latestAdminMsg && typeof showToast === 'function') {
-              showToast(`💬 Admin: ${latestAdminMsg.text || 'New message'}`);
-            }
-          }
-
-          updateDeliveryChatBadges();
-
-          if (isDeliveryChatDrawerOpen) {
-            renderDeliveryChatMessages();
-            markDeliveryMessagesAsRead();
-          }
-
-          isInitialDeliveryChatLoad = false;
+          applyDeliverySupportChatSnapshot(snapshot);
         }, err => {
           console.warn('support_chats snapshot error in delivery portal:', err);
           deliveryChatUnsubscribe = null;
           reconnectChatTimeout = setTimeout(() => {
             if (db && !deliveryChatUnsubscribe) {
-              listenToDeliverySupportChats();
+              listenToDeliverySupportChats(true);
             }
-          }, 3000);
+          }, 2000);
         });
       } catch (err) {
         console.warn('Error starting support_chats listener in delivery portal:', err);
@@ -2784,9 +2933,12 @@
       isDeliveryChatDrawerOpen = true;
 
       if (db && !deliveryChatUnsubscribe) {
-        listenToDeliverySupportChats();
+        listenToDeliverySupportChats(false);
       } else if (db) {
         flushPendingDeliveryChatMessages();
+      }
+      if (db && typeof fetchDeliverySupportChatsDirect === 'function') {
+        fetchDeliverySupportChatsDirect();
       }
 
       renderDeliveryChatMessages();
@@ -3013,13 +3165,25 @@
     window.loadCachedDeliverySupportChats = loadCachedDeliverySupportChats;
     window.scrollDeliveryChatToBottom = scrollDeliveryChatToBottom;
     window.flushPendingDeliveryChatMessages = flushPendingDeliveryChatMessages;
-    window.setDeliveryChatMessagesForTest = function(arr) {
-      deliveryChatMessages = mergeAndSortDeliveryChats(arr);
-      updateDeliveryChatBadges();
-      if (isDeliveryChatDrawerOpen) renderDeliveryChatMessages();
-    };
-    window.getDeliveryChatMessages = function() {
-      return deliveryChatMessages;
+    window.applyDeliverySupportChatSnapshot = applyDeliverySupportChatSnapshot;
+    window.fetchDeliverySupportChatsDirect = fetchDeliverySupportChatsDirect;
+    window.handleDeliveryConnectionWakeup = handleDeliveryConnectionWakeup;
+    window.listenToOrders = listenToOrders;
+    window.listenToDeliverySupportChats = listenToDeliverySupportChats;
+    window.syncDeliveryConfigFromCloud = syncDeliveryConfigFromCloud;
+    window.getDeliveryChatMessages = () => deliveryChatMessages;
+    window.setDeliveryRealtimeDbForTest = (mockDb) => { db = mockDb; };
+    window.getDeliveryRealtimeDbForTest = () => db;
+    window.resetDeliveryRealtimeHandlesForTest = () => {
+      if (typeof deliveryActiveOrdersUnsubscribe === 'function') { try { deliveryActiveOrdersUnsubscribe(); } catch (e) {} }
+      deliveryActiveOrdersUnsubscribe = null;
+      if (typeof deliveryDeliveredTodayUnsubscribe === 'function') { try { deliveryDeliveredTodayUnsubscribe(); } catch (e) {} }
+      deliveryDeliveredTodayUnsubscribe = null;
+      if (typeof deliveryChatUnsubscribe === 'function') { try { deliveryChatUnsubscribe(); } catch (e) {} }
+      deliveryChatUnsubscribe = null;
+      if (typeof deliveryConfigUnsubscribe === 'function') { try { deliveryConfigUnsubscribe(); } catch (e) {} }
+      deliveryConfigUnsubscribe = null;
+      lastDeliveryWakeupAt = 0;
     };
 
     function startDeliveryApp() {
@@ -3029,9 +3193,9 @@
       initQuickRemarksDelegation();
       renderQuickRemarkChips();
       try {
-        let customLogo = localStorage.getItem('thirdman_app_logo');
+        let customLogo = localStorage.getItem(STORAGE_DELIVERY_LOGO);
         if (customLogo && (customLogo.indexOf('data:image/svg') !== -1 || customLogo.indexOf('<svg') !== -1 || customLogo.indexOf('logo.svg') !== -1 || customLogo.indexOf('TM') !== -1)) {
-          localStorage.removeItem('thirdman_app_logo');
+          localStorage.removeItem(STORAGE_DELIVERY_LOGO);
           customLogo = null;
         }
         const logoEl = document.getElementById('deliveryHeaderLogo');

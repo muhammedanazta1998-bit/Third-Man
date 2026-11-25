@@ -1291,6 +1291,137 @@ window.onerror = function(msg, url, line, col, err) {
   clearOrResolveSupportChat();
   window.confirm = origConfirm;
 
+  // ==========================================
+  // TEST 20: Real-Time Sync Listeners, Instant UI Render & Wakeup
+  // ==========================================
+  log("\n--- TEST 20: Real-Time Sync Listeners, Instant UI Render & Wakeup ---");
+  assert(typeof setupFirestoreRealtimeListeners === 'function', "setupFirestoreRealtimeListeners function exists");
+  assert(typeof applyRemoteOrdersSnapshotList === 'function', "applyRemoteOrdersSnapshotList function exists");
+  assert(typeof refreshMainRealtimeFromServer === 'function', "refreshMainRealtimeFromServer function exists");
+  assert(typeof handleMainAppConnectionWakeup === 'function', "handleMainAppConnectionWakeup function exists");
+  assert(typeof applyAdminSupportChatSnapshot === 'function', "applyAdminSupportChatSnapshot function exists");
+
+  const snapCounts = { orders: 0, customers: 0, settings: 0, dailyVisits: 0, dailyReports: 0, support_chats: 0 };
+  const serverGetCalls = { orders: 0, support_chats: 0, customers: 0 };
+  const activeSnapCallbacks = {};
+  let mockOrderSnapshotData = [
+    {
+      id: 'ORD-RT-1',
+      date: '2026-11-25',
+      customer: { id: 'c1', name: 'Test Live Shop', town: 'Aluva' },
+      dispatchStatus: 'Pending',
+      deliveryStatus: 'Normal',
+      bagQty: 10,
+      totalKg: 250,
+      perKgRate: 100,
+      totalAmount: 25000,
+      items: [{ productId: 'p1', productName: 'Biriyani Rice', bagSize: 25, bagQty: 10, totalKg: 250, perKgRate: 100, totalAmount: 25000 }]
+    }
+  ];
+  let mockChatSnapshotData = [];
+  const makeMockSnap = (arr) => ({
+    empty: arr.length === 0,
+    metadata: { fromCache: false, hasPendingWrites: false },
+    forEach: (cb) => arr.forEach(item => cb({ id: item.id, data: () => ({ ...item }) })),
+    docChanges: () => []
+  });
+
+  const mockRealtimeDb = {
+    enableNetwork: () => Promise.resolve(),
+    batch: () => ({
+      set: () => {},
+      update: () => {},
+      delete: () => {},
+      commit: () => Promise.resolve()
+    }),
+    collection: (name) => ({
+      doc: (docId) => ({
+        set: () => Promise.resolve(),
+        update: () => Promise.resolve(),
+        onSnapshot: (onNext) => {
+          snapCounts[name] = (snapCounts[name] || 0) + 1;
+          activeSnapCallbacks[name] = onNext;
+          onNext({ exists: false, data: () => null });
+          return () => {};
+        },
+        get: () => Promise.resolve({ exists: false, data: () => null })
+      }),
+      onSnapshot: (onNext, onErr) => {
+        snapCounts[name] = (snapCounts[name] || 0) + 1;
+        activeSnapCallbacks[name] = { onNext, onErr };
+        if (name === 'orders') onNext(makeMockSnap(mockOrderSnapshotData));
+        else if (name === 'support_chats') onNext(makeMockSnap(mockChatSnapshotData));
+        else onNext(makeMockSnap([]));
+        return () => {};
+      },
+      get: (opts) => {
+        if (opts && opts.source === 'server' && Object.prototype.hasOwnProperty.call(serverGetCalls, name)) {
+          serverGetCalls[name]++;
+        }
+        if (name === 'orders') return Promise.resolve(makeMockSnap(mockOrderSnapshotData));
+        if (name === 'support_chats') return Promise.resolve(makeMockSnap(mockChatSnapshotData));
+        return Promise.resolve(makeMockSnap([]));
+      }
+    })
+  };
+
+  const origDb = getRealtimeDbForTest();
+  const origOrders = [...orders];
+  setRealtimeDbForTest(mockRealtimeDb);
+  resetRealtimeListenerHandlesForTest();
+
+  // 1. Attach once cleanly (calling twice must NOT duplicate listeners)
+  setupFirestoreRealtimeListeners(false);
+  setupFirestoreRealtimeListeners(false);
+  assert(snapCounts.orders === 1, "Orders onSnapshot listener attaches once cleanly (no duplicates)");
+  assert(snapCounts.customers === 1, "Customers onSnapshot listener attaches once cleanly");
+  assert(snapCounts.settings === 1, "Settings onSnapshot listener attaches once cleanly");
+  assert(snapCounts.dailyVisits === 1, "dailyVisits onSnapshot listener attaches once cleanly");
+  assert(snapCounts.dailyReports === 1, "dailyReports onSnapshot listener attaches once cleanly");
+  assert(snapCounts.support_chats === 1, "support_chats onSnapshot listener attaches once cleanly");
+
+  // 2. Immediate synchronous UI re-render on live order Delivered snapshot (no debounce)
+  const deliveredOrderClone = { ...mockOrderSnapshotData[0], dispatchStatus: 'Delivered', deliveredAt: new Date().toISOString() };
+  mockOrderSnapshotData = [deliveredOrderClone];
+  activeSnapCallbacks.orders.onNext(makeMockSnap(mockOrderSnapshotData));
+  const updatedLiveOrd = orders.find(o => o.id === 'ORD-RT-1');
+  assert(updatedLiveOrd && updatedLiveOrd.dispatchStatus === 'Delivered', "Live orders snapshot immediately updates state to Delivered");
+  assert(document.getElementById('ordersTableBody').innerHTML.includes('ORD-RT-1'), "Live orders snapshot immediately renders into ordersTableBody without page reload");
+
+  // 3. Immediate synchronous UI re-render on live support_chats snapshot
+  mockChatSnapshotData = [{
+    id: 'rt-chat-1',
+    sender: 'delivery',
+    senderName: 'Rider Live',
+    tag: 'Delivery Issue',
+    text: 'Reached customer gate now',
+    timestamp: new Date().toISOString(),
+    readByAdmin: false,
+    readByDelivery: true
+  }];
+  activeSnapCallbacks.support_chats.onNext(makeMockSnap(mockChatSnapshotData));
+  assert(document.getElementById('supportChatUnreadBadge').textContent === '1', "Live support_chats snapshot immediately updates unread badge without page reload");
+
+  // 4. Wakeup triggers immediate server refresh (source: 'server') without dropping healthy listeners
+  handleMainAppConnectionWakeup({ type: 'online' });
+  assert(serverGetCalls.orders >= 1, "Connection wakeup immediately fetches orders with source: 'server'");
+  assert(serverGetCalls.support_chats >= 1, "Connection wakeup immediately fetches support_chats with source: 'server'");
+  assert(snapCounts.orders === 1 && snapCounts.support_chats === 1, "Wakeup keeps healthy active listeners intact without needless detach/reattach");
+
+  // 5. Detached listener auto-recovers cleanly without disturbing healthy listeners
+  const prevOrdersSnapCount = snapCounts.orders;
+  activeSnapCallbacks.support_chats.onErr(new Error('Simulated socket drop'));
+  setupFirestoreRealtimeListeners(false);
+  assert(snapCounts.support_chats === 2, "Detached listener cleanly re-attaches on recovery");
+  assert(snapCounts.orders === prevOrdersSnapCount, "Healthy orders listener is not torn down when only support_chats recovers");
+
+  // Restore clean state
+  setRealtimeDbForTest(origDb);
+  orders = origOrders;
+  updateDashboard();
+  setSupportChatMessages([]);
+  updateSupportChatUnreadBadge();
+
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   if (failed === 0) {

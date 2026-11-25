@@ -1547,15 +1547,23 @@ function initFirebaseSync() {
     }
     db = firebase.firestore();
 
-    // Enable multi-tab offline persistence with cache
-    db.enablePersistence({ synchronizeTabs: true }).catch(err => {
-      console.log('Firestore persistence mode:', err.code);
-    });
+    // Use long-polling auto-detection and direct independent live connection per tab
+    // (avoids multi-tab IndexedDB lease stalls while localStorage handles instant 0ms hydration)
+    try {
+      db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+    } catch (settingsErr) {
+      console.log('Firestore settings notice:', settingsErr ? settingsErr.message : 'default');
+    }
 
     isFirestoreInitialized = true;
     updateCloudSyncStatus('syncing', 'Connecting to Cloud...');
 
-    setupFirestoreRealtimeListeners();
+    setupFirestoreRealtimeListeners(false);
+
+    // Trigger immediate server-first refresh alongside live listeners
+    if (typeof refreshMainRealtimeFromServer === 'function') {
+      refreshMainRealtimeFromServer();
+    }
 
     // If local custom logo exists, ensure it is pushed to cloud settings
     if (localStorage.getItem(STORAGE_APP_LOGO)) {
@@ -1755,11 +1763,27 @@ function processIncomingCloudCustomers(remoteCustomers) {
 
   isReceivingCloudCustomers = false;
 
-  // 5. Automatically sync back to Cloud Firestore if local had new members or new customers
+  // 5. Automatically batch-sync back to Cloud Firestore if local had new members or new customers
   if (needsCloudUpload.length > 0 && typeof isFirestoreInitialized !== 'undefined' && isFirestoreInitialized && typeof db !== 'undefined' && db) {
-    needsCloudUpload.forEach(c => {
-      syncCloudCustomer(c);
-    });
+    if (typeof db.batch === 'function') {
+      const CHUNK_SIZE = 400;
+      for (let i = 0; i < needsCloudUpload.length; i += CHUNK_SIZE) {
+        const chunk = needsCloudUpload.slice(i, i + CHUNK_SIZE);
+        const batch = db.batch();
+        chunk.forEach(c => {
+          if (!c) return;
+          if (!c.id) {
+            c.id = 'c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+          }
+          batch.set(db.collection('customers').doc(c.id), sanitizeForFirestore(c));
+        });
+        batch.commit().catch(err => console.warn('Customer batch sync error:', err));
+      }
+    } else {
+      needsCloudUpload.forEach(c => {
+        syncCloudCustomer(c);
+      });
+    }
   }
 }
 
@@ -2483,8 +2507,86 @@ function playSupportChatChime() {
   }
 }
 
-function listenToSupportChats() {
+function applyAdminSupportChatSnapshot(snapshot) {
+  if (!snapshot) return;
+
+  const fromServer = snapshot.metadata ? !snapshot.metadata.fromCache : true;
+  const loaded = [];
+  let newIncomingDeliveryCount = 0;
+
+  snapshot.forEach(doc => {
+    const d = doc.data() || {};
+    const iso = normalizeAdminChatTimestampIso(d.timestamp, d.createdAt);
+    const ms = typeof d.createdAtMs === 'number' ? d.createdAtMs : new Date(iso).getTime();
+    const msg = {
+      id: doc.id,
+      text: d.text || '',
+      tag: d.tag || 'Help',
+      sender: d.sender || 'delivery',
+      senderName: d.senderName || 'Delivery Team',
+      timestamp: iso,
+      createdAt: d.createdAt || iso,
+      createdAtMs: isNaN(ms) ? Date.now() : ms,
+      readByAdmin: d.readByAdmin === true,
+      readByDelivery: d.readByDelivery === true
+    };
+    loaded.push(msg);
+
+    if (pendingOutgoingAdminChats.has(doc.id) && fromServer && !(snapshot.metadata && snapshot.metadata.hasPendingWrites)) {
+      pendingOutgoingAdminChats.delete(doc.id);
+      savePendingAdminChatsToStorage();
+    }
+
+    // Check for new incoming delivery messages
+    if (!knownAdminChatMessageIds.has(doc.id)) {
+      knownAdminChatMessageIds.add(doc.id);
+      if (!isInitialAdminChatLoad && msg.sender === 'delivery') {
+        newIncomingDeliveryCount++;
+      }
+    }
+  });
+
+  supportChatMessages = mergeAndSortAdminChats(loaded);
+  try {
+    localStorage.setItem(STORAGE_SUPPORT_CHATS_CACHE, JSON.stringify(supportChatMessages));
+  } catch (e) {}
+
+  // Trigger sound & clickable toast if new delivery message arrived
+  if (!isInitialAdminChatLoad && newIncomingDeliveryCount > 0) {
+    playSupportChatChime();
+    const latestMsg = supportChatMessages.filter(m => m.sender === 'delivery').slice(-1)[0];
+    if (latestMsg && typeof showNotification === 'function') {
+      showNotification(`💬 Delivery Support (${latestMsg.tag || 'Help'}): ${latestMsg.text || 'New message'}`, {
+        onClick: () => openSupportChatMenu()
+      });
+    }
+  }
+
+  updateSupportChatUnreadBadge();
+
+  if (isSupportChatMenuOpen) {
+    renderAdminSupportMessages();
+    markAdminMessagesAsRead();
+  }
+
+  isInitialAdminChatLoad = false;
+}
+
+function fetchAdminSupportChatsDirect() {
+  if (!db) return Promise.resolve();
+  return db.collection('support_chats').get({ source: 'server' })
+    .catch(() => db.collection('support_chats').get())
+    .then(snapshot => {
+      if (snapshot) applyAdminSupportChatSnapshot(snapshot);
+    })
+    .catch(err => {
+      console.warn('Direct support_chats server fetch notice:', err);
+    });
+}
+
+function listenToSupportChats(forceReattach = false) {
   if (!db) return;
+  if (supportChatUnsubscribe && !forceReattach) return;
   if (supportChatUnsubscribe) {
     try { supportChatUnsubscribe(); } catch (e) {}
     supportChatUnsubscribe = null;
@@ -2499,76 +2601,15 @@ function listenToSupportChats() {
 
   try {
     supportChatUnsubscribe = db.collection('support_chats').onSnapshot(snapshot => {
-      if (!snapshot) return;
-
-      const fromServer = snapshot.metadata ? !snapshot.metadata.fromCache : true;
-      const loaded = [];
-      let newIncomingDeliveryCount = 0;
-
-      snapshot.forEach(doc => {
-        const d = doc.data() || {};
-        const iso = normalizeAdminChatTimestampIso(d.timestamp, d.createdAt);
-        const ms = typeof d.createdAtMs === 'number' ? d.createdAtMs : new Date(iso).getTime();
-        const msg = {
-          id: doc.id,
-          text: d.text || '',
-          tag: d.tag || 'Help',
-          sender: d.sender || 'delivery',
-          senderName: d.senderName || 'Delivery Team',
-          timestamp: iso,
-          createdAt: d.createdAt || iso,
-          createdAtMs: isNaN(ms) ? Date.now() : ms,
-          readByAdmin: d.readByAdmin === true,
-          readByDelivery: d.readByDelivery === true
-        };
-        loaded.push(msg);
-
-        if (pendingOutgoingAdminChats.has(doc.id) && fromServer && !(snapshot.metadata && snapshot.metadata.hasPendingWrites)) {
-          pendingOutgoingAdminChats.delete(doc.id);
-          savePendingAdminChatsToStorage();
-        }
-
-        // Check for new incoming delivery messages
-        if (!knownAdminChatMessageIds.has(doc.id)) {
-          knownAdminChatMessageIds.add(doc.id);
-          if (!isInitialAdminChatLoad && msg.sender === 'delivery') {
-            newIncomingDeliveryCount++;
-          }
-        }
-      });
-
-      supportChatMessages = mergeAndSortAdminChats(loaded);
-      try {
-        localStorage.setItem(STORAGE_SUPPORT_CHATS_CACHE, JSON.stringify(supportChatMessages));
-      } catch (e) {}
-
-      // Trigger sound & clickable toast if new delivery message arrived
-      if (!isInitialAdminChatLoad && newIncomingDeliveryCount > 0) {
-        playSupportChatChime();
-        const latestMsg = supportChatMessages.filter(m => m.sender === 'delivery').slice(-1)[0];
-        if (latestMsg && typeof showNotification === 'function') {
-          showNotification(`💬 Delivery Support (${latestMsg.tag || 'Help'}): ${latestMsg.text || 'New message'}`, {
-            onClick: () => openSupportChatMenu()
-          });
-        }
-      }
-
-      updateSupportChatUnreadBadge();
-
-      if (isSupportChatMenuOpen) {
-        renderAdminSupportMessages();
-        markAdminMessagesAsRead();
-      }
-
-      isInitialAdminChatLoad = false;
+      applyAdminSupportChatSnapshot(snapshot);
     }, err => {
       console.warn('support_chats snapshot error:', err);
       supportChatUnsubscribe = null;
       reconnectAdminChatTimeout = setTimeout(() => {
         if (db && !supportChatUnsubscribe) {
-          listenToSupportChats();
+          listenToSupportChats(true);
         }
-      }, 3000);
+      }, 2000);
     });
   } catch (err) {
     console.warn('Error starting support_chats listener:', err);
@@ -2679,9 +2720,12 @@ function openSupportChatMenu() {
   } catch (e) {}
 
   if (db && !supportChatUnsubscribe) {
-    listenToSupportChats();
+    listenToSupportChats(false);
   } else if (db) {
     flushPendingAdminChatMessages();
+  }
+  if (db && typeof fetchAdminSupportChatsDirect === 'function') {
+    fetchAdminSupportChatsDirect();
   }
 
   try {
@@ -2924,51 +2968,98 @@ document.addEventListener('click', (e) => {
 });
 
 let mainOrdersUnsubscribe = null;
+let mainCustomersUnsubscribe = null;
+let mainSettingsUnsubscribe = null;
+let mainVisitsUnsubscribe = null;
+let mainReportsUnsubscribe = null;
 let reconnectMainOrdersTimeout = null;
+let lastMainWakeupAt = 0;
+let isMainServerRefreshInFlight = false;
 const mainOrdersStateMap = {};
 
-function handleMainAppConnectionWakeup() {
-  if (document.visibilityState === 'visible' || navigator.onLine) {
-    if (db && typeof db.enableNetwork === 'function') {
-      db.enableNetwork().catch(() => {});
+function applyRemoteOrdersSnapshotList(remoteOrders, options = {}) {
+  if (!Array.isArray(remoteOrders)) return;
+  const triggerAlerts = options.triggerAlerts !== false;
+  const sortCopy = [...remoteOrders];
+  sortCopy.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
+
+  const needsCloudDeliveredSync = [];
+  sortCopy.forEach(o => {
+    if (!o || !o.id) return;
+    if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
+      o.dispatchStatus = 'Delivered';
+      o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+      needsCloudDeliveredSync.push(o);
     }
-    if (!mainOrdersUnsubscribe && db) {
-      setupFirestoreRealtimeListeners();
-    } else if (!supportChatUnsubscribe && db) {
-      listenToSupportChats();
-    } else if (db) {
-      flushPendingAdminChatMessages();
+
+    const prevStatus = knownOrderDeliveryStatuses.get(o.id);
+    const newStatus = o.dispatchStatus || 'Pending';
+    if (triggerAlerts && !isInitialOrdersListenerRun && prevStatus && prevStatus !== 'Delivered' && newStatus === 'Delivered') {
+      triggerOrderDeliveredAlert(o);
     }
+
+    knownOrderDeliveryStatuses.set(o.id, newStatus);
+    mainOrdersStateMap[o.id] = {
+      updatedAt: o.updatedAt || o.createdAt || '',
+      dispatchStatus: newStatus,
+      itemsHash: JSON.stringify(o.items || []),
+      bagQty: (o.bagQty !== undefined) ? o.bagQty : (o.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
+      notes: o.notes || '',
+      rate: o.perKgRate || 0
+    };
+  });
+
+  orders = sortCopy;
+
+  if (needsCloudDeliveredSync.length > 0 && db) {
+    batchSyncOrdersDispatchStatus(needsCloudDeliveredSync);
   }
+
+  try {
+    localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+  } catch (e) {}
+
+  if (customers.length === 0) {
+    extractCustomersFromOrdersIfMissing(true);
+  }
+  if (typeof deduplicateCustomersList === 'function') {
+    customers = deduplicateCustomersList(customers, true);
+  }
+
+  purgeUnwantedDummyProducts(false);
+  updateDashboard();
 }
 
-document.addEventListener('visibilitychange', handleMainAppConnectionWakeup);
-window.addEventListener('online', handleMainAppConnectionWakeup);
-window.addEventListener('focus', handleMainAppConnectionWakeup);
-window.addEventListener('pageshow', handleMainAppConnectionWakeup);
+let mainServerRefreshStartedAt = 0;
+let mainServerRefreshSeq = 0;
 
-function setupFirestoreRealtimeListeners() {
-  if (!db) return;
-
-  if (mainOrdersUnsubscribe) {
-    try { mainOrdersUnsubscribe(); } catch (e) {}
-    mainOrdersUnsubscribe = null;
+function refreshMainRealtimeFromServer(forceRefresh = false) {
+  const now = Date.now();
+  if (!db) return Promise.resolve();
+  if (!forceRefresh && isMainServerRefreshInFlight && (now - mainServerRefreshStartedAt < 5000)) {
+    return Promise.resolve();
   }
-  if (reconnectMainOrdersTimeout) {
-    clearTimeout(reconnectMainOrdersTimeout);
-    reconnectMainOrdersTimeout = null;
+  isMainServerRefreshInFlight = true;
+  mainServerRefreshStartedAt = now;
+  const refreshSeq = ++mainServerRefreshSeq;
+
+  if (typeof db.enableNetwork === 'function') {
+    db.enableNetwork().catch(() => {});
   }
 
-  // 1. Orders Realtime Listener
-  mainOrdersUnsubscribe = db.collection('orders').onSnapshot(snapshot => {
-    // If cloud is empty initially, seed local orders up to cloud
-    if (snapshot.empty && orders.length > 0 && !hasPerformedInitialOrdersCloudSeed) {
-      seedLocalOrdersToCloud();
-      return;
-    }
-
-    if (!snapshot.empty) {
-      if (isInitialOrdersListenerRun) {
+  const ordersFetch = db.collection('orders').get({ source: 'server' })
+    .catch(() => db.collection('orders').get())
+    .then(snapshot => {
+      if (!snapshot) return;
+      if (snapshot.empty && hasPerformedInitialOrdersCloudSeed) {
+        orders = [];
+        try { localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders)); } catch (e) {}
+        updateDashboard();
+        return;
+      }
+      if (!snapshot.empty) {
+        isReceivingCloudOrders = true;
+        const remoteOrders = [];
         snapshot.forEach(doc => {
           const d = doc.data();
           if (d && d.id) {
@@ -2977,315 +3068,344 @@ function setupFirestoreRealtimeListeners() {
               return;
             }
             d._firestoreDocId = doc.id;
-            const status = (d.date && d.date <= '2026-11-21') ? 'Delivered' : (d.dispatchStatus || 'Pending');
-            knownOrderDeliveryStatuses.set(d.id, status);
-            mainOrdersStateMap[d.id] = {
-              updatedAt: d.updatedAt || d.createdAt || '',
-              dispatchStatus: status,
-              itemsHash: JSON.stringify(d.items || []),
-              bagQty: (d.bagQty !== undefined) ? d.bagQty : (d.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
-              notes: d.notes || '',
-              rate: d.perKgRate || 0
-            };
+            remoteOrders.push(d);
           }
         });
+        applyRemoteOrdersSnapshotList(remoteOrders, { triggerAlerts: true });
         isInitialOrdersListenerRun = false;
-      } else {
-        // Detect real-time additions and modifications
-        snapshot.docChanges().forEach(change => {
-          const ord = change.doc.data();
-          if (!ord || !ord.id) return;
+        isReceivingCloudOrders = false;
+        updateCloudSyncStatus('synced', 'Live Synced 🟢');
+      }
+    }).catch(() => {});
 
-          if (change.type === 'added') {
-            if (isOrderTombstoned(ord.id)) {
+  const chatsFetch = (typeof fetchAdminSupportChatsDirect === 'function')
+    ? fetchAdminSupportChatsDirect()
+    : Promise.resolve();
+
+  const customersFetch = db.collection('customers').get({ source: 'server' })
+    .catch(() => db.collection('customers').get())
+    .then(snapshot => {
+      if (snapshot && !snapshot.empty) {
+        const remote = [];
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d && (d.id || d.name)) remote.push(d);
+        });
+        processIncomingCloudCustomers(remote);
+      }
+    }).catch(() => {});
+
+  return Promise.allSettled([ordersFetch, chatsFetch, customersFetch]).finally(() => {
+    if (refreshSeq === mainServerRefreshSeq) {
+      isMainServerRefreshInFlight = false;
+    }
+  });
+}
+
+function handleMainAppConnectionWakeup(evt) {
+  const evtType = evt && evt.type ? evt.type : 'manual';
+  if (evtType === 'visibilitychange' && typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+    return;
+  }
+  const isOnlineEvent = evtType === 'online';
+  const isVisible = (typeof document === 'undefined') || document.visibilityState === 'visible';
+  if (!isVisible && !isOnlineEvent) return;
+
+  const now = Date.now();
+  if (now - lastMainWakeupAt < 250) return;
+  lastMainWakeupAt = now;
+
+  if (!db) return;
+  if (typeof db.enableNetwork === 'function') {
+    db.enableNetwork().catch(() => {});
+  }
+
+  // Re-attach ONLY detached listeners (active healthy listeners remain attached cleanly)
+  setupFirestoreRealtimeListeners(false);
+  flushPendingAdminChatMessages();
+
+  // Immediately pull latest server state for orders, delivery status, and support chats
+  refreshMainRealtimeFromServer(isOnlineEvent);
+}
+
+if (typeof document !== 'undefined') {
+  document.addEventListener('visibilitychange', handleMainAppConnectionWakeup);
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('online', handleMainAppConnectionWakeup);
+  window.addEventListener('focus', handleMainAppConnectionWakeup);
+  window.addEventListener('pageshow', handleMainAppConnectionWakeup);
+}
+
+function setupFirestoreRealtimeListeners(forceReattach = false) {
+  if (!db) return;
+
+  if (forceReattach) {
+    if (mainOrdersUnsubscribe) { try { mainOrdersUnsubscribe(); } catch (e) {} mainOrdersUnsubscribe = null; }
+    if (mainCustomersUnsubscribe) { try { mainCustomersUnsubscribe(); } catch (e) {} mainCustomersUnsubscribe = null; }
+    if (mainSettingsUnsubscribe) { try { mainSettingsUnsubscribe(); } catch (e) {} mainSettingsUnsubscribe = null; }
+    if (mainVisitsUnsubscribe) { try { mainVisitsUnsubscribe(); } catch (e) {} mainVisitsUnsubscribe = null; }
+    if (mainReportsUnsubscribe) { try { mainReportsUnsubscribe(); } catch (e) {} mainReportsUnsubscribe = null; }
+  }
+
+  if (reconnectMainOrdersTimeout) {
+    clearTimeout(reconnectMainOrdersTimeout);
+    reconnectMainOrdersTimeout = null;
+  }
+
+  // 1. Orders Realtime Listener (attach once cleanly)
+  if (!mainOrdersUnsubscribe) {
+    mainOrdersUnsubscribe = db.collection('orders').onSnapshot(snapshot => {
+      // If cloud is empty initially, seed local orders up to cloud
+      if (snapshot.empty && orders.length > 0 && !hasPerformedInitialOrdersCloudSeed) {
+        seedLocalOrdersToCloud();
+        return;
+      }
+
+      if (!snapshot.empty) {
+        if (!isInitialOrdersListenerRun) {
+          snapshot.docChanges().forEach(change => {
+            const ord = change.doc.data();
+            if (!ord || !ord.id) return;
+            if (change.type === 'removed') {
+              purgeOrderFromLocalCaches(ord.id);
+            } else if ((change.type === 'added' || change.type === 'modified') && isOrderTombstoned(ord.id)) {
               deleteCloudOrder(ord.id, change.doc.id);
+            }
+          });
+        }
+
+        isReceivingCloudOrders = true;
+        const remoteOrders = [];
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d && d.id) {
+            if (isOrderTombstoned(d.id)) {
+              deleteCloudOrder(d.id, doc.id);
               return;
             }
-            if (!knownOrderDeliveryStatuses.has(ord.id)) {
-              const status = ord.dispatchStatus || 'Pending';
-              knownOrderDeliveryStatuses.set(ord.id, status);
-              mainOrdersStateMap[ord.id] = {
-                updatedAt: ord.updatedAt || ord.createdAt || '',
-                dispatchStatus: status,
-                itemsHash: JSON.stringify(ord.items || []),
-                bagQty: (ord.bagQty !== undefined) ? ord.bagQty : (ord.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
-                notes: ord.notes || '',
-                rate: ord.perKgRate || 0
-              };
-            }
-          } else if (change.type === 'modified') {
-            if (isOrderTombstoned(ord.id)) {
-              deleteCloudOrder(ord.id, change.doc.id);
-              return;
-            }
-            const prevStatus = knownOrderDeliveryStatuses.get(ord.id);
-            const newStatus = ord.dispatchStatus || 'Pending';
-            if (prevStatus && prevStatus !== 'Delivered' && newStatus === 'Delivered') {
-              triggerOrderDeliveredAlert(ord);
-            }
-
-            knownOrderDeliveryStatuses.set(ord.id, newStatus);
-            mainOrdersStateMap[ord.id] = {
-              updatedAt: ord.updatedAt || '',
-              dispatchStatus: newStatus,
-              itemsHash: JSON.stringify(ord.items || []),
-              bagQty: (ord.bagQty !== undefined) ? ord.bagQty : (ord.items || []).reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0),
-              notes: ord.notes || '',
-              rate: ord.perKgRate || 0
-            };
-          } else if (change.type === 'removed') {
-            purgeOrderFromLocalCaches(ord.id);
-            updateDashboard();
+            d._firestoreDocId = doc.id;
+            remoteOrders.push(d);
           }
         });
-      }
 
-      isReceivingCloudOrders = true;
-      const remoteOrders = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d && d.id) {
-          if (isOrderTombstoned(d.id)) {
-            deleteCloudOrder(d.id, doc.id);
-            return;
-          }
-          d._firestoreDocId = doc.id;
-          remoteOrders.push(d);
-        }
-      });
-
-      // Sort orders descending by date / id
-      remoteOrders.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
-
-      // Ensure historical / past orders up to 2026-11-21 are Delivered
-      const needsCloudDeliveredSync = [];
-      remoteOrders.forEach(o => {
-        if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
-          o.dispatchStatus = 'Delivered';
-          o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
-          needsCloudDeliveredSync.push(o);
-        }
-      });
-      orders = remoteOrders;
-
-      if (needsCloudDeliveredSync.length > 0 && db) {
-        batchSyncOrdersDispatchStatus(needsCloudDeliveredSync);
-      }
-
-      try {
-        localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
-      } catch (e) {}
-
-      // Automatically harvest any customer from orders into customer directory only if directory is empty
-      if (customers.length === 0) {
-        extractCustomersFromOrdersIfMissing(true);
-      }
-      if (typeof deduplicateCustomersList === 'function') {
-        customers = deduplicateCustomersList(customers, true);
-      }
-
-      // Ensure products catalog remains clean and verified
-      purgeUnwantedDummyProducts(false);
-
-      updateDashboard();
-      isReceivingCloudOrders = false;
-      updateCloudSyncStatus('synced', 'Live Synced 🟢');
-    } else if (snapshot.empty && hasPerformedInitialOrdersCloudSeed) {
-      orders = [];
-      try {
-        localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
-      } catch (e) {}
-      updateDashboard();
-      updateCloudSyncStatus('synced', 'Live Synced (0 Orders)');
-    } else {
-      updateCloudSyncStatus('synced', 'Live Synced 🟢');
-    }
-  }, err => {
-    console.warn('Orders snapshot listener error, scheduling auto-reconnect:', err);
-    updateCloudSyncStatus('offline', 'Reconnecting...');
-    if (reconnectMainOrdersTimeout) clearTimeout(reconnectMainOrdersTimeout);
-    reconnectMainOrdersTimeout = setTimeout(() => {
-      try {
-        if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-      } catch (e) {}
-      setupFirestoreRealtimeListeners();
-    }, 2500);
-  });
-
-  // 2. Customers Realtime Listener
-  db.collection('customers').onSnapshot(snapshot => {
-    if (snapshot.empty && customers.length > 0 && !hasPerformedInitialCustomersCloudSeed) {
-      seedLocalCustomersToCloud();
-      return;
-    }
-
-    if (snapshot.empty && customers.length === 0 && orders.length > 0) {
-      extractCustomersFromOrdersIfMissing(true);
-      return;
-    }
-
-    if (!snapshot.empty) {
-      const remoteCustomers = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d && (d.id || d.name)) {
-          remoteCustomers.push(d);
-        }
-      });
-
-      // Merge cloud customers, preserve custom members, and update mobile UI in real time
-      processIncomingCloudCustomers(remoteCustomers);
-      updateCloudSyncStatus('synced', 'Live Synced 🟢');
-    }
-  }, err => {
-    console.warn('Customers snapshot error:', err);
-  });
-
-  // 3. Settings (Products, Bag sizes, etc.) Realtime Listener
-  db.collection('settings').doc('app_config').onSnapshot(doc => {
-    if (doc.exists) {
-      isReceivingCloudSettings = true;
-      const cfg = doc.data();
-      if (Array.isArray(cfg.products) && cfg.products.length > 0) {
-        const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
-        products = deduplicateProductsList([...products, ...cleanCloudProducts], false);
-        cascadeCanonicalProductsToOrders();
-      }
-      if (Array.isArray(cfg.bagSizes) && cfg.bagSizes.length > 0) {
-        bagSizes = cfg.bagSizes;
-        localStorage.setItem(STORAGE_BAG_SIZES, JSON.stringify(bagSizes));
-        populateBagSizesDropdown();
-        if (typeof renderBagSizesBadges === 'function') renderBagSizesBadges();
-      }
-      if (Array.isArray(cfg.savedAreas)) {
-        savedAreas = cfg.savedAreas;
-        localStorage.setItem(STORAGE_SAVED_AREAS, JSON.stringify(savedAreas));
-        populateSavedAreasDatalists();
-      }
-      if (Array.isArray(cfg.savedDistrictTowns)) {
-        savedDistrictTowns = cfg.savedDistrictTowns;
-        localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
-      }
-      let needsTrashCloudSync = false;
-      if (Array.isArray(cfg.permanentlyDeletedTrashIds)) {
-        cfg.permanentlyDeletedTrashIds.forEach(id => {
-          if (id) permanentlyDeletedTrashIds.add(id);
-        });
-        savePermanentlyDeletedTrashIds();
-      }
-      if (Array.isArray(cfg.deletedCustomerTombstones) && typeof mergeDeletedCustomerTombstones === 'function') {
-        mergeDeletedCustomerTombstones(cfg.deletedCustomerTombstones);
-      }
-      if (Array.isArray(cfg.deletedOrderTombstones) && typeof mergeDeletedOrderTombstones === 'function') {
-        mergeDeletedOrderTombstones(cfg.deletedOrderTombstones);
-      }
-      if (Array.isArray(cfg.trashList)) {
-        const cleanTrash = cfg.trashList.filter(item => {
-          if (!item || !item.trashId) return false;
-          if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
-          if (item.type === 'customer' && item.data) {
-            const cName = (item.data.name || item.title || '').trim().toLowerCase();
-            if (cName === 'test' || cName === 'customer test' || cName === 'test customer') {
-              permanentlyDeletedTrashIds.add(item.trashId);
-              return false;
-            }
-          }
-          return true;
-        });
-
-        if (cleanTrash.length !== cfg.trashList.length) {
-          needsTrashCloudSync = true;
-        }
-
-        trashList = cleanTrash;
+        applyRemoteOrdersSnapshotList(remoteOrders, { triggerAlerts: true });
+        isInitialOrdersListenerRun = false;
+        isReceivingCloudOrders = false;
+        updateCloudSyncStatus('synced', 'Live Synced 🟢');
+      } else if (snapshot.empty && hasPerformedInitialOrdersCloudSeed) {
+        orders = [];
         try {
-          localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
+          localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
         } catch (e) {}
-        if (typeof updateTrashBadges === 'function') updateTrashBadges();
-        const trashModalEl = document.getElementById('trashModal');
-        if (trashModalEl && !trashModalEl.classList.contains('hidden') && typeof renderTrashList === 'function') {
-          renderTrashList();
-        }
+        updateDashboard();
+        isInitialOrdersListenerRun = false;
+        updateCloudSyncStatus('synced', 'Live Synced (0 Orders)');
+      } else {
+        isInitialOrdersListenerRun = false;
+        updateCloudSyncStatus('synced', 'Live Synced 🟢');
       }
-      if (cfg.appLogo !== undefined) {
-        if (cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
-          if (cfg.appLogo.indexOf('data:image/svg') !== -1 || cfg.appLogo.indexOf('<svg') !== -1 || cfg.appLogo.indexOf('logo.svg') !== -1 || cfg.appLogo.indexOf('TM') !== -1) {
+    }, err => {
+      console.warn('Orders snapshot listener error, scheduling auto-reconnect:', err);
+      mainOrdersUnsubscribe = null;
+      updateCloudSyncStatus('offline', 'Reconnecting...');
+      if (reconnectMainOrdersTimeout) clearTimeout(reconnectMainOrdersTimeout);
+      reconnectMainOrdersTimeout = setTimeout(() => {
+        try {
+          if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+        } catch (e) {}
+        setupFirestoreRealtimeListeners(false);
+      }, 2000);
+    });
+  }
+
+  // 2. Customers Realtime Listener (attach once cleanly)
+  if (!mainCustomersUnsubscribe) {
+    mainCustomersUnsubscribe = db.collection('customers').onSnapshot(snapshot => {
+      if (snapshot.empty && customers.length > 0 && !hasPerformedInitialCustomersCloudSeed) {
+        seedLocalCustomersToCloud();
+        return;
+      }
+
+      if (snapshot.empty && customers.length === 0 && orders.length > 0) {
+        extractCustomersFromOrdersIfMissing(true);
+        return;
+      }
+
+      if (!snapshot.empty) {
+        const remoteCustomers = [];
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d && (d.id || d.name)) {
+            remoteCustomers.push(d);
+          }
+        });
+
+        // Merge cloud customers, preserve custom members, and update mobile UI in real time
+        processIncomingCloudCustomers(remoteCustomers);
+        updateCloudSyncStatus('synced', 'Live Synced 🟢');
+      }
+    }, err => {
+      console.warn('Customers snapshot error:', err);
+      mainCustomersUnsubscribe = null;
+    });
+  }
+
+  // 3. Settings (Products, Bag sizes, etc.) Realtime Listener (attach once cleanly)
+  if (!mainSettingsUnsubscribe) {
+    mainSettingsUnsubscribe = db.collection('settings').doc('app_config').onSnapshot(doc => {
+      if (doc.exists) {
+        isReceivingCloudSettings = true;
+        const cfg = doc.data();
+        if (Array.isArray(cfg.products) && cfg.products.length > 0) {
+          const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
+          products = deduplicateProductsList([...products, ...cleanCloudProducts], false);
+          cascadeCanonicalProductsToOrders();
+        }
+        if (Array.isArray(cfg.bagSizes) && cfg.bagSizes.length > 0) {
+          bagSizes = cfg.bagSizes;
+          localStorage.setItem(STORAGE_BAG_SIZES, JSON.stringify(bagSizes));
+          populateBagSizesDropdown();
+          if (typeof renderBagSizesBadges === 'function') renderBagSizesBadges();
+        }
+        if (Array.isArray(cfg.savedAreas)) {
+          savedAreas = cfg.savedAreas;
+          localStorage.setItem(STORAGE_SAVED_AREAS, JSON.stringify(savedAreas));
+          populateSavedAreasDatalists();
+        }
+        if (Array.isArray(cfg.savedDistrictTowns)) {
+          savedDistrictTowns = cfg.savedDistrictTowns;
+          localStorage.setItem(STORAGE_SAVED_TOWNS, JSON.stringify(savedDistrictTowns));
+        }
+        let needsTrashCloudSync = false;
+        if (Array.isArray(cfg.permanentlyDeletedTrashIds)) {
+          cfg.permanentlyDeletedTrashIds.forEach(id => {
+            if (id) permanentlyDeletedTrashIds.add(id);
+          });
+          savePermanentlyDeletedTrashIds();
+        }
+        if (Array.isArray(cfg.deletedCustomerTombstones) && typeof mergeDeletedCustomerTombstones === 'function') {
+          mergeDeletedCustomerTombstones(cfg.deletedCustomerTombstones);
+        }
+        if (Array.isArray(cfg.deletedOrderTombstones) && typeof mergeDeletedOrderTombstones === 'function') {
+          mergeDeletedOrderTombstones(cfg.deletedOrderTombstones);
+        }
+        if (Array.isArray(cfg.trashList)) {
+          const cleanTrash = cfg.trashList.filter(item => {
+            if (!item || !item.trashId) return false;
+            if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
+            if (item.type === 'customer' && item.data) {
+              const cName = (item.data.name || item.title || '').trim().toLowerCase();
+              if (cName === 'test' || cName === 'customer test' || cName === 'test customer') {
+                permanentlyDeletedTrashIds.add(item.trashId);
+                return false;
+              }
+            }
+            return true;
+          });
+
+          if (cleanTrash.length !== cfg.trashList.length) {
+            needsTrashCloudSync = true;
+          }
+
+          trashList = cleanTrash;
+          try {
+            localStorage.setItem(STORAGE_TRASH, JSON.stringify(trashList));
+          } catch (e) {}
+          if (typeof updateTrashBadges === 'function') updateTrashBadges();
+          const trashModalEl = document.getElementById('trashModal');
+          if (trashModalEl && !trashModalEl.classList.contains('hidden') && typeof renderTrashList === 'function') {
+            renderTrashList();
+          }
+        }
+        if (cfg.appLogo !== undefined) {
+          if (cfg.appLogo && typeof cfg.appLogo === 'string' && cfg.appLogo.trim()) {
+            if (cfg.appLogo.indexOf('data:image/svg') !== -1 || cfg.appLogo.indexOf('<svg') !== -1 || cfg.appLogo.indexOf('logo.svg') !== -1 || cfg.appLogo.indexOf('TM') !== -1) {
+              try {
+                localStorage.removeItem(STORAGE_APP_LOGO);
+              } catch (e) {}
+              applyAppLogo(DEFAULT_LOGO_URL, false);
+            } else {
+              try {
+                localStorage.setItem(STORAGE_APP_LOGO, cfg.appLogo);
+              } catch (e) {}
+              applyAppLogo(cfg.appLogo, true);
+            }
+          } else {
             try {
               localStorage.removeItem(STORAGE_APP_LOGO);
             } catch (e) {}
             applyAppLogo(DEFAULT_LOGO_URL, false);
-          } else {
-            try {
-              localStorage.setItem(STORAGE_APP_LOGO, cfg.appLogo);
-            } catch (e) {}
-            applyAppLogo(cfg.appLogo, true);
           }
-        } else {
-          try {
-            localStorage.removeItem(STORAGE_APP_LOGO);
-          } catch (e) {}
-          applyAppLogo(DEFAULT_LOGO_URL, false);
         }
+        isReceivingCloudSettings = false;
+        syncDeliverySafeConfigToCloud(deletedOrderTombstones, cfg.appLogo);
+        if (needsTrashCloudSync) {
+          syncCloudConfig(true);
+        }
+      } else {
+        syncCloudConfig();
       }
-      isReceivingCloudSettings = false;
-      if (needsTrashCloudSync) {
-        syncCloudConfig(true);
-      }
-    } else {
-      syncCloudConfig();
-    }
-  }, err => {
-    console.warn('Settings snapshot error:', err);
-  });
-
-  // 4. Daily Visits Realtime Listener (Unified single collection 'dailyVisits')
-  db.collection('dailyVisits').onSnapshot(snapshot => {
-    if (!snapshot) return;
-    if (snapshot.empty && dailyVisits.length > 0) {
-      seedLocalVisitsToCloud();
-      return;
-    }
-    const remoteVisits = [];
-    snapshot.forEach(doc => {
-      const d = doc.data() || {};
-      const docId = doc.id;
-      const visitObj = { ...d, id: d.id || docId };
-      visitObj.date = standardizeDateString(visitObj.date || visitObj.timestamp || visitObj.createdAt);
-      if (visitObj.id && visitObj.date) {
-        remoteVisits.push(visitObj);
-      }
+    }, err => {
+      console.warn('Settings snapshot error:', err);
+      mainSettingsUnsubscribe = null;
     });
-    if (typeof mergeIncomingCloudVisits === 'function') {
-      mergeIncomingCloudVisits(remoteVisits);
-    }
-  }, err => {
-    console.warn('dailyVisits snapshot error:', err);
-  });
+  }
 
-  // 5. Daily Reports & Holiday Status Realtime Listener
-  db.collection('dailyReports').onSnapshot(snapshot => {
-    if (!snapshot) return;
-    snapshot.forEach(doc => {
-      const d = doc.data() || {};
-      const rawDate = d.date || doc.id;
-      const dateKey = standardizeDateString(rawDate);
-      if (dateKey) {
-        dailyReports[dateKey] = { ...d, date: dateKey };
+  // 4. Daily Visits Realtime Listener (attach once cleanly)
+  if (!mainVisitsUnsubscribe) {
+    mainVisitsUnsubscribe = db.collection('dailyVisits').onSnapshot(snapshot => {
+      if (!snapshot) return;
+      if (snapshot.empty && dailyVisits.length > 0) {
+        seedLocalVisitsToCloud();
+        return;
       }
+      const remoteVisits = [];
+      snapshot.forEach(doc => {
+        const d = doc.data() || {};
+        const docId = doc.id;
+        const visitObj = { ...d, id: d.id || docId };
+        visitObj.date = standardizeDateString(visitObj.date || visitObj.timestamp || visitObj.createdAt);
+        if (visitObj.id && visitObj.date) {
+          remoteVisits.push(visitObj);
+        }
+      });
+      if (typeof mergeIncomingCloudVisits === 'function') {
+        mergeIncomingCloudVisits(remoteVisits);
+      }
+    }, err => {
+      console.warn('dailyVisits snapshot error:', err);
+      mainVisitsUnsubscribe = null;
     });
-    if (typeof saveDailyReportDataToStorage === 'function') {
-      saveDailyReportDataToStorage();
-    }
-    if (currentMainView === 'daily-report') {
-      if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
-      if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
-    }
-  }, err => {
-    console.warn('dailyReports snapshot error:', err);
-  });
+  }
 
-  // 6. Support & Helpline Chats Realtime Listener
-  listenToSupportChats();
+  // 5. Daily Reports & Holiday Status Realtime Listener (attach once cleanly)
+  if (!mainReportsUnsubscribe) {
+    mainReportsUnsubscribe = db.collection('dailyReports').onSnapshot(snapshot => {
+      if (!snapshot) return;
+      snapshot.forEach(doc => {
+        const d = doc.data() || {};
+        const rawDate = d.date || doc.id;
+        const dateKey = standardizeDateString(rawDate);
+        if (dateKey) {
+          dailyReports[dateKey] = { ...d, date: dateKey };
+        }
+      });
+      if (typeof saveDailyReportDataToStorage === 'function') {
+        saveDailyReportDataToStorage();
+      }
+      if (currentMainView === 'daily-report') {
+        if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
+        if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
+      }
+    }, err => {
+      console.warn('dailyReports snapshot error:', err);
+      mainReportsUnsubscribe = null;
+    });
+  }
+
+  // 6. Support & Helpline Chats Realtime Listener (attach once cleanly)
+  listenToSupportChats(forceReattach);
 }
 
 function seedLocalOrdersToCloud() {
@@ -3696,12 +3816,31 @@ function deleteCloudCustomer(customerId, customerName) {
   }
 }
 
+function syncDeliverySafeConfigToCloud(tombstones, rawLogo) {
+  if (!db) return;
+  try {
+    let logoVal = rawLogo;
+    if (logoVal === undefined) {
+      logoVal = localStorage.getItem(STORAGE_APP_LOGO) || null;
+    }
+    const cleanLogo = (logoVal && typeof logoVal === 'string' && (logoVal.indexOf('data:image/svg') !== -1 || logoVal.indexOf('<svg') !== -1 || logoVal.indexOf('logo.svg') !== -1 || logoVal.indexOf('TM') !== -1))
+      ? null
+      : (logoVal || null);
+    db.collection('settings').doc('delivery_config').set(sanitizeForFirestore({
+      deletedOrderTombstones: Array.isArray(tombstones) ? tombstones : (deletedOrderTombstones || []),
+      appLogo: cleanLogo,
+      updatedAt: new Date().toISOString()
+    }), { merge: true }).catch(err => console.warn('Delivery safe config mirror error:', err));
+  } catch (e) {}
+}
+
 let syncConfigDebounceTimer = null;
 function syncCloudConfig(immediate = false) {
   if (!db) return;
   if (isReceivingCloudSettings && !immediate) return;
 
   const performSync = () => {
+    if (!db) return;
     let currentLogo = null;
     try {
       currentLogo = localStorage.getItem(STORAGE_APP_LOGO) || null;
@@ -3717,6 +3856,8 @@ function syncCloudConfig(immediate = false) {
       return true;
     });
 
+    const sanitizedAppLogo = (currentLogo && (currentLogo.indexOf('data:image/svg') !== -1 || currentLogo.indexOf('<svg') !== -1 || currentLogo.indexOf('logo.svg') !== -1 || currentLogo.indexOf('TM') !== -1)) ? null : currentLogo;
+
     db.collection('settings').doc('app_config').set(sanitizeForFirestore({
       products: products || [],
       bagSizes: bagSizes || [],
@@ -3728,8 +3869,11 @@ function syncCloudConfig(immediate = false) {
       deletedOrderTombstones: deletedOrderTombstones || [],
       defaultRememberedBagSize: defaultRememberedBagSize || 26,
       incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01',
-      appLogo: (currentLogo && (currentLogo.indexOf('data:image/svg') !== -1 || currentLogo.indexOf('<svg') !== -1 || currentLogo.indexOf('logo.svg') !== -1 || currentLogo.indexOf('TM') !== -1)) ? null : currentLogo
+      appLogo: sanitizedAppLogo
     }), { merge: true }).catch(err => console.warn('Config sync error:', err));
+
+    // Mirror only delivery-safe fields (deletedOrderTombstones + appLogo) so delivery.html never reads admin app_config
+    syncDeliverySafeConfigToCloud(deletedOrderTombstones || [], sanitizedAppLogo);
   };
 
   if (immediate) {
@@ -3757,115 +3901,130 @@ function manualTriggerCloudSync(isQuiet = false) {
     db.enableNetwork().catch(() => {});
   }
 
-  // 1. Fetch latest customers from Firestore and process them
-  const custPromise = db.collection('customers').get().then(snapshot => {
-    if (!snapshot.empty) {
-      const remote = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d && (d.id || d.name)) remote.push(d);
-      });
-      processIncomingCloudCustomers(remote);
-    } else if (customers.length > 0) {
-      seedLocalCustomersToCloud();
-    }
-  }).catch(err => {
-    console.warn('Manual sync customers fetch error:', err);
-    if (customers.length > 0) seedLocalCustomersToCloud();
-  });
+  // Ensure all real-time listeners remain attached
+  setupFirestoreRealtimeListeners(false);
 
-  // 2. Fetch latest orders from Firestore
-  const ordersPromise = db.collection('orders').get().then(snapshot => {
-    if (!snapshot.empty) {
-      const remoteOrders = [];
-      snapshot.forEach(doc => {
-        const d = doc.data();
-        if (d && d.id) {
-          if (isOrderTombstoned(d.id)) {
-            deleteCloudOrder(d.id, doc.id);
-            return;
+  // 1. Fetch latest customers from server first (fallback to default)
+  const custPromise = db.collection('customers').get({ source: 'server' })
+    .catch(() => db.collection('customers').get())
+    .then(snapshot => {
+      if (snapshot && !snapshot.empty) {
+        const remote = [];
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d && (d.id || d.name)) remote.push(d);
+        });
+        processIncomingCloudCustomers(remote);
+      } else if (customers.length > 0) {
+        seedLocalCustomersToCloud();
+      }
+    }).catch(err => {
+      console.warn('Manual sync customers fetch error:', err);
+      if (customers.length > 0) seedLocalCustomersToCloud();
+    });
+
+  // 2. Fetch latest orders from server first (runs alert & UI diff pipeline)
+  const ordersPromise = db.collection('orders').get({ source: 'server' })
+    .catch(() => db.collection('orders').get())
+    .then(snapshot => {
+      if (snapshot && !snapshot.empty) {
+        const remoteOrders = [];
+        snapshot.forEach(doc => {
+          const d = doc.data();
+          if (d && d.id) {
+            if (isOrderTombstoned(d.id)) {
+              deleteCloudOrder(d.id, doc.id);
+              return;
+            }
+            d._firestoreDocId = doc.id;
+            remoteOrders.push(d);
           }
-          d._firestoreDocId = doc.id;
-          remoteOrders.push(d);
-        }
-      });
-      remoteOrders.sort((a, b) => (b.date || '').localeCompare(a.date || '') || (b.id || '').localeCompare(a.id || ''));
-      orders = remoteOrders;
-      try {
-        localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
-      } catch (e) {}
-      updateDashboard();
-    } else if (orders.length > 0) {
-      seedLocalOrdersToCloud();
-    }
-  }).catch(err => {
-    console.warn('Manual sync orders fetch error:', err);
-    if (orders.length > 0) seedLocalOrdersToCloud();
-  });
+        });
+        applyRemoteOrdersSnapshotList(remoteOrders, { triggerAlerts: true });
+      } else if (orders.length > 0) {
+        seedLocalOrdersToCloud();
+      }
+    }).catch(err => {
+      console.warn('Manual sync orders fetch error:', err);
+      if (orders.length > 0) seedLocalOrdersToCloud();
+    });
 
   // 3. Settings config sync
-  const configPromise = db.collection('settings').doc('app_config').get().then(doc => {
-    if (doc.exists) {
-      const cfg = doc.data();
-      if (Array.isArray(cfg.products) && cfg.products.length > 0) {
-        const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
-        products = deduplicateProductsList([...products, ...cleanCloudProducts], false);
+  const configPromise = db.collection('settings').doc('app_config').get({ source: 'server' })
+    .catch(() => db.collection('settings').doc('app_config').get())
+    .then(doc => {
+      if (doc && doc.exists) {
+        const cfg = doc.data();
+        if (Array.isArray(cfg.products) && cfg.products.length > 0) {
+          const cleanCloudProducts = cfg.products.filter(p => !isDemoSampleProduct(p));
+          products = deduplicateProductsList([...products, ...cleanCloudProducts], false);
+        }
       }
-    }
-  }).catch(err => {
-    console.warn('Config manual sync error:', err);
-  });
+    }).catch(err => {
+      console.warn('Config manual sync error:', err);
+    });
 
-  syncCloudConfig();
+  if (!isQuiet) {
+    syncCloudConfig();
+  }
 
   // 4. Daily Visits sync
-  const visitsPromise = db.collection('dailyVisits').get().then(snapshot => {
-    if (!snapshot.empty) {
-      const remoteVisits = [];
-      snapshot.forEach(doc => {
-        const d = doc.data() || {};
-        const docId = doc.id;
-        const visitObj = { ...d, id: d.id || docId };
-        visitObj.date = standardizeDateString(visitObj.date || visitObj.timestamp || visitObj.createdAt);
-        if (visitObj.id && visitObj.date) {
-          remoteVisits.push(visitObj);
+  const visitsPromise = db.collection('dailyVisits').get({ source: 'server' })
+    .catch(() => db.collection('dailyVisits').get())
+    .then(snapshot => {
+      if (snapshot && !snapshot.empty) {
+        const remoteVisits = [];
+        snapshot.forEach(doc => {
+          const d = doc.data() || {};
+          const docId = doc.id;
+          const visitObj = { ...d, id: d.id || docId };
+          visitObj.date = standardizeDateString(visitObj.date || visitObj.timestamp || visitObj.createdAt);
+          if (visitObj.id && visitObj.date) {
+            remoteVisits.push(visitObj);
+          }
+        });
+        if (typeof mergeIncomingCloudVisits === 'function') {
+          mergeIncomingCloudVisits(remoteVisits);
         }
-      });
-      if (typeof mergeIncomingCloudVisits === 'function') {
-        mergeIncomingCloudVisits(remoteVisits);
+      } else if (dailyVisits.length > 0 && typeof seedLocalVisitsToCloud === 'function') {
+        seedLocalVisitsToCloud();
       }
-    } else if (dailyVisits.length > 0 && typeof seedLocalVisitsToCloud === 'function') {
-      seedLocalVisitsToCloud();
-    }
-  }).catch(err => {
-    console.warn('Manual sync visits fetch error:', err);
-  });
+    }).catch(err => {
+      console.warn('Manual sync visits fetch error:', err);
+    });
 
   // 5. Daily Reports sync
-  const reportsPromise = db.collection('dailyReports').get().then(snapshot => {
-    if (!snapshot.empty) {
-      snapshot.forEach(doc => {
-        const d = doc.data() || {};
-        const rawDate = d.date || doc.id;
-        const dateKey = standardizeDateString(rawDate);
-        if (dateKey) {
-          dailyReports[dateKey] = { ...d, date: dateKey };
+  const reportsPromise = db.collection('dailyReports').get({ source: 'server' })
+    .catch(() => db.collection('dailyReports').get())
+    .then(snapshot => {
+      if (snapshot && !snapshot.empty) {
+        snapshot.forEach(doc => {
+          const d = doc.data() || {};
+          const rawDate = d.date || doc.id;
+          const dateKey = standardizeDateString(rawDate);
+          if (dateKey) {
+            dailyReports[dateKey] = { ...d, date: dateKey };
+          }
+        });
+        if (typeof saveDailyReportDataToStorage === 'function') {
+          saveDailyReportDataToStorage();
         }
-      });
-      if (typeof saveDailyReportDataToStorage === 'function') {
-        saveDailyReportDataToStorage();
+        if (currentMainView === 'daily-report') {
+          if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
+          if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
+        }
       }
-      if (currentMainView === 'daily-report') {
-        if (typeof renderDailyReportCalendar === 'function') renderDailyReportCalendar();
-        if (typeof renderDailyReportAnalytics === 'function') renderDailyReportAnalytics();
-      }
-    }
-  }).catch(err => {
-    console.warn('Manual sync reports fetch error:', err);
-  });
+    }).catch(err => {
+      console.warn('Manual sync reports fetch error:', err);
+    });
+
+  // 6. Support chats server sync
+  const chatsPromise = (typeof fetchAdminSupportChatsDirect === 'function')
+    ? fetchAdminSupportChatsDirect()
+    : Promise.resolve();
 
   // All promises settled: Stop spin animation and ALWAYS set status to Live Synced 🟢
-  Promise.allSettled([custPromise, ordersPromise, configPromise, visitsPromise, reportsPromise]).then(() => {
+  Promise.allSettled([custPromise, ordersPromise, configPromise, visitsPromise, reportsPromise, chatsPromise]).then(() => {
     updateCloudSyncStatus('synced', 'Live Synced 🟢');
     if (refreshIcon) refreshIcon.classList.remove('animate-spin');
     if (!isQuiet && typeof showNotification === 'function') {
@@ -3874,30 +4033,12 @@ function manualTriggerCloudSync(isQuiet = false) {
   });
 }
 
-// Auto-resync & socket wake-up when returning to app (e.g. mobile unlock, tab focus, online event)
-if (typeof document !== 'undefined') {
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'visible' && db) {
-      if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-      manualTriggerCloudSync(true);
-    }
-  });
-}
-
+// Periodic foreground heartbeat every 45 seconds to keep Firestore socket & listeners alive without re-detaching active ones
 if (typeof window !== 'undefined') {
-  window.addEventListener('online', () => {
-    if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-    manualTriggerCloudSync(true);
-  });
-
-  window.addEventListener('focus', () => {
-    if (db && typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
-  });
-
-  // Periodic heartbeat every 45 seconds to keep Firestore socket active while app is in foreground
   setInterval(() => {
     if (typeof document !== 'undefined' && document.visibilityState === 'visible' && db) {
       if (typeof db.enableNetwork === 'function') db.enableNetwork().catch(() => {});
+      setupFirestoreRealtimeListeners(false);
     }
   }, 45000);
 }
@@ -7570,10 +7711,29 @@ function updateDashboard() {
       else mobileBadge.classList.add('hidden');
     }
 
-    // 6. Update Leaderboards if view is open
+    // 6. Update Leaderboards & other active sub-views immediately if open
     const lbView = document.getElementById('viewLeaderboard') || document.getElementById('leaderboardModal');
     if (lbView && !lbView.classList.contains('hidden')) {
       renderLeaderboard();
+    }
+
+    const mhView = document.getElementById('viewMonthlyHistory');
+    if (mhView && !mhView.classList.contains('hidden') && typeof renderMonthlyHistoryList === 'function') {
+      const yrSel = document.getElementById('historyYearSelect');
+      renderMonthlyHistoryList((yrSel && yrSel.value) ? yrSel.value : new Date().getFullYear());
+    }
+
+    const cpContainer = document.getElementById('customerProfileContainer');
+    if (cpContainer && !cpContainer.classList.contains('hidden') && typeof currentProfileCustomerId !== 'undefined' && currentProfileCustomerId && typeof openCustomerProfile === 'function') {
+      openCustomerProfile(currentProfileCustomerId, typeof customerProfilePreviousView !== 'undefined' ? customerProfilePreviousView : 'customers');
+    }
+
+    if (typeof currentMainView !== 'undefined' && currentMainView === 'daily-report' && typeof renderDailyReportView === 'function') {
+      renderDailyReportView();
+    }
+
+    if (typeof renderDeliveryAlertList === 'function') {
+      renderDeliveryAlertList();
     }
 
     if (window.lucide && typeof lucide.createIcons === 'function') {
@@ -15490,4 +15650,24 @@ window.setSupportChatMessages = setSupportChatMessages;
 window.getSupportChatMessages = getSupportChatMessages;
 window.positionSupportChatDropdown = positionSupportChatDropdown;
 window.scrollAdminSupportToBottom = scrollAdminSupportToBottom;
+window.applyAdminSupportChatSnapshot = applyAdminSupportChatSnapshot;
+window.fetchAdminSupportChatsDirect = fetchAdminSupportChatsDirect;
+window.applyRemoteOrdersSnapshotList = applyRemoteOrdersSnapshotList;
+window.refreshMainRealtimeFromServer = refreshMainRealtimeFromServer;
+window.handleMainAppConnectionWakeup = handleMainAppConnectionWakeup;
+window.setupFirestoreRealtimeListeners = setupFirestoreRealtimeListeners;
+window.listenToSupportChats = listenToSupportChats;
+window.setRealtimeDbForTest = (mockDb) => { db = mockDb; };
+window.getRealtimeDbForTest = () => db;
+window.resetRealtimeListenerHandlesForTest = () => {
+  mainOrdersUnsubscribe = null;
+  mainCustomersUnsubscribe = null;
+  mainSettingsUnsubscribe = null;
+  mainVisitsUnsubscribe = null;
+  mainReportsUnsubscribe = null;
+  supportChatUnsubscribe = null;
+  lastMainWakeupAt = 0;
+  isMainServerRefreshInFlight = false;
+  mainServerRefreshStartedAt = 0;
+};
 if (typeof supportChatMessages !== 'undefined') window.supportChatMessages = supportChatMessages;
