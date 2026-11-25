@@ -1267,19 +1267,16 @@ function loadDataFromStorage() {
 
     let customersLocationNormalized = false;
 
-    // Harmonize loaded customers with verified canonical records
+    // Harmonize loaded customers with verified canonical records (preserve user-edited fields)
     if (Array.isArray(customers) && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
       const canonMap = new Map(PRE_NOVEMBER_CANONICAL_CUSTOMERS.map(c => [c.id, c]));
       customers.forEach(c => {
         if (c && c.id && canonMap.has(c.id)) {
           const canon = canonMap.get(c.id);
-          if (c.name !== canon.name || c.town !== canon.town || c.district !== canon.district || c.category !== canon.category) {
-            customersLocationNormalized = true;
-          }
-          c.name = canon.name;
-          c.town = canon.town;
-          c.district = canon.district;
-          c.category = canon.category;
+          if (!c.name) c.name = canon.name;
+          if (!c.town) c.town = canon.town;
+          if (!c.district) c.district = canon.district || 'Ernakulam';
+          if (!c.category) c.category = canon.category || 'Wholesaler';
         }
       });
     }
@@ -1646,7 +1643,7 @@ function processIncomingCloudCustomers(remoteCustomers) {
         }
       }
       remoteCust.name = alias.canonicalName;
-      if (!remoteCust.town || remoteCust.town === 'Ernakulam' || remoteCust.town === 'Local') {
+      if (alias.town && (!remoteCust.town || remoteCust.town === 'Local')) {
         remoteCust.town = alias.town;
       }
     }
@@ -1781,16 +1778,16 @@ function processIncomingCloudCustomers(remoteCustomers) {
   // Final sanity filter: Ensure no deleted customer or in-trash customer remains
   customers = customers.filter(c => c && !isCustomerTombstoned(c.name, c.id) && !isCustomerInTrash(c.name, c.id));
 
-  // Harmonize incoming cloud customers with verified canonical records
+  // Harmonize incoming cloud customers with verified canonical records (preserve user-edited fields)
   if (Array.isArray(customers) && typeof PRE_NOVEMBER_CANONICAL_CUSTOMERS !== 'undefined') {
     const canonMap = new Map(PRE_NOVEMBER_CANONICAL_CUSTOMERS.map(c => [c.id, c]));
     customers.forEach(c => {
       if (c && c.id && canonMap.has(c.id)) {
         const canon = canonMap.get(c.id);
-        c.name = canon.name;
-        c.town = canon.town;
-        c.district = canon.district;
-        c.category = canon.category;
+        if (!c.name) c.name = canon.name;
+        if (!c.town) c.town = canon.town;
+        if (!c.district) c.district = canon.district || 'Ernakulam';
+        if (!c.category) c.category = canon.category || 'Wholesaler';
       }
     });
   }
@@ -5019,7 +5016,7 @@ const CANONICAL_CUSTOMER_ALIASES = {
   'maj angamaly': { canonicalName: 'MAJ', town: 'Angamaly' },
   'maj': { canonicalName: 'MAJ', town: 'Angamaly' },
   'pkbr elamakkara': { canonicalName: 'PKBR', town: 'Elamakkara' },
-  'pkbr': { canonicalName: 'PKBR', town: 'Elamakkara' },
+  'pkbr': { canonicalName: 'PKBR' },
   'al-safi food court, pukkattupady': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' },
   'al-safi food court': { canonicalName: 'Al-Safi Food Court', town: 'Pukkattupady' },
   'ub kalady': { canonicalName: 'Ubees kalady', town: 'Kalady' },
@@ -5054,7 +5051,7 @@ function normalizeOrderCustomerNames() {
           orderChanged = true;
         }
         const curTownKey = getTownNormalizedKey(o.customer.town);
-        if (!curTownKey || curTownKey === 'ernakulam' || curTownKey === 'local') {
+        if (alias.town && (!curTownKey || curTownKey === 'local')) {
           o.customer.town = alias.town;
           orderChanged = true;
         }
@@ -5154,10 +5151,10 @@ function resetCustomersToPreNovemberSales(syncToCloud = true) {
       const merged = {
         ...canon,
         ...existing,
-        name: canon.name,
-        town: canon.town || existing.town || 'Ernakulam',
-        district: canon.district || existing.district || 'Ernakulam',
-        category: canon.category || existing.category || 'Wholesaler'
+        name: existing.name || canon.name,
+        town: existing.town || canon.town || 'Ernakulam',
+        district: existing.district || canon.district || 'Ernakulam',
+        category: existing.category || canon.category || 'Wholesaler'
       };
       if (!Array.isArray(merged.members) || merged.members.length === 0) {
         merged.members = typeof getCustomerMembers === 'function' ? getCustomerMembers(merged) : [];
@@ -5253,7 +5250,7 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
     if (aliasInfo) {
       item.name = aliasInfo.canonicalName;
       const curTownKey = getTownNormalizedKey(item.town);
-      if (!curTownKey || curTownKey === 'ernakulam' || curTownKey === 'local') {
+      if (aliasInfo.town && (!curTownKey || curTownKey === 'local')) {
         item.town = aliasInfo.town;
       }
     }
@@ -6756,7 +6753,7 @@ async function handleSaveOrder(event) {
     if (aliasInfo) {
       customerName = aliasInfo.canonicalName;
       const curTownKey = getTownNormalizedKey(customerTown);
-      if (!curTownKey || curTownKey === 'ernakulam' || curTownKey === 'local') {
+      if (aliasInfo.town && (!curTownKey || curTownKey === 'local')) {
         customerTown = aliasInfo.town;
       }
     }
@@ -6840,7 +6837,7 @@ async function handleSaveOrder(event) {
       const aliasInfo = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[cleanLower];
       if (aliasInfo) {
         customerName = aliasInfo.canonicalName;
-        if (!customerTown || customerTown === 'Ernakulam' || customerTown === 'Local') {
+        if (aliasInfo.town && (!customerTown || customerTown === 'Local')) {
           customerTown = aliasInfo.town;
         }
       }
@@ -12321,7 +12318,7 @@ function handleImportDataJSON(event) {
           const alias = typeof CANONICAL_CUSTOMER_ALIASES !== 'undefined' && CANONICAL_CUSTOMER_ALIASES[rawLower];
           if (alias) {
             incCust.name = alias.canonicalName;
-            if (!incCust.town || incCust.town === 'Ernakulam' || incCust.town === 'Local') incCust.town = alias.town;
+            if (alias.town && (!incCust.town || incCust.town === 'Local')) incCust.town = alias.town;
           }
           const key = incCust.name.trim().toLowerCase();
           if (!existingByName.has(key)) {

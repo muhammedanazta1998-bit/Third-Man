@@ -1703,6 +1703,46 @@ window.onerror = function(msg, url, line, col, err) {
     const mergedCloudCust = customers.find(c => c.id === 'c_cloud_inv_1');
     assert(mergedCloudCust && mergedCloudCust.town === 'Kothamangalam' && !invRegex.test(mergedCloudCust.location),
       "processIncomingCloudCustomers cleans U+2060 from incoming Firestore customer records");
+
+    // 11. Customer Editing Persistence: PKBR town changed from Elamakkara to Ernakulam
+    log("\n--- Testing Customer Editing Persistence (PKBR Elamakkara -> Ernakulam) ---");
+    let pkbrCust = customers.find(c => c.name === 'PKBR' || c.id === 'c_hist_059');
+    if (!pkbrCust) {
+      pkbrCust = { id: 'c_hist_059', name: 'PKBR', town: 'Elamakkara', district: 'Ernakulam', category: 'Wholesaler' };
+      customers.push(pkbrCust);
+    }
+    document.getElementById('custEditId').value = pkbrCust.id;
+    document.getElementById('custNameInput').value = 'PKBR';
+    document.getElementById('custDistrictSelect').value = 'Ernakulam';
+    document.getElementById('custTownInput').value = 'Ernakulam';
+    document.getElementById('custCategoryInput').value = 'Wholesaler';
+    handleCustomerFormSubmit({ preventDefault: () => {} });
+
+    let updatedPkbr = customers.find(c => c.id === 'c_hist_059');
+    assert(updatedPkbr && updatedPkbr.town === 'Ernakulam', "PKBR town updated to Ernakulam via form submit");
+
+    // Test 1: deduplicateCustomersList must preserve town = Ernakulam
+    customers = deduplicateCustomersList(customers, false);
+    updatedPkbr = customers.find(c => c.id === 'c_hist_059');
+    assert(updatedPkbr && updatedPkbr.town === 'Ernakulam', "PKBR town stays Ernakulam after deduplicateCustomersList");
+
+    // Test 2: resetCustomersToPreNovemberSales must preserve town = Ernakulam
+    customers = resetCustomersToPreNovemberSales(false);
+    updatedPkbr = customers.find(c => c.id === 'c_hist_059');
+    assert(updatedPkbr && updatedPkbr.town === 'Ernakulam', "PKBR town stays Ernakulam after resetCustomersToPreNovemberSales");
+
+    // Test 3: processIncomingCloudCustomers must preserve town = Ernakulam
+    processIncomingCloudCustomers([
+      { id: 'c_hist_059', name: 'PKBR', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler' }
+    ]);
+    updatedPkbr = customers.find(c => c.id === 'c_hist_059');
+    assert(updatedPkbr && updatedPkbr.town === 'Ernakulam', "PKBR town stays Ernakulam after processIncomingCloudCustomers with Ernakulam");
+
+    // Test 4: loadDataFromStorage simulation must preserve town = Ernakulam
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify(customers));
+    loadDataFromStorage();
+    updatedPkbr = customers.find(c => c.id === 'c_hist_059');
+    assert(updatedPkbr && updatedPkbr.town === 'Ernakulam', "PKBR town stays Ernakulam across localStorage reload / refresh");
   } finally {
     window.confirm = origConfirmFn;
     window.alert = origAlertFn;
