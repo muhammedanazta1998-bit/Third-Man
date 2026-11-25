@@ -8803,13 +8803,80 @@ function clearOrderDateFilter(event) {
 let currentWhatsAppOrderId = null;
 let currentInvoiceOrderId = null;
 
+function getWhatsAppTownLabel(cust, cleanName) {
+  const stripZwc = s => String(s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').trim();
+  let place = '';
+  let dirCust = null;
+
+  if (typeof cust === 'object' && cust !== null) {
+    place = stripZwc(cust.town || cust.area || '');
+    if (Array.isArray(customers)) {
+      const custId = cust.id ? String(cust.id) : '';
+      const nameLower = cleanName.toLowerCase();
+      dirCust = customers.find(c => (custId && c.id === custId) || (c.name && c.name.trim().toLowerCase() === nameLower)) || null;
+    }
+    const dirTown = stripZwc(dirCust?.town || dirCust?.area || '');
+    if (!place || place.toLowerCase() === 'local') {
+      place = dirTown;
+    } else if (place.toLowerCase() === 'ernakulam' && dirTown && dirTown.toLowerCase() !== 'ernakulam' && dirTown.toLowerCase() !== 'local') {
+      place = dirTown;
+    }
+    if (!place || place.toLowerCase() === 'local') {
+      place = stripZwc(cust.place || cust.landmark || dirCust?.place || dirCust?.landmark || '');
+    }
+    if ((!place || place.toLowerCase() === 'local') && cust.location) {
+      const firstSeg = stripZwc(String(cust.location).split(',')[0]);
+      if (firstSeg && firstSeg.toLowerCase() !== 'local') {
+        place = firstSeg;
+      }
+    }
+  } else if (typeof cust === 'string' && Array.isArray(customers)) {
+    const nameLower = cleanName.toLowerCase();
+    dirCust = customers.find(c => c.name && c.name.trim().toLowerCase() === nameLower) || null;
+    place = stripZwc(dirCust?.town || dirCust?.area || dirCust?.place || dirCust?.landmark || '');
+  }
+
+  if (!place || place.toLowerCase() === 'local') return '';
+
+  const escapeRx = str => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  // Avoid duplicating town when the shop name already includes it (e.g. "MK Aluva", "Vettikkaattil Thodupuzha")
+  if (new RegExp(`(^|\\s)${escapeRx(place)}(\\s|$)`, 'i').test(cleanName)) {
+    return '';
+  }
+
+  // Legacy canonical customers sometimes defaulted town='Ernakulam' even though shop name already specifies a town
+  if (place.toLowerCase() === 'ernakulam') {
+    const knownTowns = new Set();
+    if (typeof DEFAULT_DISTRICT_TOWNS === 'object') {
+      Object.values(DEFAULT_DISTRICT_TOWNS).forEach(list => {
+        if (Array.isArray(list)) list.forEach(t => { if (t && t.toLowerCase() !== 'ernakulam') knownTowns.add(stripZwc(t)); });
+      });
+    }
+    if (typeof customDistrictTowns === 'object' && customDistrictTowns) {
+      Object.values(customDistrictTowns).forEach(list => {
+        if (Array.isArray(list)) list.forEach(t => { if (t && t.toLowerCase() !== 'ernakulam') knownTowns.add(stripZwc(t)); });
+      });
+    }
+    ['Paravoor', 'Paravur', 'Bypass', 'Keezhillam', 'Vallam', 'Elamakkara', 'Karukappilly', 'Pukkattupady', 'Pezhakappilly', 'Pezhakkappilly'].forEach(t => knownTowns.add(t));
+    for (const kt of knownTowns) {
+      if (kt && new RegExp(`(^|\\s)${escapeRx(kt)}(\\s|$)`, 'i').test(cleanName)) {
+        return '';
+      }
+    }
+  }
+
+  return place;
+}
+
 function formatWhatsAppOrderMessage(order) {
   if (!order) return '';
 
-  const orderId = order.id || 'ORD-0000';
+  const stripZwc = s => String(s || '').replace(/[\u200B-\u200D\u2060\uFEFF]/g, '').trim();
+  const customerName = stripZwc(getCustomerName(order.customer) || 'Customer');
+  const townLabel = getWhatsAppTownLabel(order.customer, customerName);
+  const headerBase = (townLabel ? `${customerName} ${townLabel}` : customerName).toUpperCase();
   const isUrgent = (String(order.deliveryStatus || '').toLowerCase() === 'urgent');
-  const deliveryStatusText = isUrgent ? '⚡ Delivery: URGENT' : '🚚 Delivery: NORMAL';
-  const customerName = getCustomerName(order.customer);
+  const headerLine = isUrgent ? `> *${headerBase} (URGENT)*` : `> *${headerBase}*`;
 
   const items = (order.items && order.items.length > 0) ? order.items : [
     {
@@ -8822,37 +8889,29 @@ function formatWhatsAppOrderMessage(order) {
     }
   ];
 
-  const totalBags = (order.bagQty !== undefined) ? order.bagQty : items.reduce((s, i) => s + (parseFloat(i.bagQty) || 0), 0);
-
-  const maxNameLen = Math.max(...items.map(it => (it.productName || '').length), 10);
   const itemsText = items.map(it => {
     const qty = it.bagQty || 0;
-    const pName = (it.productName || 'Biriyani Rice').padEnd(maxNameLen + 2, ' ');
-    return `🌾 ${pName} × ${qty} Bags`;
+    const pName = stripZwc(it.productName || 'Biriyani Rice').toUpperCase();
+    return `- ${pName} *${qty}* BAG`;
   }).join('\n');
 
-  const noteText = (order.notes && order.notes.trim()) ? order.notes.trim() : '-';
+  const noteText = (order.notes && typeof order.notes === 'string') ? order.notes.trim() : '';
 
-  const message =
-`🛒 *ORDER DETAILS*
-━━━━━━━━━━━━━━━━━━
-
-🆔 Order ID: ${orderId}
-${deliveryStatusText}
-
-👤 Customer: ${customerName}
-
-📦 *ITEMS*
-
-${itemsText}
-
-━━━━━━━━━━━━━━━━━━
-🛍️ Total: ${totalBags} Bags
-━━━━━━━━━━━━━━━━━━
-
-📝 Note: ${noteText}`;
+  let message = `${headerLine}\n\n${itemsText}`;
+  if (noteText) {
+    message += `\n\nNote: ${noteText}`;
+  }
 
   return message;
+}
+
+function getWhatsAppPreviewMessageText(order) {
+  const previewEl = document.getElementById('orderSuccessWhatsAppPreview');
+  const raw = previewEl
+    ? (previewEl.tagName === 'TEXTAREA' ? previewEl.value : previewEl.textContent)
+    : '';
+  const trimmed = (raw || '').trim();
+  return trimmed || (order ? formatWhatsAppOrderMessage(order) : '');
 }
 
 function shareOrderToWhatsApp(orderId) {
@@ -8878,7 +8937,15 @@ function showOrderSuccessWhatsAppModal(orderId) {
   const previewEl = document.getElementById('orderSuccessWhatsAppPreview');
   const subtextEl = document.getElementById('orderSuccessModalSubtext');
 
-  if (previewEl) previewEl.textContent = msg;
+  if (previewEl) {
+    if (previewEl.tagName === 'TEXTAREA') {
+      previewEl.value = msg;
+      const lineCount = msg.split('\n').length;
+      previewEl.rows = Math.min(Math.max(lineCount + 1, 4), 10);
+    } else {
+      previewEl.textContent = msg;
+    }
+  }
   if (subtextEl) subtextEl.textContent = `Order ID: ${order.id} • ${getCustomerName(order.customer)}`;
 
   modal.classList.remove('hidden');
@@ -8895,19 +8962,31 @@ function closeOrderSuccessModal() {
 
 function sendSavedOrderToWhatsApp() {
   if (currentWhatsAppOrderId) {
-    shareOrderToWhatsApp(currentWhatsAppOrderId);
+    const order = orders.find(o => o.id === currentWhatsAppOrderId);
+    const customMsg = getWhatsAppPreviewMessageText(order);
+    markOrderAsViewed(currentWhatsAppOrderId);
+    if (customMsg) {
+      const whatsappUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(customMsg)}`;
+      window.open(whatsappUrl, '_blank');
+    } else {
+      shareOrderToWhatsApp(currentWhatsAppOrderId);
+    }
     closeOrderSuccessModal();
   }
 }
 
 function copyWhatsAppMessage() {
-  const previewEl = document.getElementById('orderSuccessWhatsAppPreview');
-  if (previewEl && previewEl.textContent) {
-    navigator.clipboard.writeText(previewEl.textContent).then(() => {
-      showNotification('WhatsApp message copied to clipboard!');
+  const text = getWhatsAppPreviewMessageText(null);
+  if (!text) return;
+  const successMsg = 'WhatsApp message copied to clipboard!';
+  if (navigator.clipboard && typeof navigator.clipboard.writeText === 'function') {
+    navigator.clipboard.writeText(text).then(() => {
+      showNotification(successMsg);
     }).catch(() => {
-      showNotification('Failed to copy text.');
+      fallbackCopyText(text, successMsg);
     });
+  } else {
+    fallbackCopyText(text, successMsg);
   }
 }
 

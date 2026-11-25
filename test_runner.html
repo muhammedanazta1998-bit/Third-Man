@@ -163,6 +163,12 @@
   <span id="custTotalBadge"><span id="custTotalBadgeText"></span></span>
   <input type="text" id="custDirectorySearchInput" />
   <button type="button" id="btnCustSearchClear" class="hidden"></button>
+
+  <!-- Post-Order WhatsApp Modal Fixtures -->
+  <div id="orderSuccessWhatsAppModal" class="hidden">
+    <span id="orderSuccessModalSubtext"></span>
+    <textarea id="orderSuccessWhatsAppPreview"></textarea>
+  </div>
   <button type="button" id="btnToggleCustFilters"></button>
   <span id="custActiveFiltersBadge" class="hidden"></span>
   <i id="custFiltersChevron"></i>
@@ -1444,6 +1450,42 @@ window.onerror = function(msg, url, line, col, err) {
   resetRealtimeListenerHandlesForTest();
   handleMainAppConnectionWakeup({ type: 'online' });
   assert(disableNetworkCalls >= 1, "Online resume invokes disableNetwork socket cycle before re-syncing");
+
+  // TEST 21: Simple WhatsApp Order Message Template
+  log("\n--- TEST 21: Simple WhatsApp Order Message Template ---");
+  const waSampleBasic = {
+    id: 'ORD-TEST-WA1',
+    deliveryStatus: 'Normal',
+    customer: { id: 'c_wa1', name: 'Union Basmati', town: 'Thodupuzha' },
+    items: [{ productName: 'White Chabi', bagQty: 30, bagSize: 30 }],
+    notes: ''
+  };
+  const waMsgBasic = formatWhatsAppOrderMessage(waSampleBasic);
+  const expectedBasic = "> *UNION BASMATI THODUPUZHA*\n\n- WHITE CHABI *30* BAG";
+  assert(waMsgBasic === expectedBasic, `Basic WhatsApp template matches exact user model (${JSON.stringify(waMsgBasic)})`);
+
+  // Multi-item + Urgent + Note + Avoid duplicate town in customer name
+  const waSampleDupTown = {
+    id: 'ORD-TEST-WA2',
+    deliveryStatus: 'Urgent',
+    customer: { id: 'c_wa2', name: 'Vettikkaattil Thodupuzha', town: 'Ernakulam' },
+    items: [
+      { productName: 'Mohabbath Green', bagQty: 20 },
+      { productName: 'Golden Chabi', bagQty: 15 }
+    ],
+    notes: 'Unload at back gate'
+  };
+  const waMsgDup = formatWhatsAppOrderMessage(waSampleDupTown);
+  const expectedDup = "> *VETTIKKAATTIL THODUPUZHA (URGENT)*\n\n- MOHABBATH GREEN *20* BAG\n- GOLDEN CHABI *15* BAG\n\nNote: Unload at back gate";
+  assert(waMsgDup === expectedDup, "WhatsApp template handles multi-item, Urgent status, non-empty notes, and skips redundant Ernakulam when town is in shop name");
+
+  // Modal preview population & edited text extraction
+  orders.unshift(waSampleBasic);
+  showOrderSuccessWhatsAppModal('ORD-TEST-WA1');
+  const waPreviewEl = document.getElementById('orderSuccessWhatsAppPreview');
+  assert(waPreviewEl && waPreviewEl.value === expectedBasic, "Post-order WhatsApp modal textarea pre-fills exact simple format");
+  orders = orders.filter(o => o.id !== 'ORD-TEST-WA1');
+  closeOrderSuccessModal();
 
   // Restore clean state
   setRealtimeDbForTest(origDb);
