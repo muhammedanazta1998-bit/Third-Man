@@ -1500,48 +1500,71 @@ window.onerror = function(msg, url, line, col, err) {
   activeSnapCallbacks.support_chats.onNext(makeMockSnap(mockChatSnapshotData));
   assert(document.getElementById('supportChatUnreadBadge').textContent === '1', "Live support_chats snapshot immediately updates unread badge without page reload");
 
-  // 4. Wakeup triggers immediate server refresh (source: 'server') without dropping healthy listeners
-  handleMainAppConnectionWakeup({ type: 'online' });
-  assert(serverGetCalls.orders >= 1, "Connection wakeup immediately fetches orders with source: 'server'");
-  assert(serverGetCalls.support_chats >= 1, "Connection wakeup immediately fetches support_chats with source: 'server'");
-  assert(snapCounts.orders === 1 && snapCounts.support_chats === 1, "Wakeup keeps healthy active listeners intact without needless detach/reattach");
-
-  // 5. Detached listener auto-recovers cleanly without disturbing healthy listeners
-  const prevOrdersSnapCount = snapCounts.orders;
-  activeSnapCallbacks.support_chats.onErr(new Error('Simulated socket drop'));
-  setupFirestoreRealtimeListeners(false);
-  assert(snapCounts.support_chats === 2, "Detached listener cleanly re-attaches on recovery");
-  assert(snapCounts.orders === prevOrdersSnapCount, "Healthy orders listener is not torn down when only support_chats recovers");
-
-  // 6. Scoped foreground order catch-up queries only active & today-delivered slices
-  assert(typeof fetchScopedOrdersCatchupForAdmin === 'function', "fetchScopedOrdersCatchupForAdmin function exists");
-  const scopedWhereFields = [];
+  // 4. Normal focus / visibilitychange tab-switching triggers ZERO server get() reads & ZERO disableNetwork cycles
   let disableNetworkCalls = 0;
   let enableNetworkCalls = 0;
-  const scopedMockDb = {
-    disableNetwork: () => { disableNetworkCalls++; return Promise.resolve(); },
-    enableNetwork: () => { enableNetworkCalls++; return Promise.resolve(); },
-    collection: (name) => ({
+  const scopedWhereFields = [];
+  mockRealtimeDb.disableNetwork = () => { disableNetworkCalls++; return Promise.resolve(); };
+  mockRealtimeDb.enableNetwork = () => { enableNetworkCalls++; return Promise.resolve(); };
+  const origMockCol = mockRealtimeDb.collection;
+  mockRealtimeDb.collection = (name) => {
+    const baseCol = origMockCol(name);
+    return {
+      ...baseCol,
       where: (field) => {
         scopedWhereFields.push(field);
         return {
           get: (opts) => {
-            if (opts && opts.source === 'server') serverGetCalls[name] = (serverGetCalls[name] || 0) + 1;
+            if (opts && opts.source === 'server' && Object.prototype.hasOwnProperty.call(serverGetCalls, name)) {
+              serverGetCalls[name]++;
+            }
             return Promise.resolve(makeMockSnap([]));
           }
         };
-      },
-      doc: (docId) => mockRealtimeDb.collection(name).doc(docId),
-      onSnapshot: (onNext, onErr) => mockRealtimeDb.collection(name).onSnapshot(onNext, onErr),
-      get: (opts) => mockRealtimeDb.collection(name).get(opts)
-    })
+      }
+    };
   };
-  setRealtimeDbForTest(scopedMockDb);
-  fetchScopedOrdersCatchupForAdmin();
-  assert(scopedWhereFields.includes('dispatchStatus') && scopedWhereFields.includes('deliveredAt'), "Foreground catch-up scopes orders query to active and today-delivered slices");
+
   resetRealtimeListenerHandlesForTest();
+  setupFirestoreRealtimeListeners(false);
+  serverGetCalls.orders = 0;
+  serverGetCalls.support_chats = 0;
+  serverGetCalls.customers = 0;
+  disableNetworkCalls = 0;
+  scopedWhereFields.length = 0;
+
+  handleMainAppConnectionWakeup({ type: 'focus' });
+  assert(serverGetCalls.orders === 0 && serverGetCalls.support_chats === 0 && serverGetCalls.customers === 0,
+    "Tab focus wakeup performs ZERO redundant source:'server' reads when listeners are healthy");
+  assert(disableNetworkCalls === 0, "Tab focus wakeup does NOT tear down Firestore socket with disableNetwork");
+
+  // 5. Genuine 'online' resume uses scoped catch-up + socket cycle WITHOUT scanning full historical orders/customers
   handleMainAppConnectionWakeup({ type: 'online' });
+  await new Promise(r => setTimeout(r, 200)); // wait for async socket-cycle + fetchScopedOrdersCatchup chain
   assert(disableNetworkCalls >= 1, "Online resume invokes disableNetwork socket cycle before re-syncing");
+  assert(scopedWhereFields.includes('dispatchStatus') && scopedWhereFields.includes('deliveredAt'),
+    "Online resume scopes orders catch-up query to active and recent-delivered slices (never full collection dump)");
+  assert(serverGetCalls.customers === 0, "Online resume does NOT scan full customers collection");
+  assert(serverGetCalls.support_chats >= 1, "Online resume refreshes support_chats catch-up");
+
+  // 6. Detached listener auto-recovers cleanly without disturbing healthy listeners
+  const prevOrdersSnapCount = snapCounts.orders;
+  activeSnapCallbacks.support_chats.onErr(new Error('Simulated socket drop'));
+  setupFirestoreRealtimeListeners(false);
+  assert(snapCounts.support_chats >= 2, "Detached listener cleanly re-attaches on recovery");
+  assert(snapCounts.orders === prevOrdersSnapCount, "Healthy orders listener is not torn down when only support_chats recovers");
+
+  // 7. Scoped foreground catch-up function remains available and quota-safe
+  assert(typeof fetchScopedOrdersCatchupForAdmin === 'function', "fetchScopedOrdersCatchupForAdmin function exists");
+  scopedWhereFields.length = 0;
+  // Reset in-flight flag (the online wakeup above may have set it) and re-assert admin auth
+  // (the network-cycle async callback can reset it in the test harness; real app preserves it via onAuthStateChanged)
+  window.isAdminScopedCatchupInFlight = false;
+  setAdminAuthForTest(true, 'admin@thirdman.test');
+  await new Promise(r => setTimeout(r, 10));
+  await fetchScopedOrdersCatchupForAdmin();
+  assert(scopedWhereFields.includes('dispatchStatus') && scopedWhereFields.includes('deliveredAt'),
+    "fetchScopedOrdersCatchupForAdmin scopes orders query to active and today-delivered slices");
 
   // TEST 21: Simple WhatsApp Order Message Template
   log("\n--- TEST 21: Simple WhatsApp Order Message Template ---");
@@ -2312,6 +2335,89 @@ window.onerror = function(msg, url, line, col, err) {
     customers = snap23Customers;
     orders = snap23Orders;
     updateDashboard();
+  }
+
+  // ==========================================
+  // TEST 24: Spark Free Plan Quota Safety & Config Write Deduplication
+  // ==========================================
+  log("\n--- TEST 24: Spark Free Plan Quota Safety & Config Write Deduplication ---");
+  const snap24Db = getRealtimeDbForTest();
+  let appConfigWrites24 = 0;
+  let deliveryConfigWrites24 = 0;
+  let fullOrdersGets24 = 0;
+  let fullCustomersGets24 = 0;
+  try {
+    setAdminAuthForTest(true, 'admin@thirdman.test');
+    const mock24Db = {
+      settings: () => {},
+      disableNetwork: () => Promise.resolve(),
+      enableNetwork: () => Promise.resolve(),
+      batch: () => ({ set: () => {}, update: () => {}, delete: () => {}, commit: () => Promise.resolve() }),
+      collection: (name) => ({
+        doc: (docId) => ({
+          set: () => {
+            if (name === 'settings' && docId === 'app_config') appConfigWrites24++;
+            if (name === 'settings' && docId === 'delivery_config') deliveryConfigWrites24++;
+            return Promise.resolve();
+          },
+          update: () => Promise.resolve(),
+          onSnapshot: (onNext) => {
+            onNext({ exists: false, data: () => null });
+            return () => {};
+          },
+          get: () => Promise.resolve({ exists: false, data: () => null })
+        }),
+        where: () => ({
+          get: () => Promise.resolve(makeMockSnap([]))
+        }),
+        onSnapshot: (onNext) => {
+          onNext(makeMockSnap([]));
+          return () => {};
+        },
+        get: () => {
+          if (name === 'orders') fullOrdersGets24++;
+          if (name === 'customers') fullCustomersGets24++;
+          return Promise.resolve(makeMockSnap([]));
+        }
+      })
+    };
+
+    setRealtimeDbForTest(mock24Db);
+    resetRealtimeListenerHandlesForTest();
+
+    // 1. initFirebaseSync must NOT fire redundant full collection get() alongside onSnapshot
+    initFirebaseSync();
+    assert(fullOrdersGets24 === 0 && fullCustomersGets24 === 0,
+      "initFirebaseSync attaches live onSnapshot listeners without duplicate full orders/customers get() reads");
+
+    // 2. syncCloudConfig hashes payload and skips identical redundant writes
+    appConfigWrites24 = 0;
+    deliveryConfigWrites24 = 0;
+    syncCloudConfig(true);
+    syncCloudConfig(true);
+    syncCloudConfig(true);
+    assert(appConfigWrites24 === 1,
+      "Repeated unchanged syncCloudConfig(true) calls perform only 1 Firestore write (zero redundant writes)");
+    assert(deliveryConfigWrites24 === 1,
+      "Repeated unchanged syncDeliverySafeConfigToCloud calls perform only 1 Firestore write");
+
+    // Updating a config list triggers exactly 1 new write on next sync
+    const origAreas24 = Array.isArray(savedAreas) ? [...savedAreas] : [];
+    savedAreas = Array.from(new Set([...origAreas24, 'QuotaTestTown_' + Date.now()]));
+    syncCloudConfig(true);
+    assert(appConfigWrites24 === 2, "Genuine config mutation triggers 1 incremental Firestore config update");
+    savedAreas = origAreas24;
+    syncCloudConfig(true);
+
+    // 3. Quota exhaustion ('resource-exhausted') pauses automatic retries cleanly
+    assert(isFirestoreQuotaPaused() === false, "Quota pause is initially inactive");
+    const quotaHandled = handleFirestoreListenerError({ code: 'resource-exhausted', message: 'Quota exceeded' }, 'test_quota');
+    assert(quotaHandled === true && isFirestoreQuotaPaused() === true,
+      "resource-exhausted error triggers quota pause window instead of tight retry loop");
+  } finally {
+    setAdminAuthForTest(false);
+    setRealtimeDbForTest(snap24Db);
+    resetRealtimeListenerHandlesForTest();
   }
 
   log(`\n================================`);

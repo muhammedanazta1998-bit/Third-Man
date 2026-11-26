@@ -1150,10 +1150,43 @@
 
     let deliveryFirebaseBootedAt = 0;
     let isDeliveryNetworkCycling = false;
+    let hasReceivedDeliveryOrdersSnapshot = false;
+    let deliveryQuotaExhaustedUntil = 0;
+    let deliveryActiveReconnectAttempts = 0;
+    let deliveryDeliveredReconnectAttempts = 0;
+    let deliveryChatReconnectAttempts = 0;
+    let deliveryConfigReconnectAttempts = 0;
+    let reconnectConfigTimeout = null;
+    let lastSavedQuickRemarksJson = '';
+
+    function isDeliveryQuotaPaused() {
+      return deliveryQuotaExhaustedUntil > Date.now();
+    }
+
+    function handleDeliveryFirestoreError(err, sourceLabel = 'Firestore') {
+      if (!err) return false;
+      const code = String(err.code || '').toLowerCase();
+      const msg = String(err.message || '').toLowerCase();
+      const isQuota = code === 'resource-exhausted' || msg.includes('quota') || msg.includes('daily usage limit') || err.status === 429;
+      if (isQuota) {
+        deliveryQuotaExhaustedUntil = Date.now() + (10 * 60 * 1000);
+        console.warn(`Delivery Firestore daily quota reached (${sourceLabel}); pausing retries.`);
+        updateSyncStatus('error', 'Quota Limit (Resets ~1:30 PM)');
+        return true;
+      }
+      if (code === 'permission-denied') {
+        console.warn(`Delivery Firestore permission denied (${sourceLabel}); stopping retry loop.`);
+        return true;
+      }
+      return false;
+    }
 
     function initFirebase() {
       // 1. Instantly display active/today orders from isolated delivery cache
       const hasCached = loadInitialOrdersFromCache();
+      try {
+        lastSavedQuickRemarksJson = JSON.stringify(getQuickRemarks());
+      } catch (e) {}
 
       if (typeof firebase === 'undefined') {
         console.warn('Firebase SDK not defined.');
@@ -1170,6 +1203,7 @@
         }
         db = firebase.firestore();
         deliveryFirebaseBootedAt = Date.now();
+        deliveryQuotaExhaustedUntil = 0;
 
         // Direct independent live connection per tab with auto-detected long-polling
         // (avoids multi-tab IndexedDB lease stalls while localStorage handles instant 0ms hydration)
@@ -1181,25 +1215,21 @@
 
         updateSyncStatus('syncing', 'Connecting Cloud...');
 
-        // 2. Start scoped delivery-only realtime listeners once cleanly (NO full historical ledger or admin app_config)
+        // 2. Start scoped delivery-only realtime listeners once cleanly (avoids duplicate startup get({ source: 'server' }) reads)
         listenToOrders(false);
         listenToDeliverySupportChats(false);
         syncDeliveryConfigFromCloud(false);
 
-        // 3. Concurrently trigger scoped direct server get() fetches for orders & chats
-        fetchOrdersDirect();
-        fetchDeliverySupportChatsDirect();
-
-        // 4. Scoped REST fallback after 2.5 seconds if cloud connection is lagging
+        // 3. Scoped REST fallback ONLY if Firestore SDK has not delivered any initial snapshot after 4 seconds
         setTimeout(() => {
-          if (allOrders.length === 0) {
+          if (!hasReceivedDeliveryOrdersSnapshot && allOrders.length === 0 && !isDeliveryQuotaPaused()) {
             fetchOrdersFromRestFallback();
           }
-        }, 2500);
+        }, 4000);
 
-        // 5. Timeout watchdog: If after 6 seconds still 0 orders, check active state
+        // 4. Timeout watchdog: If after 6 seconds still 0 orders, update empty UI
         setTimeout(() => {
-          if (allOrders.length === 0 && activeOrdersMap.size === 0 && deliveredTodayOrdersMap.size === 0) {
+          if (allOrders.length === 0 && activeOrdersMap.size === 0 && deliveredTodayOrdersMap.size === 0 && !isDeliveryQuotaPaused()) {
             updateSyncStatus('synced', 'Live Synced (0 Pending)');
             populateTownDropdown();
             updateTabBadges();
@@ -1417,14 +1447,18 @@
                 }
               });
             }
+            hasReceivedDeliveryOrdersSnapshot = true;
+            deliveryActiveReconnectAttempts = 0;
             applyActiveOrdersSnapshot(snapshot);
           }, err => {
-            console.warn('Active orders onSnapshot error, scheduling auto-reconnect:', err);
+            console.warn('Active orders onSnapshot error, scheduling backoff:', err);
             deliveryActiveOrdersUnsubscribe = null;
+            if (handleDeliveryFirestoreError(err, 'active_orders')) return;
             updateSyncStatus('syncing', 'Reconnecting...');
+            const delayMs = Math.min(60000, 4000 * Math.pow(2, Math.min(4, deliveryActiveReconnectAttempts++)));
             reconnectOrdersTimeout = setTimeout(() => {
-              listenToOrders(false);
-            }, 2000);
+              if (!isDeliveryQuotaPaused()) listenToOrders(false);
+            }, delayMs);
           });
       }
 
@@ -1434,6 +1468,8 @@
         deliveryDeliveredTodayUnsubscribe = db.collection('delivery_dispatch')
           .where('dispatchStatus', '==', 'Delivered')
           .onSnapshot(snapshot => {
+            hasReceivedDeliveryOrdersSnapshot = true;
+            deliveryDeliveredReconnectAttempts = 0;
             snapshot.forEach(doc => {
               const d = sanitizeOrderForDelivery(doc.data(), doc.id);
               if (d && d.id) {
@@ -1454,29 +1490,33 @@
             isInitialDeliveredTodayLoad = false;
             applyDeliveredTodaySnapshot(snapshot);
           }, err => {
-            console.warn('Delivered today onSnapshot error, scheduling auto-reconnect:', err);
+            console.warn('Delivered today onSnapshot error, scheduling backoff:', err);
             deliveryDeliveredTodayUnsubscribe = null;
+            if (handleDeliveryFirestoreError(err, 'delivered_orders')) return;
+            const delayMs = Math.min(60000, 4000 * Math.pow(2, Math.min(4, deliveryDeliveredReconnectAttempts++)));
             setTimeout(() => {
-              if (db && !deliveryDeliveredTodayUnsubscribe) {
+              if (db && !deliveryDeliveredTodayUnsubscribe && !isDeliveryQuotaPaused()) {
                 listenToOrders(false);
               }
-            }, 2000);
+            }, delayMs);
           });
       }
     }
 
     function fetchOrdersDirect() {
+      if (isDeliveryQuotaPaused()) return Promise.resolve();
       if (!db) {
         fetchOrdersFromRestFallback();
-        return;
+        return Promise.resolve();
       }
       const pendingQuery = db.collection('delivery_dispatch').where('dispatchStatus', 'in', ['Pending', 'OutForDelivery']);
       const todayQuery = db.collection('delivery_dispatch').where('dispatchStatus', '==', 'Delivered');
 
-      Promise.all([
+      return Promise.all([
         pendingQuery.get({ source: 'server' }).catch(() => pendingQuery.get()),
         todayQuery.get({ source: 'server' }).catch(() => todayQuery.get())
       ]).then(([pendingSnap, todaySnap]) => {
+        hasReceivedDeliveryOrdersSnapshot = true;
         if (pendingSnap) {
           pendingSnap.forEach(doc => {
             const d = doc.data();
@@ -1493,12 +1533,14 @@
         }
       }).catch(err => {
         console.warn('Direct scoped get delivery_dispatch notice:', err);
-        fetchOrdersFromRestFallback();
+        if (!handleDeliveryFirestoreError(err, 'direct_dispatch_get')) {
+          fetchOrdersFromRestFallback();
+        }
       });
     }
 
     async function fetchOrdersFromRestFallback() {
-      if (allOrders.length > 0) return;
+      if (allOrders.length > 0 || isDeliveryQuotaPaused()) return;
       try {
         const restUrl = 'https://firestore.googleapis.com/v1/projects/third-man-1998/databases/(default)/documents:runQuery';
         const qPending = {
@@ -1530,6 +1572,11 @@
           fetch(restUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(qPending) }),
           fetch(restUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(qDeliveredToday) })
         ]);
+
+        if (resp1.status === 429 || resp2.status === 429) {
+          handleDeliveryFirestoreError({ status: 429, code: 'resource-exhausted', message: 'Daily usage limit reached' }, 'rest_runQuery');
+          return;
+        }
 
         const rows1 = resp1.ok ? await resp1.json() : [];
         const rows2 = resp2.ok ? await resp2.json() : [];
@@ -2281,10 +2328,13 @@
 
     function saveQuickRemarks(arr) {
       const cleanArr = Array.isArray(arr) ? arr.map(s => String(s || '').trim()).filter(Boolean) : [...DEFAULT_QUICK_REMARKS];
+      const nextJson = JSON.stringify(cleanArr);
+      const changed = (nextJson !== lastSavedQuickRemarksJson);
+      lastSavedQuickRemarksJson = nextJson;
       try {
-        localStorage.setItem(STORAGE_QUICK_REMARKS, JSON.stringify(cleanArr));
+        localStorage.setItem(STORAGE_QUICK_REMARKS, nextJson);
       } catch (e) {}
-      if (db) {
+      if (db && changed && !isDeliveryQuotaPaused()) {
         try {
           db.collection('settings').doc('delivery_config').set({
             quickRemarks: cleanArr,
@@ -2297,20 +2347,27 @@
 
     let deliveryConfigUnsubscribe = null;
     function syncDeliveryConfigFromCloud(forceReattach = false) {
-      if (!db) return;
+      if (!db || isDeliveryQuotaPaused()) return;
       if (deliveryConfigUnsubscribe && !forceReattach) return;
       if (deliveryConfigUnsubscribe) {
         try { deliveryConfigUnsubscribe(); } catch (e) {}
         deliveryConfigUnsubscribe = null;
       }
+      if (reconnectConfigTimeout) {
+        clearTimeout(reconnectConfigTimeout);
+        reconnectConfigTimeout = null;
+      }
       try {
         // Strictly scoped to delivery_config ONLY (never accesses admin settings/app_config)
         deliveryConfigUnsubscribe = db.collection('settings').doc('delivery_config').onSnapshot(doc => {
+          deliveryConfigReconnectAttempts = 0;
           if (doc && doc.exists) {
             const cfg = doc.data() || {};
             if (Array.isArray(cfg.quickRemarks) && cfg.quickRemarks.length > 0) {
               try {
-                localStorage.setItem(STORAGE_QUICK_REMARKS, JSON.stringify(cfg.quickRemarks));
+                const jsonStr = JSON.stringify(cfg.quickRemarks);
+                lastSavedQuickRemarksJson = jsonStr;
+                localStorage.setItem(STORAGE_QUICK_REMARKS, jsonStr);
               } catch (e) {}
               renderQuickRemarkChips();
             }
@@ -2335,6 +2392,13 @@
         }, err => {
           console.warn('Could not sync delivery_config:', err);
           deliveryConfigUnsubscribe = null;
+          if (handleDeliveryFirestoreError(err, 'delivery_config')) return;
+          const delayMs = Math.min(60000, 5000 * Math.pow(2, Math.min(4, deliveryConfigReconnectAttempts++)));
+          reconnectConfigTimeout = setTimeout(() => {
+            if (db && !deliveryConfigUnsubscribe && !isDeliveryQuotaPaused()) {
+              syncDeliveryConfigFromCloud(false);
+            }
+          }, delayMs);
         });
       } catch (e) {
         deliveryConfigUnsubscribe = null;
@@ -2655,8 +2719,8 @@
       return Promise.resolve();
     }
 
-    function recoverDeliveryListenersAndFetchDirect() {
-      if (!db) return;
+    function recoverDeliveryListenersOnly() {
+      if (!db || isDeliveryQuotaPaused()) return;
       if (!deliveryActiveOrdersUnsubscribe || !deliveryDeliveredTodayUnsubscribe) {
         listenToOrders(false);
       }
@@ -2665,9 +2729,19 @@
       }
       if (!deliveryChatUnsubscribe) {
         listenToDeliverySupportChats(false);
-      } else {
+      } else if (pendingOutgoingDeliveryChats && pendingOutgoingDeliveryChats.size > 0) {
         flushPendingDeliveryChatMessages();
       }
+    }
+
+    let lastDeliveryDirectRecoveryAt = 0;
+
+    function recoverDeliveryListenersAndFetchDirect() {
+      if (!db || isDeliveryQuotaPaused()) return;
+      recoverDeliveryListenersOnly();
+      const now = Date.now();
+      if (now - lastDeliveryDirectRecoveryAt < 10000) return;
+      lastDeliveryDirectRecoveryAt = now;
       fetchOrdersDirect();
       if (typeof fetchDeliverySupportChatsDirect === 'function') {
         fetchDeliverySupportChatsDirect();
@@ -2685,26 +2759,36 @@
       }
       const isOnlineEvent = evtType === 'online';
       const isPersistedRestore = (evtType === 'pageshow' && evt && evt.persisted === true);
-      if ((evtType === 'focus' || (evtType === 'pageshow' && !isPersistedRestore)) && deliveryFirebaseBootedAt > 0 && (now - deliveryFirebaseBootedAt < 1500)) {
+      if ((evtType === 'focus' || (evtType === 'pageshow' && !isPersistedRestore)) && deliveryFirebaseBootedAt > 0 && (now - deliveryFirebaseBootedAt < 2500)) {
         return;
       }
       const isVisible = document.visibilityState === 'visible';
       if (!isVisible && !isOnlineEvent) return;
 
       if (isOnlineEvent) {
-        if (now - lastDeliveryOnlineWakeupAt < 250) return;
+        if (now - lastDeliveryOnlineWakeupAt < 1000) return;
         lastDeliveryOnlineWakeupAt = now;
       } else {
-        if (now - lastDeliveryWakeupAt < 250) return;
+        if (now - lastDeliveryWakeupAt < 5000) return;
       }
       lastDeliveryWakeupAt = now;
 
-      if (!db) return;
+      if (!db || isDeliveryQuotaPaused()) return;
       const hiddenDuration = deliveryWentHiddenAt > 0 ? (now - deliveryWentHiddenAt) : 0;
       if (isVisible) deliveryWentHiddenAt = 0;
 
-      const shouldCycleSocket = (isOnlineEvent || isPersistedRestore || hiddenDuration >= 1500) &&
-        (now - deliveryLastSocketCycleAt >= 3000) &&
+      const hadDetachedListener = !deliveryActiveOrdersUnsubscribe || !deliveryDeliveredTodayUnsubscribe || !deliveryConfigUnsubscribe || !deliveryChatUnsubscribe;
+      recoverDeliveryListenersOnly();
+
+      // Only cycle socket or run direct catch-up on genuine network reconnect, bfcache restore, or >=10 min background sleep
+      const LONG_SLEEP_THRESHOLD_MS = 10 * 60 * 1000;
+      const needsRecoveryCatchup = isOnlineEvent || isPersistedRestore || hiddenDuration >= LONG_SLEEP_THRESHOLD_MS;
+      if (!needsRecoveryCatchup) {
+        return;
+      }
+
+      const socketCooldownMs = isOnlineEvent ? 5000 : 60000;
+      const shouldCycleSocket = (now - deliveryLastSocketCycleAt >= socketCooldownMs) &&
         typeof db.disableNetwork === 'function';
 
       if (shouldCycleSocket) {
@@ -2713,7 +2797,9 @@
         return;
       }
 
-      recoverDeliveryListenersAndFetchDirect();
+      if (isOnlineEvent || hadDetachedListener) {
+        recoverDeliveryListenersAndFetchDirect();
+      }
     }
 
     document.addEventListener('visibilitychange', handleDeliveryConnectionWakeup);
@@ -2721,12 +2807,12 @@
     window.addEventListener('focus', handleDeliveryConnectionWakeup);
     window.addEventListener('pageshow', handleDeliveryConnectionWakeup);
 
-    // Active foreground heartbeat & lightweight scoped catch-up every 15s while visible
+    // Lightweight listener health watchdog every 60s (0 Firestore reads when listeners are healthy)
     setInterval(() => {
-      if (document.visibilityState === 'visible' && navigator.onLine !== false && db) {
-        recoverDeliveryListenersAndFetchDirect();
+      if (document.visibilityState === 'visible' && navigator.onLine !== false && db && !isDeliveryQuotaPaused()) {
+        recoverDeliveryListenersOnly();
       }
-    }, 15000);
+    }, 60000);
 
     // ==================== TWO-WAY SUPPORT & HELPLINE CHAT (DELIVERY SIDE) ====================
 
@@ -3012,19 +3098,20 @@
     }
 
     function fetchDeliverySupportChatsDirect() {
-      if (!db) return Promise.resolve();
+      if (!db || isDeliveryQuotaPaused()) return Promise.resolve();
       return db.collection('support_chats').get({ source: 'server' })
         .catch(() => db.collection('support_chats').get())
         .then(snapshot => {
           if (snapshot) applyDeliverySupportChatSnapshot(snapshot);
         })
         .catch(err => {
+          handleDeliveryFirestoreError(err, 'support_chats_direct');
           console.warn('Direct support_chats server fetch notice in delivery portal:', err);
         });
     }
 
     function listenToDeliverySupportChats(forceReattach = false) {
-      if (!db) return;
+      if (!db || isDeliveryQuotaPaused()) return;
       if (deliveryChatUnsubscribe && !forceReattach) return;
       if (deliveryChatUnsubscribe) {
         try { deliveryChatUnsubscribe(); } catch (e) {}
@@ -3040,15 +3127,18 @@
 
       try {
         deliveryChatUnsubscribe = db.collection('support_chats').onSnapshot(snapshot => {
+          deliveryChatReconnectAttempts = 0;
           applyDeliverySupportChatSnapshot(snapshot);
         }, err => {
           console.warn('support_chats snapshot error in delivery portal:', err);
           deliveryChatUnsubscribe = null;
+          if (handleDeliveryFirestoreError(err, 'support_chats')) return;
+          const delayMs = Math.min(60000, 4000 * Math.pow(2, Math.min(4, deliveryChatReconnectAttempts++)));
           reconnectChatTimeout = setTimeout(() => {
-            if (db && !deliveryChatUnsubscribe) {
+            if (db && !deliveryChatUnsubscribe && !isDeliveryQuotaPaused()) {
               listenToDeliverySupportChats(true);
             }
-          }, 2000);
+          }, delayMs);
         });
       } catch (err) {
         console.warn('Error starting support_chats listener in delivery portal:', err);

@@ -1605,6 +1605,34 @@ function updateCloudSyncStatus(status, text) {
 
 let mainFirebaseBootedAt = 0;
 let isMainNetworkCycling = false;
+let firestoreQuotaExhaustedUntil = 0;
+let adminOrdersReconnectAttempts = 0;
+let adminChatReconnectAttempts = 0;
+let reconcileDispatchDebounceTimer = null;
+let lastSyncedAppConfigHash = null;
+let lastSyncedDeliveryConfigHash = null;
+
+function isFirestoreQuotaPaused() {
+  return firestoreQuotaExhaustedUntil > Date.now();
+}
+
+function handleFirestoreListenerError(err, sourceLabel = 'Firestore') {
+  if (!err) return false;
+  const code = String(err.code || '').toLowerCase();
+  const msg = String(err.message || '').toLowerCase();
+  const isQuota = code === 'resource-exhausted' || msg.includes('quota') || msg.includes('daily usage limit');
+  if (isQuota) {
+    firestoreQuotaExhaustedUntil = Date.now() + (10 * 60 * 1000);
+    console.warn(`Firestore daily quota reached (${sourceLabel}); pausing automatic retries.`);
+    updateCloudSyncStatus('error', 'Quota Limit (Resets ~1:30 PM)');
+    return true;
+  }
+  if (code === 'permission-denied') {
+    console.warn(`Firestore permission denied (${sourceLabel}); skipping retry loop.`);
+    return true;
+  }
+  return false;
+}
 
 function ensureFirebaseAppAndDb() {
   if (typeof firebase === 'undefined') return null;
@@ -1632,6 +1660,7 @@ function detachFirestoreRealtimeListeners() {
   if (supportChatUnsubscribe) { try { supportChatUnsubscribe(); } catch (e) {} supportChatUnsubscribe = null; }
   if (reconnectMainOrdersTimeout) { clearTimeout(reconnectMainOrdersTimeout); reconnectMainOrdersTimeout = null; }
   if (reconnectAdminChatTimeout) { clearTimeout(reconnectAdminChatTimeout); reconnectAdminChatTimeout = null; }
+  if (reconcileDispatchDebounceTimer) { clearTimeout(reconcileDispatchDebounceTimer); reconcileDispatchDebounceTimer = null; }
 }
 
 function initFirebaseSync() {
@@ -1653,20 +1682,12 @@ function initFirebaseSync() {
     }
 
     isFirestoreInitialized = true;
+    firestoreQuotaExhaustedUntil = 0;
     mainFirebaseBootedAt = Date.now();
     updateCloudSyncStatus('syncing', 'Connecting to Cloud...');
 
+    // Attach real-time listeners once; onSnapshot streams deliver initial state without duplicate server get() reads
     setupFirestoreRealtimeListeners(false);
-
-    // Trigger immediate server-first refresh alongside live listeners
-    if (typeof refreshMainRealtimeFromServer === 'function') {
-      refreshMainRealtimeFromServer();
-    }
-
-    // If local custom logo exists, ensure it is pushed to cloud settings
-    if (localStorage.getItem(STORAGE_APP_LOGO)) {
-      setTimeout(() => syncCloudConfig(), 1200);
-    }
   } catch (err) {
     console.error('Firebase init error:', err);
     updateCloudSyncStatus('error', 'Cloud Connect Error');
@@ -1748,8 +1769,9 @@ function processIncomingCloudCustomers(remoteCustomers) {
       : (rawLoc || cleanTown || 'Ernakulam');
 
     if (merged.district !== cleanDistrict || (cleanTown && merged.town !== cleanTown) ||
-        merged.landmark !== cleanLandmark || merged.panchayath !== cleanPanchayath ||
-        merged.area !== cleanArea || merged.place !== cleanPlace || merged.location !== cleanLocation) {
+        (merged.landmark || '') !== cleanLandmark || (merged.panchayath || '') !== cleanPanchayath ||
+        (merged.area || '') !== cleanArea || (merged.place || '') !== cleanPlace ||
+        (merged.location || '') !== cleanLocation) {
       remoteTownCleaned = true;
     }
     merged.district = cleanDistrict;
@@ -2759,13 +2781,14 @@ function applyAdminSupportChatSnapshot(snapshot) {
 }
 
 function fetchAdminSupportChatsDirect() {
-  if (!canAccessAdminData() || !db) return Promise.resolve();
+  if (!canAccessAdminData() || !db || isFirestoreQuotaPaused()) return Promise.resolve();
   return db.collection('support_chats').get({ source: 'server' })
     .catch(() => db.collection('support_chats').get())
     .then(snapshot => {
       if (snapshot) applyAdminSupportChatSnapshot(snapshot);
     })
     .catch(err => {
+      handleFirestoreListenerError(err, 'support_chats_direct');
       console.warn('Direct support_chats server fetch notice:', err);
     });
 }
@@ -2787,15 +2810,18 @@ function listenToSupportChats(forceReattach = false) {
 
   try {
     supportChatUnsubscribe = db.collection('support_chats').onSnapshot(snapshot => {
+      adminChatReconnectAttempts = 0;
       applyAdminSupportChatSnapshot(snapshot);
     }, err => {
       console.warn('support_chats snapshot error:', err);
       supportChatUnsubscribe = null;
+      if (handleFirestoreListenerError(err, 'support_chats')) return;
+      const delayMs = Math.min(60000, 4000 * Math.pow(2, Math.min(4, adminChatReconnectAttempts++)));
       reconnectAdminChatTimeout = setTimeout(() => {
-        if (db && !supportChatUnsubscribe) {
+        if (db && !supportChatUnsubscribe && !isFirestoreQuotaPaused()) {
           listenToSupportChats(true);
         }
-      }, 2000);
+      }, delayMs);
     });
   } catch (err) {
     console.warn('Error starting support_chats listener:', err);
@@ -3332,63 +3358,74 @@ function syncOrdersCustomerLocationsFromMaster(syncToCloud = true) {
 let mainServerRefreshStartedAt = 0;
 let mainServerRefreshSeq = 0;
 
-function refreshMainRealtimeFromServer(forceRefresh = false) {
+function refreshMainRealtimeFromServer(forceRefresh = false, options = {}) {
   const now = Date.now();
-  if (!canAccessAdminData() || !db) return Promise.resolve();
+  if (!canAccessAdminData() || !db || isFirestoreQuotaPaused()) return Promise.resolve();
   if (!forceRefresh && isMainServerRefreshInFlight && (now - mainServerRefreshStartedAt < 5000)) {
     return Promise.resolve();
   }
   isMainServerRefreshInFlight = true;
   mainServerRefreshStartedAt = now;
   const refreshSeq = ++mainServerRefreshSeq;
+  const useFullScan = options && options.fullScan === true;
 
-  const ordersFetch = db.collection('orders').get({ source: 'server' })
-    .catch(() => db.collection('orders').get())
-    .then(snapshot => {
-      if (!snapshot) return;
-      if (snapshot.empty && hasPerformedInitialOrdersCloudSeed) {
-        orders = [];
-        try { localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders)); } catch (e) {}
-        updateDashboard();
-        return;
-      }
-      if (!snapshot.empty) {
-        isReceivingCloudOrders = true;
-        const remoteOrders = [];
-        snapshot.forEach(doc => {
-          const d = doc.data();
-          if (d && d.id) {
-            if (isOrderTombstoned(d.id)) {
-              deleteCloudOrder(d.id, doc.id);
-              return;
+  // By default (e.g. online recovery), run SCOPED active+recent orders catch-up instead of full collection dumps
+  let ordersFetch;
+  if (!useFullScan && typeof db.collection === 'function' && db.collection('orders') && typeof db.collection('orders').where === 'function') {
+    ordersFetch = fetchScopedOrdersCatchupForAdmin().catch(() => {});
+  } else if (useFullScan) {
+    ordersFetch = db.collection('orders').get({ source: 'server' })
+      .catch(() => db.collection('orders').get())
+      .then(snapshot => {
+        if (!snapshot) return;
+        if (snapshot.empty && hasPerformedInitialOrdersCloudSeed) {
+          orders = [];
+          try { localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders)); } catch (e) {}
+          updateDashboard();
+          return;
+        }
+        if (!snapshot.empty) {
+          isReceivingCloudOrders = true;
+          const remoteOrders = [];
+          snapshot.forEach(doc => {
+            const d = doc.data();
+            if (d && d.id) {
+              if (isOrderTombstoned(d.id)) {
+                deleteCloudOrder(d.id, doc.id);
+                return;
+              }
+              d._firestoreDocId = doc.id;
+              remoteOrders.push(d);
             }
-            d._firestoreDocId = doc.id;
-            remoteOrders.push(d);
-          }
-        });
-        applyRemoteOrdersSnapshotList(remoteOrders, { triggerAlerts: true });
-        isInitialOrdersListenerRun = false;
-        isReceivingCloudOrders = false;
-        updateCloudSyncStatus('synced', 'Live Synced 🟢');
-      }
-    }).catch(() => {});
+          });
+          applyRemoteOrdersSnapshotList(remoteOrders, { triggerAlerts: true });
+          isInitialOrdersListenerRun = false;
+          isReceivingCloudOrders = false;
+          updateCloudSyncStatus('synced', 'Live Synced 🟢');
+        }
+      }).catch(err => { handleFirestoreListenerError(err, 'orders catchup'); });
+  } else {
+    ordersFetch = Promise.resolve();
+  }
 
   const chatsFetch = (typeof fetchAdminSupportChatsDirect === 'function')
     ? fetchAdminSupportChatsDirect()
     : Promise.resolve();
 
-  const customersFetch = db.collection('customers').get({ source: 'server' })
-    .catch(() => db.collection('customers').get())
-    .then(snapshot => {
-      if (snapshot && !snapshot.empty) {
-        const remote = [];
-        snapshot.forEach(doc => {
-          const d = doc.data();
-          if (d && (d.id || d.name)) remote.push(d);
-        });
-        processIncomingCloudCustomers(remote);
-      }
-    }).catch(() => {});
+  const customersFetch = useFullScan
+    ? db.collection('customers').get({ source: 'server' })
+        .catch(() => db.collection('customers').get())
+        .then(snapshot => {
+          if (snapshot && !snapshot.empty) {
+            const remote = [];
+            snapshot.forEach(doc => {
+              const d = doc.data();
+              if (d && (d.id || d.name)) remote.push(d);
+            });
+            processIncomingCloudCustomers(remote);
+          }
+        }).catch(() => {})
+    : Promise.resolve();
 
   return Promise.allSettled([ordersFetch, chatsFetch, customersFetch]).finally(() => {
     if (refreshSeq === mainServerRefreshSeq) {
@@ -3429,43 +3466,57 @@ function handleMainAppConnectionWakeup(evt) {
   }
   const isOnlineEvent = evtType === 'online';
   const isPersistedRestore = (evtType === 'pageshow' && evt && evt.persisted === true);
-  if ((evtType === 'focus' || (evtType === 'pageshow' && !isPersistedRestore)) && mainFirebaseBootedAt > 0 && (now - mainFirebaseBootedAt < 1500)) {
+  if ((evtType === 'focus' || (evtType === 'pageshow' && !isPersistedRestore)) && mainFirebaseBootedAt > 0 && (now - mainFirebaseBootedAt < 2500)) {
     return;
   }
   const isVisible = (typeof document === 'undefined') || document.visibilityState === 'visible';
   if (!isVisible && !isOnlineEvent) return;
 
   if (isOnlineEvent) {
-    if (now - lastMainOnlineWakeupAt < 250) return;
+    if (now - lastMainOnlineWakeupAt < 1000) return;
     lastMainOnlineWakeupAt = now;
   } else {
-    if (now - lastMainWakeupAt < 250) return;
+    if (now - lastMainWakeupAt < 5000) return;
   }
   lastMainWakeupAt = now;
 
-  if (!canAccessAdminData() || !db) return;
+  if (!canAccessAdminData() || !db || isFirestoreQuotaPaused()) return;
   const hiddenDuration = mainWentHiddenAt > 0 ? (now - mainWentHiddenAt) : 0;
   if (isVisible) mainWentHiddenAt = 0;
 
-  const shouldCycleSocket = (isOnlineEvent || isPersistedRestore || hiddenDuration >= 1500) &&
-    (now - mainLastSocketCycleAt >= 3000) &&
-    typeof db.disableNetwork === 'function';
+  // Recover only detached (null) listeners & flush pending outgoing chats without burning reads on tab switches
+  const hadDetachedListener = !mainOrdersUnsubscribe || !mainCustomersUnsubscribe || !mainSettingsUnsubscribe ||
+    !mainVisitsUnsubscribe || !mainReportsUnsubscribe || !mainDeliveryDispatchUnsubscribe || !supportChatUnsubscribe;
+  if (hadDetachedListener) {
+    setupFirestoreRealtimeListeners(false);
+  }
+  if (pendingOutgoingAdminChats && pendingOutgoingAdminChats.size > 0) {
+    flushPendingAdminChatMessages();
+  }
 
-  // Ensure detached listeners & pending chats flush immediately
-  setupFirestoreRealtimeListeners(false);
-  flushPendingAdminChatMessages();
+  // Only cycle network or run scoped catch-up on real reconnect ('online'), bfcache restore, or >=10 min background sleep
+  const LONG_SLEEP_THRESHOLD_MS = 10 * 60 * 1000;
+  const needsRecoveryCatchup = isOnlineEvent || isPersistedRestore || hiddenDuration >= LONG_SLEEP_THRESHOLD_MS;
+  if (!needsRecoveryCatchup) {
+    return;
+  }
+
+  const socketCooldownMs = isOnlineEvent ? 5000 : 60000;
+  const shouldCycleSocket = (now - mainLastSocketCycleAt >= socketCooldownMs) &&
+    typeof db.disableNetwork === 'function';
 
   if (shouldCycleSocket) {
     mainLastSocketCycleAt = now;
     cycleMainFirestoreNetwork(() => {
       setupFirestoreRealtimeListeners(false);
-      refreshMainRealtimeFromServer(true);
+      refreshMainRealtimeFromServer(false, { scopedOnly: true });
     });
     return;
   }
 
-  // Immediately pull latest server state for orders, delivery status, and support chats
-  refreshMainRealtimeFromServer(isOnlineEvent);
+  if (isOnlineEvent || hadDetachedListener) {
+    refreshMainRealtimeFromServer(false, { scopedOnly: true });
+  }
 }
 
 if (typeof document !== 'undefined') {
@@ -3492,6 +3543,7 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
   // 1. Orders Realtime Listener (attach once cleanly)
   if (!mainOrdersUnsubscribe) {
     mainOrdersUnsubscribe = db.collection('orders').onSnapshot(snapshot => {
+      adminOrdersReconnectAttempts = 0;
       // If cloud is empty initially, seed local orders up to cloud
       if (snapshot.empty && orders.length > 0 && !hasPerformedInitialOrdersCloudSeed) {
         seedLocalOrdersToCloud();
@@ -3542,13 +3594,15 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
         updateCloudSyncStatus('synced', 'Live Synced 🟢');
       }
     }, err => {
-      console.warn('Orders snapshot listener error, scheduling auto-reconnect:', err);
+      console.warn('Orders snapshot listener error, scheduling backoff:', err);
       mainOrdersUnsubscribe = null;
+      if (handleFirestoreListenerError(err, 'orders')) return;
       updateCloudSyncStatus('offline', 'Reconnecting...');
       if (reconnectMainOrdersTimeout) clearTimeout(reconnectMainOrdersTimeout);
+      const delayMs = Math.min(60000, 4000 * Math.pow(2, Math.min(4, adminOrdersReconnectAttempts++)));
       reconnectMainOrdersTimeout = setTimeout(() => {
-        setupFirestoreRealtimeListeners(false);
-      }, 2000);
+        if (!isFirestoreQuotaPaused()) setupFirestoreRealtimeListeners(false);
+      }, delayMs);
     });
   }
 
@@ -3693,7 +3747,12 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
           }
         }
         isReceivingCloudSettings = false;
-        syncDeliverySafeConfigToCloud(deletedOrderTombstones, cfg.appLogo);
+        try {
+          lastSyncedAppConfigHash = JSON.stringify(buildAppConfigPayloadObject());
+        } catch (e) {}
+        if (lastSyncedDeliveryConfigHash === null) {
+          syncDeliverySafeConfigToCloud(deletedOrderTombstones, cfg.appLogo, false);
+        }
         if (needsTrashCloudSync) {
           syncCloudConfig(true);
         }
@@ -3701,6 +3760,7 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
         syncCloudConfig();
       }
     }, err => {
+      handleFirestoreListenerError(err, 'settings');
       console.warn('Settings snapshot error:', err);
       mainSettingsUnsubscribe = null;
     });
@@ -3912,15 +3972,17 @@ function deleteDeliveryDispatchDoc(orderId, firestoreDocId = null) {
 }
 
 let hasReconciledDeliveryDispatch = false;
+let isReconcilingDeliveryDispatch = false;
 async function reconcileDeliveryDispatchProjection(force = false) {
-  if (!canAccessAdminData() || !db || typeof db.collection !== 'function') return;
-  if (hasReconciledDeliveryDispatch && !force) return;
+  if (!canAccessAdminData() || !db || typeof db.collection !== 'function' || isFirestoreQuotaPaused()) return;
+  if ((hasReconciledDeliveryDispatch && !force) || isReconcilingDeliveryDispatch) return;
   const col = db.collection('delivery_dispatch');
   if (!col || typeof col.get !== 'function') return;
+  isReconcilingDeliveryDispatch = true;
   hasReconciledDeliveryDispatch = true;
 
   try {
-    const existingSnap = await col.get({ source: 'server' }).catch(() => col.get());
+    const existingSnap = await (force ? col.get({ source: 'server' }).catch(() => col.get()) : col.get());
     const existingIds = new Map();
     if (existingSnap && typeof existingSnap.forEach === 'function') {
       existingSnap.forEach(doc => {
@@ -3998,6 +4060,8 @@ async function reconcileDeliveryDispatchProjection(force = false) {
     }
   } catch (err) {
     console.warn('delivery_dispatch reconciliation notice:', err);
+  } finally {
+    isReconcilingDeliveryDispatch = false;
   }
 }
 
@@ -4449,81 +4513,112 @@ function deleteCloudCustomer(customerId, customerName) {
   }
 }
 
-function syncDeliverySafeConfigToCloud(tombstones, rawLogo) {
-  if (!db) return;
+function buildDeliverySafeConfigPayload(tombstones, rawLogo) {
+  let logoVal = rawLogo;
+  if (logoVal === undefined) {
+    logoVal = localStorage.getItem(STORAGE_APP_LOGO) || null;
+  }
+  const cleanLogo = (logoVal && typeof logoVal === 'string' && (logoVal.indexOf('data:image/svg') !== -1 || logoVal.indexOf('<svg') !== -1 || logoVal.indexOf('logo.svg') !== -1 || logoVal.indexOf('TM') !== -1))
+    ? null
+    : (logoVal || null);
+  return sanitizeForFirestore({
+    deletedOrderTombstones: Array.isArray(tombstones) ? tombstones : (deletedOrderTombstones || []),
+    appLogo: cleanLogo
+  });
+}
+
+function syncDeliverySafeConfigToCloud(tombstones, rawLogo, forceWrite = false) {
+  if (!db || isFirestoreQuotaPaused()) return;
   try {
-    let logoVal = rawLogo;
-    if (logoVal === undefined) {
-      logoVal = localStorage.getItem(STORAGE_APP_LOGO) || null;
+    const basePayload = buildDeliverySafeConfigPayload(tombstones, rawLogo);
+    const nextHash = JSON.stringify(basePayload);
+    if (!forceWrite && nextHash === lastSyncedDeliveryConfigHash) {
+      return;
     }
-    const cleanLogo = (logoVal && typeof logoVal === 'string' && (logoVal.indexOf('data:image/svg') !== -1 || logoVal.indexOf('<svg') !== -1 || logoVal.indexOf('logo.svg') !== -1 || logoVal.indexOf('TM') !== -1))
-      ? null
-      : (logoVal || null);
-    db.collection('settings').doc('delivery_config').set(sanitizeForFirestore({
-      deletedOrderTombstones: Array.isArray(tombstones) ? tombstones : (deletedOrderTombstones || []),
-      appLogo: cleanLogo,
+    lastSyncedDeliveryConfigHash = nextHash;
+    db.collection('settings').doc('delivery_config').set({
+      ...basePayload,
       updatedAt: new Date().toISOString()
-    }), { merge: true }).catch(err => console.warn('Delivery safe config mirror error:', err));
+    }, { merge: true }).catch(err => {
+      if (!handleFirestoreListenerError(err, 'delivery_config_write')) {
+        console.warn('Delivery safe config mirror error:', err);
+      }
+    });
   } catch (e) {}
 }
 
+function buildAppConfigPayloadObject() {
+  let currentLogo = null;
+  try {
+    currentLogo = localStorage.getItem(STORAGE_APP_LOGO) || null;
+  } catch (e) {}
+
+  const sanitizedTrash = (trashList || []).filter(item => {
+    if (!item || !item.trashId) return false;
+    if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
+    if (item.type === 'customer' && item.data) {
+      const cName = (item.data.name || item.title || '').trim().toLowerCase();
+      if (cName === 'test' || cName === 'customer test' || cName === 'test customer') return false;
+    }
+    return true;
+  });
+
+  const sanitizedAppLogo = (currentLogo && (currentLogo.indexOf('data:image/svg') !== -1 || currentLogo.indexOf('<svg') !== -1 || currentLogo.indexOf('logo.svg') !== -1 || currentLogo.indexOf('TM') !== -1)) ? null : currentLogo;
+
+  const cleanConfigAreas = deduplicateTownStringsList(savedAreas || []);
+  const dedupedConfigTowns = deduplicateDistrictTownsMap(savedDistrictTowns || {});
+  savedAreas = cleanConfigAreas;
+  savedDistrictTowns = dedupedConfigTowns.map;
+
+  return sanitizeForFirestore({
+    products: products || [],
+    bagSizes: bagSizes || [],
+    savedAreas: cleanConfigAreas,
+    savedDistrictTowns: dedupedConfigTowns.map,
+    trashList: sanitizedTrash,
+    permanentlyDeletedTrashIds: Array.from(permanentlyDeletedTrashIds),
+    deletedCustomerTombstones: deletedCustomerTombstones || [],
+    deletedOrderTombstones: deletedOrderTombstones || [],
+    defaultRememberedBagSize: defaultRememberedBagSize || 26,
+    incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01',
+    appLogo: sanitizedAppLogo
+  });
+}
+
 let syncConfigDebounceTimer = null;
-function syncCloudConfig(immediate = false) {
-  if (!db) return;
-  if (isReceivingCloudSettings && !immediate) return;
+function syncCloudConfig(immediate = false, forceWrite = false) {
+  if (!db || !canAccessAdminData() || isFirestoreQuotaPaused()) return;
+  if (isReceivingCloudSettings && !immediate && !forceWrite) return;
 
   const performSync = () => {
-    if (!db) return;
-    let currentLogo = null;
-    try {
-      currentLogo = localStorage.getItem(STORAGE_APP_LOGO) || null;
-    } catch (e) {}
+    if (!db || !canAccessAdminData() || isFirestoreQuotaPaused()) return;
+    const payload = buildAppConfigPayloadObject();
+    const nextHash = JSON.stringify(payload);
 
-    const sanitizedTrash = (trashList || []).filter(item => {
-      if (!item || !item.trashId) return false;
-      if (permanentlyDeletedTrashIds.has(item.trashId)) return false;
-      if (item.type === 'customer' && item.data) {
-        const cName = (item.data.name || item.title || '').trim().toLowerCase();
-        if (cName === 'test' || cName === 'customer test' || cName === 'test customer') return false;
-      }
-      return true;
-    });
+    if (forceWrite || nextHash !== lastSyncedAppConfigHash) {
+      lastSyncedAppConfigHash = nextHash;
+      db.collection('settings').doc('app_config').set(payload, { merge: true }).catch(err => {
+        if (!handleFirestoreListenerError(err, 'app_config_write')) {
+          console.warn('Config sync error:', err);
+        }
+      });
+    }
 
-    const sanitizedAppLogo = (currentLogo && (currentLogo.indexOf('data:image/svg') !== -1 || currentLogo.indexOf('<svg') !== -1 || currentLogo.indexOf('logo.svg') !== -1 || currentLogo.indexOf('TM') !== -1)) ? null : currentLogo;
-
-    const cleanConfigAreas = deduplicateTownStringsList(savedAreas || []);
-    const dedupedConfigTowns = deduplicateDistrictTownsMap(savedDistrictTowns || {});
-    savedAreas = cleanConfigAreas;
-    savedDistrictTowns = dedupedConfigTowns.map;
-
-    db.collection('settings').doc('app_config').set(sanitizeForFirestore({
-      products: products || [],
-      bagSizes: bagSizes || [],
-      savedAreas: cleanConfigAreas,
-      savedDistrictTowns: dedupedConfigTowns.map,
-      trashList: sanitizedTrash,
-      permanentlyDeletedTrashIds: Array.from(permanentlyDeletedTrashIds),
-      deletedCustomerTombstones: deletedCustomerTombstones || [],
-      deletedOrderTombstones: deletedOrderTombstones || [],
-      defaultRememberedBagSize: defaultRememberedBagSize || 26,
-      incentiveSchemeEffectiveDate: incentiveSchemeEffectiveDate || '2026-05-01',
-      appLogo: sanitizedAppLogo
-    }), { merge: true }).catch(err => console.warn('Config sync error:', err));
-
-    // Mirror only delivery-safe fields (deletedOrderTombstones + appLogo) so delivery.html never reads admin app_config
-    syncDeliverySafeConfigToCloud(deletedOrderTombstones || [], sanitizedAppLogo);
+    // Mirror only delivery-safe fields when they actually changed
+    syncDeliverySafeConfigToCloud(deletedOrderTombstones || [], payload.appLogo, forceWrite);
   };
 
-  if (immediate) {
+  if (immediate || forceWrite) {
     clearTimeout(syncConfigDebounceTimer);
     performSync();
   } else {
     clearTimeout(syncConfigDebounceTimer);
-    syncConfigDebounceTimer = setTimeout(performSync, 500);
+    syncConfigDebounceTimer = setTimeout(performSync, 800);
   }
 }
 
 function manualTriggerCloudSync(isQuiet = false) {
+  firestoreQuotaExhaustedUntil = 0;
   const refreshIcon = document.querySelector('#cloudSyncIndicator i[data-lucide="refresh-cw"]');
   if (!canAccessAdminData()) {
     updateCloudSyncStatus('offline', 'Sign In Required');
@@ -4797,18 +4892,20 @@ function fetchScopedOrdersCatchupForAdmin() {
   });
 }
 
-// Active foreground heartbeat & lightweight server catch-up every 15 seconds while authenticated & visible
+// Lightweight listener health watchdog every 60 seconds (0 Firestore reads when listeners are healthy)
 if (typeof window !== 'undefined') {
   setInterval(() => {
-    if (canAccessAdminData() && typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine !== false && db) {
-      setupFirestoreRealtimeListeners(false);
-      flushPendingAdminChatMessages();
-      if (typeof fetchAdminSupportChatsDirect === 'function') {
-        fetchAdminSupportChatsDirect();
+    if (canAccessAdminData() && typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine !== false && db && !isFirestoreQuotaPaused()) {
+      const hasDetached = !mainOrdersUnsubscribe || !mainCustomersUnsubscribe || !mainSettingsUnsubscribe ||
+        !mainVisitsUnsubscribe || !mainReportsUnsubscribe || !mainDeliveryDispatchUnsubscribe || !supportChatUnsubscribe;
+      if (hasDetached) {
+        setupFirestoreRealtimeListeners(false);
       }
-      fetchScopedOrdersCatchupForAdmin();
+      if (pendingOutgoingAdminChats && pendingOutgoingAdminChats.size > 0) {
+        flushPendingAdminChatMessages();
+      }
     }
-  }, 15000);
+  }, 60000);
 }
 
 // ==================== HELPER ACCESSORS ====================
@@ -17968,15 +18065,31 @@ window.resetRealtimeListenerHandlesForTest = () => {
   mainReportsUnsubscribe = null;
   mainDeliveryDispatchUnsubscribe = null;
   supportChatUnsubscribe = null;
+  if (reconnectMainOrdersTimeout) { clearTimeout(reconnectMainOrdersTimeout); reconnectMainOrdersTimeout = null; }
+  if (reconnectAdminChatTimeout) { clearTimeout(reconnectAdminChatTimeout); reconnectAdminChatTimeout = null; }
+  if (syncConfigDebounceTimer) { clearTimeout(syncConfigDebounceTimer); syncConfigDebounceTimer = null; }
+  if (reconcileDispatchDebounceTimer) { clearTimeout(reconcileDispatchDebounceTimer); reconcileDispatchDebounceTimer = null; }
   hasReconciledDeliveryDispatch = false;
+  isReconcilingDeliveryDispatch = false;
   lastMainWakeupAt = 0;
   lastMainOnlineWakeupAt = 0;
   mainWentHiddenAt = 0;
   mainLastSocketCycleAt = 0;
   mainFirebaseBootedAt = 0;
+  firestoreQuotaExhaustedUntil = 0;
+  adminOrdersReconnectAttempts = 0;
+  adminChatReconnectAttempts = 0;
+  lastSyncedAppConfigHash = null;
+  lastSyncedDeliveryConfigHash = null;
   isMainNetworkCycling = false;
   isMainServerRefreshInFlight = false;
   mainServerRefreshStartedAt = 0;
   isAdminScopedCatchupInFlight = false;
 };
 if (typeof supportChatMessages !== 'undefined') window.supportChatMessages = supportChatMessages;
+// Export test-accessible mutable flags via getter/setter so tests can reset module-scoped vars
+Object.defineProperty(window, 'isAdminScopedCatchupInFlight', {
+  get: () => isAdminScopedCatchupInFlight,
+  set: (v) => { isAdminScopedCatchupInFlight = v; },
+  configurable: true
+});
