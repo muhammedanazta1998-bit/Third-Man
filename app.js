@@ -960,12 +960,48 @@ function normalizeExistingDCOrdersAndProducts() {
   return deduplicateProductsList(products, true);
 }
 
-// ==================== INITIALIZATION ====================
+// ==================== INITIALIZATION & FIREBASE AUTH GATE ====================
 
-function initApp() {
+let isAdminSessionAuthenticated = false;
+let hasHydratedAdminDashboard = false;
+let currentAuthenticatedAdminEmail = '';
+let adminAuthUnsubscribe = null;
+let mainDeliveryDispatchUnsubscribe = null;
+let mainAppEventsBound = false;
+
+function canAccessAdminData() {
+  return isAdminSessionAuthenticated === true;
+}
+
+function purgeLegacyWeakSecurityKeys() {
   try {
+    ['third_man_security_pin_v1', 'third_man_security_enabled_v1', 'third_man_pin_unlocked_v1'].forEach(k => {
+      localStorage.removeItem(k);
+      sessionStorage.removeItem(k);
+    });
+  } catch (e) {}
+}
+
+function hydrateAndBootAdminDashboard() {
+  try {
+    if (!canAccessAdminData()) return;
+
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('auth-locked');
+    }
+
+    const lockOverlay = document.getElementById('appSecurityLockOverlay');
+    if (lockOverlay) {
+      lockOverlay.classList.add('hidden');
+      lockOverlay.style.display = 'none';
+    }
+
+    loadDeletedCustomerTombstones();
+    loadDeletedOrderTombstones();
+    loadPermanentlyDeletedTrashIds();
+
     loadDataFromStorage();
-    deduplicateProductsList(products, true);
+    deduplicateProductsList(products, false);
     cascadeCanonicalProductsToOrders();
 
     // Sanitize customers: strip any tombstoned customers or ghost test entries immediately
@@ -974,7 +1010,6 @@ function initApp() {
       const n = c.name.trim().toLowerCase();
       if (n === 'test' || isCustomerTombstoned(c.name, c.id) || isCustomerInTrash(c.name, c.id)) {
         addCustomerTombstone(c);
-        deleteCloudCustomer(c.id, c.name);
         return false;
       }
       return true;
@@ -985,13 +1020,11 @@ function initApp() {
       normalizeOrderCustomerNames();
     }
     if (typeof resetCustomersToPreNovemberSales === 'function') {
-      customers = resetCustomersToPreNovemberSales(true);
+      customers = resetCustomersToPreNovemberSales(false);
     } else if (typeof deduplicateCustomersList === 'function') {
-      customers = deduplicateCustomersList(customers, true);
-      saveDataToStorage();
+      customers = deduplicateCustomersList(customers, false);
     }
 
-    // Ensure tombstoned customers stay purged after rebuild
     customers = customers.filter(c => c && !isCustomerTombstoned(c.name, c.id) && !isCustomerInTrash(c.name, c.id));
     saveDataToStorage();
 
@@ -1007,8 +1040,6 @@ function initApp() {
     populateSavedAreasDatalists();
     renderProductsManageList();
     renderBagSizesBadges();
-
-    // Clean start: Orders start at 0 (no automatic sample data seeding)
 
     // Populate Year and Month filter dropdowns & initial styles
     populateFilterYearSelect();
@@ -1046,10 +1077,32 @@ function initApp() {
       lucide.createIcons();
     }
 
-    // Initialize Google Firebase Cloud Realtime Sync
-    initFirebaseSync();
+    hasHydratedAdminDashboard = true;
+    updateSettingsSecurityTab();
+    startAdminInactivityWatchdog();
 
-    // Initialize Dashboard Security PIN Lock
+    // Connect Firestore realtime sync strictly AFTER verified Admin authentication
+    initFirebaseSync();
+  } catch (err) {
+    console.error('Initialization error in app.js:', err);
+  }
+}
+
+function initApp() {
+  try {
+    purgeLegacyWeakSecurityKeys();
+
+    // Immediately enforce pre-auth lockdown on the DOM shell before anything else
+    isAdminSessionAuthenticated = false;
+    hasHydratedAdminDashboard = false;
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.add('auth-locked');
+    }
+
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      lucide.createIcons();
+    }
+
     initSecurityLock();
   } catch (err) {
     console.error('Initialization error in app.js:', err);
@@ -1553,25 +1606,50 @@ function updateCloudSyncStatus(status, text) {
 let mainFirebaseBootedAt = 0;
 let isMainNetworkCycling = false;
 
+function ensureFirebaseAppAndDb() {
+  if (typeof firebase === 'undefined') return null;
+  if (!firebase.apps || !firebase.apps.length) {
+    firebase.initializeApp(FIREBASE_CONFIG);
+  }
+  if (!db && typeof firebase.firestore === 'function') {
+    db = firebase.firestore();
+    try {
+      db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
+    } catch (settingsErr) {
+      console.log('Firestore settings notice:', settingsErr ? settingsErr.message : 'default');
+    }
+  }
+  return db;
+}
+
+function detachFirestoreRealtimeListeners() {
+  if (mainOrdersUnsubscribe) { try { mainOrdersUnsubscribe(); } catch (e) {} mainOrdersUnsubscribe = null; }
+  if (mainCustomersUnsubscribe) { try { mainCustomersUnsubscribe(); } catch (e) {} mainCustomersUnsubscribe = null; }
+  if (mainSettingsUnsubscribe) { try { mainSettingsUnsubscribe(); } catch (e) {} mainSettingsUnsubscribe = null; }
+  if (mainVisitsUnsubscribe) { try { mainVisitsUnsubscribe(); } catch (e) {} mainVisitsUnsubscribe = null; }
+  if (mainReportsUnsubscribe) { try { mainReportsUnsubscribe(); } catch (e) {} mainReportsUnsubscribe = null; }
+  if (mainDeliveryDispatchUnsubscribe) { try { mainDeliveryDispatchUnsubscribe(); } catch (e) {} mainDeliveryDispatchUnsubscribe = null; }
+  if (supportChatUnsubscribe) { try { supportChatUnsubscribe(); } catch (e) {} supportChatUnsubscribe = null; }
+  if (reconnectMainOrdersTimeout) { clearTimeout(reconnectMainOrdersTimeout); reconnectMainOrdersTimeout = null; }
+  if (reconnectAdminChatTimeout) { clearTimeout(reconnectAdminChatTimeout); reconnectAdminChatTimeout = null; }
+}
+
 function initFirebaseSync() {
-  if (typeof firebase === 'undefined') {
+  if (!canAccessAdminData()) {
+    updateCloudSyncStatus('offline', 'Sign In Required');
+    return;
+  }
+  if (!db && typeof firebase === 'undefined') {
     console.warn('Firebase SDK not loaded, operating in offline/localStorage mode.');
     updateCloudSyncStatus('offline', 'Local Mode (No SDK)');
     return;
   }
 
   try {
-    if (!firebase.apps || !firebase.apps.length) {
-      firebase.initializeApp(FIREBASE_CONFIG);
-    }
-    db = firebase.firestore();
-
-    // Use long-polling auto-detection and direct independent live connection per tab
-    // (avoids multi-tab IndexedDB lease stalls while localStorage handles instant 0ms hydration)
-    try {
-      db.settings({ experimentalAutoDetectLongPolling: true, merge: true });
-    } catch (settingsErr) {
-      console.log('Firestore settings notice:', settingsErr ? settingsErr.message : 'default');
+    ensureFirebaseAppAndDb();
+    if (!db) {
+      updateCloudSyncStatus('offline', 'Local Mode (No DB)');
+      return;
     }
 
     isFirestoreInitialized = true;
@@ -2681,7 +2759,7 @@ function applyAdminSupportChatSnapshot(snapshot) {
 }
 
 function fetchAdminSupportChatsDirect() {
-  if (!db) return Promise.resolve();
+  if (!canAccessAdminData() || !db) return Promise.resolve();
   return db.collection('support_chats').get({ source: 'server' })
     .catch(() => db.collection('support_chats').get())
     .then(snapshot => {
@@ -2693,7 +2771,7 @@ function fetchAdminSupportChatsDirect() {
 }
 
 function listenToSupportChats(forceReattach = false) {
-  if (!db) return;
+  if (!canAccessAdminData() || !db) return;
   if (supportChatUnsubscribe && !forceReattach) return;
   if (supportChatUnsubscribe) {
     try { supportChatUnsubscribe(); } catch (e) {}
@@ -3138,10 +3216,14 @@ function applyRemoteOrdersSnapshotList(remoteOrders, options = {}) {
 
   purgeUnwantedDummyProducts(false);
   updateDashboard();
+
+  if (canAccessAdminData() && isFirestoreInitialized && db && typeof reconcileDeliveryDispatchProjection === 'function') {
+    reconcileDeliveryDispatchProjection(false);
+  }
 }
 
 function batchSyncOrdersCustomerUpdates(orderList) {
-  if (!db || !Array.isArray(orderList) || orderList.length === 0) return;
+  if (!canAccessAdminData() || !db || !Array.isArray(orderList) || orderList.length === 0) return;
   const validList = orderList.filter(o => o && o.id && !isOrderTombstoned(o.id));
   if (validList.length === 0) return;
   if (typeof db.batch === 'function') {
@@ -3157,6 +3239,10 @@ function batchSyncOrdersCustomerUpdates(orderList) {
             customer: sanitizeForFirestore(o.customer),
             customerName: typeof o.customer === 'object' ? (o.customer.name || '') : String(o.customer || '')
           }, { merge: true });
+          if (typeof syncOrderToDeliveryDispatch === 'function' && isOrderRelevantForDeliveryDispatch(o)) {
+            const dispPayload = buildDeliveryDispatchPayload(o);
+            batch.set(db.collection('delivery_dispatch').doc(docId), dispPayload, { merge: true });
+          }
         });
         batch.commit().catch(err => console.warn('Orders customer batch sync notice:', err));
       } catch (e) {
@@ -3171,6 +3257,9 @@ function batchSyncOrdersCustomerUpdates(orderList) {
           customer: sanitizeForFirestore(o.customer),
           customerName: typeof o.customer === 'object' ? (o.customer.name || '') : String(o.customer || '')
         }, { merge: true }).catch(() => {});
+        if (typeof syncOrderToDeliveryDispatch === 'function') {
+          syncOrderToDeliveryDispatch(o);
+        }
       } catch (e) {}
     });
   }
@@ -3245,7 +3334,7 @@ let mainServerRefreshSeq = 0;
 
 function refreshMainRealtimeFromServer(forceRefresh = false) {
   const now = Date.now();
-  if (!db) return Promise.resolve();
+  if (!canAccessAdminData() || !db) return Promise.resolve();
   if (!forceRefresh && isMainServerRefreshInFlight && (now - mainServerRefreshStartedAt < 5000)) {
     return Promise.resolve();
   }
@@ -3354,7 +3443,7 @@ function handleMainAppConnectionWakeup(evt) {
   }
   lastMainWakeupAt = now;
 
-  if (!db) return;
+  if (!canAccessAdminData() || !db) return;
   const hiddenDuration = mainWentHiddenAt > 0 ? (now - mainWentHiddenAt) : 0;
   if (isVisible) mainWentHiddenAt = 0;
 
@@ -3389,14 +3478,10 @@ if (typeof window !== 'undefined') {
 }
 
 function setupFirestoreRealtimeListeners(forceReattach = false) {
-  if (!db) return;
+  if (!canAccessAdminData() || !db) return;
 
   if (forceReattach) {
-    if (mainOrdersUnsubscribe) { try { mainOrdersUnsubscribe(); } catch (e) {} mainOrdersUnsubscribe = null; }
-    if (mainCustomersUnsubscribe) { try { mainCustomersUnsubscribe(); } catch (e) {} mainCustomersUnsubscribe = null; }
-    if (mainSettingsUnsubscribe) { try { mainSettingsUnsubscribe(); } catch (e) {} mainSettingsUnsubscribe = null; }
-    if (mainVisitsUnsubscribe) { try { mainVisitsUnsubscribe(); } catch (e) {} mainVisitsUnsubscribe = null; }
-    if (mainReportsUnsubscribe) { try { mainReportsUnsubscribe(); } catch (e) {} mainReportsUnsubscribe = null; }
+    detachFirestoreRealtimeListeners();
   }
 
   if (reconnectMainOrdersTimeout) {
@@ -3675,14 +3760,254 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
 
   // 6. Support & Helpline Chats Realtime Listener (attach once cleanly)
   listenToSupportChats(forceReattach);
+
+  // 7. Isolated Delivery Dispatch Projection Two-Way Sync (mirrors driver Delivered/OutForDelivery/Note updates back to Admin orders)
+  if (!mainDeliveryDispatchUnsubscribe && typeof db.collection === 'function') {
+    mainDeliveryDispatchUnsubscribe = db.collection('delivery_dispatch').onSnapshot(snapshot => {
+      if (!canAccessAdminData() || !snapshot || snapshot.empty) return;
+      let anyUpdated = false;
+      snapshot.forEach(doc => {
+        const d = doc.data();
+        if (!d || !d.id || isOrderTombstoned(d.id)) return;
+        const idx = Array.isArray(orders) ? orders.findIndex(o => o && o.id === d.id) : -1;
+        if (idx === -1) return;
+        const localOrd = orders[idx];
+        const localUpdatedAt = String(localOrd.updatedAt || localOrd.createdAt || '');
+        const remoteUpdatedAt = String(d.updatedAt || '');
+        const prevStatus = localOrd.dispatchStatus || 'Pending';
+        const nextStatus = d.dispatchStatus || 'Pending';
+        const nextDeliveredAt = d.deliveredAt || null;
+        const nextNote = d.deliveryNote || '';
+
+        const fieldsDiffer = (
+          nextStatus !== prevStatus ||
+          nextDeliveredAt !== (localOrd.deliveredAt || null) ||
+          nextNote !== (localOrd.deliveryNote || '')
+        );
+        if (!fieldsDiffer) return;
+        if (remoteUpdatedAt && localUpdatedAt && remoteUpdatedAt < localUpdatedAt) return;
+
+        localOrd.dispatchStatus = nextStatus;
+        localOrd.deliveredAt = nextDeliveredAt;
+        localOrd.deliveryNote = nextNote;
+        localOrd.updatedAt = remoteUpdatedAt || new Date().toISOString();
+        anyUpdated = true;
+
+        if (prevStatus !== 'Delivered' && nextStatus === 'Delivered' && typeof triggerOrderDeliveredAlert === 'function') {
+          triggerOrderDeliveredAlert(localOrd);
+        }
+        knownOrderDeliveryStatuses.set(localOrd.id, nextStatus);
+        if (mainOrdersStateMap[localOrd.id]) {
+          mainOrdersStateMap[localOrd.id].dispatchStatus = nextStatus;
+          mainOrdersStateMap[localOrd.id].updatedAt = localOrd.updatedAt;
+        }
+
+        const masterDocId = String(localOrd._firestoreDocId || localOrd.id).trim();
+        db.collection('orders').doc(masterDocId).set({
+          dispatchStatus: nextStatus,
+          deliveredAt: nextDeliveredAt,
+          deliveryNote: nextNote,
+          updatedAt: localOrd.updatedAt
+        }, { merge: true }).catch(() => {});
+      });
+
+      if (anyUpdated) {
+        try {
+          localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders));
+        } catch (e) {}
+        updateDashboard();
+      }
+    }, err => {
+      console.warn('delivery_dispatch snapshot error:', err);
+      mainDeliveryDispatchUnsubscribe = null;
+    });
+  }
+}
+
+function isOrderRelevantForDeliveryDispatch(order) {
+  if (!order || !order.id || isOrderTombstoned(order.id)) return false;
+  const status = order.dispatchStatus || 'Pending';
+  if (status === 'Cancelled') return false;
+  if (status === 'Delivered') {
+    if (!order.deliveredAt) return false;
+    const ms = Date.parse(order.deliveredAt);
+    if (isNaN(ms)) return false;
+    return (Date.now() - ms) <= (48 * 3600 * 1000);
+  }
+  if (order.date && order.date <= '2026-11-21') return false;
+  return true;
+}
+
+function buildDeliveryDispatchPayload(order) {
+  const clean = sanitizeOrderForFirestore(order);
+  const c = (clean.customer && typeof clean.customer === 'object') ? clean.customer : {};
+  const contactPhone = (c.phone && c.phone !== 'Nil')
+    ? c.phone
+    : (c.ownerPhone || c.staffPhone || '');
+
+  return sanitizeForFirestore({
+    id: clean.id,
+    _firestoreDocId: clean._firestoreDocId || clean.id,
+    date: clean.date,
+    deliveryStatus: clean.deliveryStatus || 'Normal',
+    dispatchStatus: clean.dispatchStatus || 'Pending',
+    deliveryNote: clean.deliveryNote || '',
+    deliveredAt: clean.deliveredAt || null,
+    notes: clean.notes || '',
+    createdAt: clean.createdAt,
+    updatedAt: clean.updatedAt,
+    customer: {
+      name: c.name || 'Customer',
+      district: c.district || 'Ernakulam',
+      town: c.town || '',
+      landmark: c.landmark || '',
+      area: c.area || '',
+      place: c.place || '',
+      location: c.location || '',
+      phone: contactPhone
+    },
+    items: (clean.items || []).map(it => ({
+      productName: it.productName || 'Rice',
+      bagSize: parseFloat(it.bagSize) || 25,
+      bagQty: parseFloat(it.bagQty) || 0,
+      perKgRate: parseFloat(it.perKgRate) || 0,
+      totalKg: parseFloat(it.totalKg) || 0,
+      totalAmount: parseFloat(it.totalAmount) || 0
+    })),
+    product: {
+      name: (clean.product && clean.product.name) ? clean.product.name : 'Rice'
+    },
+    bagSize: clean.bagSize,
+    bagQty: clean.bagQty,
+    totalKg: clean.totalKg,
+    perKgRate: clean.perKgRate,
+    totalAmount: clean.totalAmount
+  });
+}
+
+function syncOrderToDeliveryDispatch(order) {
+  if (!canAccessAdminData() || !db || !order || !order.id) return Promise.resolve();
+  const docId = String(order._firestoreDocId || order.id).trim();
+  const col = db.collection('delivery_dispatch');
+  if (!col || typeof col.doc !== 'function') return Promise.resolve();
+
+  if (!isOrderRelevantForDeliveryDispatch(order)) {
+    return col.doc(docId).delete().catch(() => {});
+  }
+  const payload = buildDeliveryDispatchPayload(order);
+  return col.doc(docId).set(payload, { merge: true }).catch(err => {
+    console.warn('delivery_dispatch mirror notice:', err);
+  });
+}
+
+function deleteDeliveryDispatchDoc(orderId, firestoreDocId = null) {
+  if (!canAccessAdminData() || !db || !orderId) return Promise.resolve();
+  const col = db.collection('delivery_dispatch');
+  if (!col || typeof col.doc !== 'function') return Promise.resolve();
+  const tasks = [col.doc(String(orderId)).delete().catch(() => {})];
+  if (firestoreDocId && firestoreDocId !== orderId) {
+    tasks.push(col.doc(String(firestoreDocId)).delete().catch(() => {}));
+  }
+  return Promise.all(tasks);
+}
+
+let hasReconciledDeliveryDispatch = false;
+async function reconcileDeliveryDispatchProjection(force = false) {
+  if (!canAccessAdminData() || !db || typeof db.collection !== 'function') return;
+  if (hasReconciledDeliveryDispatch && !force) return;
+  const col = db.collection('delivery_dispatch');
+  if (!col || typeof col.get !== 'function') return;
+  hasReconciledDeliveryDispatch = true;
+
+  try {
+    const existingSnap = await col.get({ source: 'server' }).catch(() => col.get());
+    const existingIds = new Map();
+    if (existingSnap && typeof existingSnap.forEach === 'function') {
+      existingSnap.forEach(doc => {
+        existingIds.set(doc.id, doc.data() || {});
+      });
+    }
+
+    let mergedFromDispatch = false;
+    existingIds.forEach((remoteDisp, docId) => {
+      if (!remoteDisp || !remoteDisp.id || isOrderTombstoned(remoteDisp.id)) return;
+      const idx = Array.isArray(orders) ? orders.findIndex(o => o && o.id === remoteDisp.id) : -1;
+      if (idx === -1) return;
+      const localOrd = orders[idx];
+      const localUpdated = String(localOrd.updatedAt || localOrd.createdAt || '');
+      const remoteUpdated = String(remoteDisp.updatedAt || '');
+      if (remoteUpdated >= localUpdated && (
+        (remoteDisp.dispatchStatus || 'Pending') !== (localOrd.dispatchStatus || 'Pending') ||
+        (remoteDisp.deliveredAt || null) !== (localOrd.deliveredAt || null) ||
+        (remoteDisp.deliveryNote || '') !== (localOrd.deliveryNote || '')
+      )) {
+        localOrd.dispatchStatus = remoteDisp.dispatchStatus || localOrd.dispatchStatus || 'Pending';
+        localOrd.deliveredAt = remoteDisp.deliveredAt || null;
+        localOrd.deliveryNote = remoteDisp.deliveryNote || '';
+        localOrd.updatedAt = remoteUpdated || new Date().toISOString();
+        mergedFromDispatch = true;
+        const mDocId = String(localOrd._firestoreDocId || localOrd.id).trim();
+        db.collection('orders').doc(mDocId).set({
+          dispatchStatus: localOrd.dispatchStatus,
+          deliveredAt: localOrd.deliveredAt,
+          deliveryNote: localOrd.deliveryNote,
+          updatedAt: localOrd.updatedAt
+        }, { merge: true }).catch(() => {});
+      }
+    });
+
+    if (mergedFromDispatch) {
+      try { localStorage.setItem(STORAGE_ORDERS, JSON.stringify(orders)); } catch (e) {}
+      updateDashboard();
+    }
+
+    const relevantOrders = (orders || []).filter(isOrderRelevantForDeliveryDispatch);
+    const keepDocIds = new Set(relevantOrders.map(o => String(o._firestoreDocId || o.id).trim()));
+
+    const ops = [];
+    relevantOrders.forEach(o => {
+      const docId = String(o._firestoreDocId || o.id).trim();
+      const prev = existingIds.get(docId);
+      const nextPayload = buildDeliveryDispatchPayload(o);
+      if (!prev ||
+          prev.dispatchStatus !== nextPayload.dispatchStatus ||
+          (prev.deliveredAt || null) !== (nextPayload.deliveredAt || null) ||
+          (prev.deliveryNote || '') !== (nextPayload.deliveryNote || '') ||
+          (prev.updatedAt || '') !== (nextPayload.updatedAt || '') ||
+          Number(prev.totalAmount || 0) !== Number(nextPayload.totalAmount || 0)) {
+        ops.push({ type: 'set', ref: col.doc(docId), data: nextPayload });
+      }
+    });
+
+    existingIds.forEach((_, docId) => {
+      if (!keepDocIds.has(docId)) {
+        ops.push({ type: 'delete', ref: col.doc(docId) });
+      }
+    });
+
+    if (ops.length > 0 && typeof db.batch === 'function') {
+      for (let i = 0; i < ops.length; i += 400) {
+        const chunk = ops.slice(i, i + 400);
+        const batch = db.batch();
+        chunk.forEach(op => {
+          if (op.type === 'set') batch.set(op.ref, op.data, { merge: true });
+          else batch.delete(op.ref);
+        });
+        await batch.commit().catch(err => console.warn('delivery_dispatch reconcile batch error:', err));
+      }
+    }
+  } catch (err) {
+    console.warn('delivery_dispatch reconciliation notice:', err);
+  }
 }
 
 function seedLocalOrdersToCloud() {
+  if (!canAccessAdminData()) return;
   const validOrders = orders.filter(o => o && o.id && !isOrderTombstoned(o.id));
   if (!db || validOrders.length === 0) return;
   hasPerformedInitialOrdersCloudSeed = true;
   updateCloudSyncStatus('syncing', 'Uploading Local Orders...');
-  
+
   // Ensure all historical orders up to now are marked Delivered before seeding
   validOrders.forEach(o => {
     if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
@@ -3698,8 +4023,12 @@ function seedLocalOrdersToCloud() {
       const batch = db.batch();
       chunk.forEach(order => {
         if (order && order.id && !isOrderTombstoned(order.id)) {
-          const ref = db.collection('orders').doc(order._firestoreDocId || order.id);
+          const docId = String(order._firestoreDocId || order.id).trim();
+          const ref = db.collection('orders').doc(docId);
           batch.set(ref, sanitizeForFirestore(order));
+          if (isOrderRelevantForDeliveryDispatch(order)) {
+            batch.set(db.collection('delivery_dispatch').doc(docId), buildDeliveryDispatchPayload(order), { merge: true });
+          }
         }
       });
       batch.commit().then(() => {
@@ -3714,21 +4043,30 @@ function seedLocalOrdersToCloud() {
 }
 
 function batchSyncOrdersDispatchStatus(orderList) {
-  if (!db || !Array.isArray(orderList) || orderList.length === 0) return;
+  if (!canAccessAdminData() || !db || !Array.isArray(orderList) || orderList.length === 0) return;
   const validList = orderList.filter(o => o && o.id && !isOrderTombstoned(o.id));
   if (validList.length === 0) return;
-  const CHUNK_SIZE = 400;
+  const CHUNK_SIZE = 200;
   for (let i = 0; i < validList.length; i += CHUNK_SIZE) {
     const chunk = validList.slice(i, i + CHUNK_SIZE);
     try {
       const batch = db.batch();
       chunk.forEach(o => {
         if (o && o.id && !isOrderTombstoned(o.id)) {
-          const ref = db.collection('orders').doc(o._firestoreDocId || o.id);
+          const docId = String(o._firestoreDocId || o.id).trim();
+          const ref = db.collection('orders').doc(docId);
+          const nowIso = new Date().toISOString();
+          const delivIso = o.deliveredAt || nowIso;
           batch.set(ref, {
             dispatchStatus: 'Delivered',
-            deliveredAt: o.deliveredAt || new Date().toISOString()
+            deliveredAt: delivIso,
+            updatedAt: o.updatedAt || nowIso
           }, { merge: true });
+          if (isOrderRelevantForDeliveryDispatch({ ...o, dispatchStatus: 'Delivered', deliveredAt: delivIso })) {
+            batch.set(db.collection('delivery_dispatch').doc(docId), buildDeliveryDispatchPayload({ ...o, dispatchStatus: 'Delivered', deliveredAt: delivIso }), { merge: true });
+          } else {
+            batch.delete(db.collection('delivery_dispatch').doc(docId));
+          }
         }
       });
       batch.commit().catch(err => console.warn('Orders dispatch status batch sync notice:', err));
@@ -3991,6 +4329,11 @@ function sanitizeOrderForFirestore(order) {
 }
 
 async function syncCloudOrder(order) {
+  if (!canAccessAdminData()) {
+    const err = new Error('Administrator authentication required before saving to cloud.');
+    err.code = 'unauthenticated';
+    throw err;
+  }
   if (!order || !order.id) {
     const err = new Error('Invalid order payload: Missing order object or order ID.');
     err.code = 'invalid-order';
@@ -4002,10 +4345,7 @@ async function syncCloudOrder(order) {
 
   let currentDb = db || (typeof window !== 'undefined' ? window.db : null);
   if (!currentDb && typeof firebase !== 'undefined' && typeof firebase.firestore === 'function') {
-    if (!firebase.apps || !firebase.apps.length) {
-      firebase.initializeApp(FIREBASE_CONFIG);
-    }
-    db = firebase.firestore();
+    ensureFirebaseAppAndDb();
     currentDb = db;
   }
 
@@ -4023,6 +4363,7 @@ async function syncCloudOrder(order) {
 
   try {
     await docRef.set(cleanOrder, { merge: true });
+    await syncOrderToDeliveryDispatch(cleanOrder);
     updateCloudSyncStatus('synced', 'Live Synced 🟢');
     return cleanOrder;
   } catch (err) {
@@ -4034,8 +4375,11 @@ async function syncCloudOrder(order) {
 
 async function deleteCloudOrder(orderId, firestoreDocId = null) {
   const currentDb = db || (typeof window !== 'undefined' ? window.db : null);
-  if (!currentDb || !orderId) return;
+  if (!canAccessAdminData() || !currentDb || !orderId) return;
   try {
+    // Delete isolated delivery_dispatch projection immediately
+    await deleteDeliveryDispatchDoc(orderId, firestoreDocId).catch(() => {});
+
     // 1. Direct doc deletion by orderId
     currentDb.collection('orders').doc(orderId).delete().catch(e => console.warn('Direct order doc delete notice:', e));
     
@@ -4050,6 +4394,9 @@ async function deleteCloudOrder(orderId, firestoreDocId = null) {
       const batch = currentDb.batch();
       snap.forEach(doc => {
         batch.delete(doc.ref);
+        if (typeof currentDb.collection === 'function') {
+          batch.delete(currentDb.collection('delivery_dispatch').doc(doc.id));
+        }
       });
       await batch.commit().catch(e => console.warn('Batch order query delete notice:', e));
     }
@@ -4177,8 +4524,13 @@ function syncCloudConfig(immediate = false) {
 }
 
 function manualTriggerCloudSync(isQuiet = false) {
-  updateCloudSyncStatus('syncing', 'Syncing Cloud...');
   const refreshIcon = document.querySelector('#cloudSyncIndicator i[data-lucide="refresh-cw"]');
+  if (!canAccessAdminData()) {
+    updateCloudSyncStatus('offline', 'Sign In Required');
+    if (refreshIcon) refreshIcon.classList.remove('animate-spin');
+    return;
+  }
+  updateCloudSyncStatus('syncing', 'Syncing Cloud...');
   if (refreshIcon) refreshIcon.classList.add('animate-spin');
 
   if (!db) {
@@ -4189,6 +4541,9 @@ function manualTriggerCloudSync(isQuiet = false) {
 
   // Ensure all real-time listeners remain attached
   setupFirestoreRealtimeListeners(false);
+  if (typeof reconcileDeliveryDispatchProjection === 'function') {
+    reconcileDeliveryDispatchProjection(true);
+  }
 
   // 1. Fetch latest customers from server first (fallback to default)
   const custPromise = db.collection('customers').get({ source: 'server' })
@@ -4367,7 +4722,7 @@ function buildAdminOrderCatchupFingerprint(o) {
 }
 
 function fetchScopedOrdersCatchupForAdmin() {
-  if (!db || isAdminScopedCatchupInFlight) return Promise.resolve(false);
+  if (!canAccessAdminData() || !db || isAdminScopedCatchupInFlight) return Promise.resolve(false);
   const ordersCol = db.collection('orders');
   if (!ordersCol || typeof ordersCol.where !== 'function') return Promise.resolve(false);
 
@@ -4442,10 +4797,10 @@ function fetchScopedOrdersCatchupForAdmin() {
   });
 }
 
-// Active foreground heartbeat & lightweight server catch-up every 15 seconds while visible
+// Active foreground heartbeat & lightweight server catch-up every 15 seconds while authenticated & visible
 if (typeof window !== 'undefined') {
   setInterval(() => {
-    if (typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine !== false && db) {
+    if (canAccessAdminData() && typeof document !== 'undefined' && document.visibilityState === 'visible' && navigator.onLine !== false && db) {
       setupFirestoreRealtimeListeners(false);
       flushPendingAdminChatMessages();
       if (typeof fetchAdminSupportChatsDirect === 'function') {
@@ -10169,253 +10524,578 @@ function updateSchemeEffectiveDateFromSettings() {
   showNotification(`Incentive scheme start date updated to ${formatSchemeDate(input.value)}`);
 }
 
-// ==================== DASHBOARD SECURITY PIN LOCK ====================
-const STORAGE_SECURITY_PIN = 'third_man_security_pin_v1';
-const STORAGE_SECURITY_ENABLED = 'third_man_security_enabled_v1';
-const STORAGE_PIN_UNLOCKED = 'third_man_pin_unlocked_v1';
+// ==================== FIREBASE ADMIN AUTHENTICATION & SESSION SECURITY ====================
+const STORAGE_AUTO_LOCK_MINUTES = 'third_man_auto_lock_minutes_v1';
+const STORAGE_AUTH_FAIL_COUNT = 'third_man_auth_fail_count_v1';
+const STORAGE_AUTH_LOCK_UNTIL = 'third_man_auth_lock_until_v1';
 
-let enteredPin = '';
+let lastAdminActivityAt = Date.now();
+let inactivityWatchdogInterval = null;
+let inactivityEventsBound = false;
+let authCooldownInterval = null;
+let authStateSequence = 0;
+let mockAuthOverride = null;
 
-function getSecurityPin() {
+function getFirebaseAuthInstance() {
+  if (mockAuthOverride) return mockAuthOverride;
+  if (typeof firebase !== 'undefined' && typeof firebase.auth === 'function') {
+    if (!firebase.apps || !firebase.apps.length) {
+      firebase.initializeApp(FIREBASE_CONFIG);
+    }
+    return firebase.auth();
+  }
+  return null;
+}
+
+function getAutoLockTimeoutMinutes() {
   try {
-    return localStorage.getItem(STORAGE_SECURITY_PIN) || '1234';
+    const raw = localStorage.getItem(STORAGE_AUTO_LOCK_MINUTES);
+    if (raw === null) return 15;
+    const parsed = parseInt(raw, 10);
+    return [0, 5, 15, 30, 60].includes(parsed) ? parsed : 15;
   } catch (e) {
-    return '1234';
+    return 15;
   }
 }
 
-function isSecurityEnabled() {
+function onAutoLockTimeoutChange(val) {
+  const parsed = parseInt(val, 10);
+  const cleanVal = [0, 5, 15, 30, 60].includes(parsed) ? parsed : 15;
   try {
-    return localStorage.getItem(STORAGE_SECURITY_ENABLED) !== 'false';
+    localStorage.setItem(STORAGE_AUTO_LOCK_MINUTES, String(cleanVal));
+  } catch (e) {}
+  lastAdminActivityAt = Date.now();
+  updateSettingsSecurityTab();
+  startAdminInactivityWatchdog();
+  if (typeof showNotification === 'function') {
+    showNotification(cleanVal === 0 ? 'Auto-lock disabled on this device' : `Auto-lock set to ${cleanVal} minutes`);
+  }
+}
+
+function markAdminUserActivity() {
+  lastAdminActivityAt = Date.now();
+}
+
+function stopAdminInactivityWatchdog() {
+  if (inactivityWatchdogInterval) {
+    clearInterval(inactivityWatchdogInterval);
+    inactivityWatchdogInterval = null;
+  }
+}
+
+function startAdminInactivityWatchdog() {
+  stopAdminInactivityWatchdog();
+  if (!canAccessAdminData()) return;
+
+  if (!inactivityEventsBound && typeof document !== 'undefined') {
+    inactivityEventsBound = true;
+    ['pointerdown', 'keydown', 'touchstart', 'scroll'].forEach(evtName => {
+      document.addEventListener(evtName, markAdminUserActivity, { passive: true });
+    });
+  }
+
+  const mins = getAutoLockTimeoutMinutes();
+  if (mins <= 0) return;
+
+  lastAdminActivityAt = Date.now();
+  const limitMs = mins * 60 * 1000;
+  inactivityWatchdogInterval = setInterval(() => {
+    if (!canAccessAdminData()) {
+      stopAdminInactivityWatchdog();
+      return;
+    }
+    if ((Date.now() - lastAdminActivityAt) >= limitMs) {
+      signOutAndLockDashboard(`Session locked automatically after ${mins} minutes of inactivity.`);
+    }
+  }, 15000);
+}
+
+function clearSensitiveClientData() {
+  // 1. Reset all in-memory business state
+  orders = [];
+  products = [];
+  bagSizes = [];
+  customers = [];
+  savedAreas = [];
+  savedDistrictTowns = {};
+  trashList = [];
+  if (typeof dailyVisits !== 'undefined') dailyVisits = [];
+  if (typeof dailyReports !== 'undefined') dailyReports = {};
+  if (typeof supportChatMessages !== 'undefined') supportChatMessages = [];
+  permanentlyDeletedTrashIds = new Set();
+  deletedCustomerTombstones = [];
+  deletedOrderTombstones = [];
+  hasPerformedInitialOrdersCloudSeed = false;
+  hasPerformedInitialCustomersCloudSeed = false;
+  if (typeof hasReconciledDeliveryDispatch !== 'undefined') hasReconciledDeliveryDispatch = false;
+  isInitialOrdersListenerRun = true;
+  if (typeof isInitialAdminChatLoad !== 'undefined') isInitialAdminChatLoad = true;
+  if (typeof knownOrderDeliveryStatuses !== 'undefined' && typeof knownOrderDeliveryStatuses.clear === 'function') {
+    knownOrderDeliveryStatuses.clear();
+  }
+  if (typeof knownAdminChatMessageIds !== 'undefined' && typeof knownAdminChatMessageIds.clear === 'function') {
+    knownAdminChatMessageIds.clear();
+  }
+  if (typeof pendingOutgoingAdminChats !== 'undefined' && typeof pendingOutgoingAdminChats.clear === 'function') {
+    pendingOutgoingAdminChats.clear();
+  }
+
+  // 2. Wipe cached business data from localStorage & sessionStorage (keep lockout counters/auto-lock setting)
+  const preserveKeys = new Set([STORAGE_AUTO_LOCK_MINUTES, STORAGE_AUTH_FAIL_COUNT, STORAGE_AUTH_LOCK_UNTIL]);
+  const sensitivePrefixes = ['biriyani_rice_', 'third_man_', 'thirdman_'];
+  const explicitSensitiveKeys = ['orders', 'customers', 'products', 'bagSizes', 'deleted_customers'];
+
+  [typeof localStorage !== 'undefined' ? localStorage : null, typeof sessionStorage !== 'undefined' ? sessionStorage : null].forEach(store => {
+    if (!store) return;
+    try {
+      const toRemove = [];
+      for (let i = 0; i < store.length; i++) {
+        const k = store.key(i);
+        if (!k || preserveKeys.has(k)) continue;
+        if (explicitSensitiveKeys.includes(k) || sensitivePrefixes.some(p => k.startsWith(p))) {
+          toRemove.push(k);
+        }
+      }
+      toRemove.forEach(k => store.removeItem(k));
+    } catch (e) {}
+  });
+
+  // 3. Clear rendered business DOM content so nothing lingers behind the lock overlay
+  const clearHtmlIds = [
+    'ordersTableBody', 'customersListContainer', 'dailyReportShopsListContainer',
+    'visitedSectionList', 'topCustomersList', 'adminSupportMessageList',
+    'deliveryAlertList', 'trashItemsContainer', 'monthlyHistoryTableBody'
+  ];
+  clearHtmlIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = '';
+  });
+
+  const clearTextIds = ['kpiTotalRevenue', 'kpiTotalBags', 'kpiTotalKg', 'kpiOrderCount', 'custTotalBadgeText'];
+  clearTextIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = '0';
+  });
+
+  if (salesTrendChartInstance && typeof salesTrendChartInstance.destroy === 'function') {
+    try { salesTrendChartInstance.destroy(); } catch (e) {}
+    salesTrendChartInstance = null;
+  }
+  if (ricePieChartInstance && typeof ricePieChartInstance.destroy === 'function') {
+    try { ricePieChartInstance.destroy(); } catch (e) {}
+    ricePieChartInstance = null;
+  }
+
+  const closeIds = ['settingsModal', 'orderModal', 'shareDeliveryModal', 'supportChatDropdown', 'supportChatBackdrop', 'mobileMoreDrawer', 'mobileMoreDrawerOverlay'];
+  closeIds.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.classList.add('hidden');
+  });
+}
+
+function getAuthLockRemainingSeconds() {
+  try {
+    const until = parseInt(localStorage.getItem(STORAGE_AUTH_LOCK_UNTIL) || '0', 10) || 0;
+    return Math.max(0, Math.ceil((until - Date.now()) / 1000));
   } catch (e) {
+    return 0;
+  }
+}
+
+function resetAuthFailureCounters() {
+  try {
+    localStorage.removeItem(STORAGE_AUTH_FAIL_COUNT);
+    localStorage.removeItem(STORAGE_AUTH_LOCK_UNTIL);
+  } catch (e) {}
+  if (authCooldownInterval) {
+    clearInterval(authCooldownInterval);
+    authCooldownInterval = null;
+  }
+  const btn = document.getElementById('btnAdminSignIn');
+  if (btn) btn.disabled = false;
+}
+
+function updateAuthLockCountdownUI() {
+  const errEl = document.getElementById('authErrorMessage');
+  const btn = document.getElementById('btnAdminSignIn');
+  const rem = getAuthLockRemainingSeconds();
+  if (rem > 0) {
+    if (btn) btn.disabled = true;
+    if (errEl) {
+      errEl.textContent = `Too many failed sign-in attempts. Please wait ${rem}s before trying again.`;
+    }
     return true;
   }
+  if (btn) btn.disabled = false;
+  if (authCooldownInterval) {
+    clearInterval(authCooldownInterval);
+    authCooldownInterval = null;
+  }
+  return false;
 }
 
-function isDashboardUnlocked() {
-  if (!isSecurityEnabled()) return true;
+function recordFailedAuthAttempt(customMessage = '') {
+  let count = 0;
   try {
-    return sessionStorage.getItem(STORAGE_PIN_UNLOCKED) === 'true' ||
-           localStorage.getItem(STORAGE_PIN_UNLOCKED) === 'true';
+    count = (parseInt(localStorage.getItem(STORAGE_AUTH_FAIL_COUNT) || '0', 10) || 0) + 1;
+    localStorage.setItem(STORAGE_AUTH_FAIL_COUNT, String(count));
   } catch (e) {
+    count = 1;
+  }
+
+  let delaySec = 2;
+  if (count >= 5) delaySec = 60;
+  else if (count === 4) delaySec = 30;
+  else if (count === 3) delaySec = 15;
+
+  try {
+    localStorage.setItem(STORAGE_AUTH_LOCK_UNTIL, String(Date.now() + delaySec * 1000));
+  } catch (e) {}
+
+  if (authCooldownInterval) {
+    clearInterval(authCooldownInterval);
+    authCooldownInterval = null;
+  }
+
+  const errEl = document.getElementById('authErrorMessage');
+  const btn = document.getElementById('btnAdminSignIn');
+  if (btn) btn.disabled = true;
+  if (errEl) {
+    errEl.textContent = customMessage
+      ? `${customMessage} (Wait ${delaySec}s)`
+      : `Invalid credentials. Please wait ${delaySec}s.`;
+  }
+
+  authCooldownInterval = setInterval(() => {
+    const rem = getAuthLockRemainingSeconds();
+    if (rem <= 0) {
+      clearInterval(authCooldownInterval);
+      authCooldownInterval = null;
+      if (btn) btn.disabled = false;
+      if (errEl && errEl.textContent && errEl.textContent.includes('wait')) {
+        errEl.textContent = 'You may try signing in again.';
+      }
+    } else if (errEl) {
+      errEl.textContent = customMessage
+        ? `${customMessage} (Retry in ${rem}s)`
+        : `Sign-in temporarily delayed. Retry in ${rem}s.`;
+    }
+  }, 1000);
+}
+
+function setAuthOverlayUIState(mode, statusText = '') {
+  const overlay = document.getElementById('appSecurityLockOverlay');
+  const form = document.getElementById('adminAuthForm');
+  const checkingBanner = document.getElementById('authCheckingBanner');
+  const errEl = document.getElementById('authErrorMessage');
+  if (!overlay) return;
+
+  if (mode === 'unlocked') {
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('auth-locked');
+    }
+    overlay.classList.add('hidden');
+    overlay.style.display = 'none';
+    if (checkingBanner) checkingBanner.classList.add('hidden');
+    return;
+  }
+
+  if (typeof document !== 'undefined' && document.body) {
+    document.body.classList.add('auth-locked');
+  }
+  overlay.classList.remove('hidden', 'opacity-0');
+  overlay.style.display = 'flex';
+
+  if (mode === 'checking') {
+    if (checkingBanner) checkingBanner.classList.remove('hidden');
+    if (form) form.classList.add('hidden');
+  } else {
+    if (checkingBanner) checkingBanner.classList.add('hidden');
+    if (form) form.classList.remove('hidden');
+  }
+  if (errEl && statusText !== undefined) {
+    errEl.textContent = statusText;
+  }
+  if (window.lucide && typeof lucide.createIcons === 'function') {
+    lucide.createIcons();
+  }
+}
+
+function toggleAuthPasswordVisibility() {
+  const pwdInput = document.getElementById('authAdminPassword');
+  const icon = document.getElementById('authPwdEyeIcon');
+  if (!pwdInput) return;
+  const showing = pwdInput.type === 'text';
+  pwdInput.type = showing ? 'password' : 'text';
+  if (icon) {
+    icon.setAttribute('data-lucide', showing ? 'eye' : 'eye-off');
+    if (window.lucide && typeof lucide.createIcons === 'function') {
+      lucide.createIcons();
+    }
+  }
+}
+
+async function verifyAdminAuthorizationDoc(user) {
+  if (!user || !user.uid || user.isAnonymous) return false;
+  ensureFirebaseAppAndDb();
+  if (!db || typeof db.collection !== 'function') return false;
+  try {
+    const adminRef = db.collection('admins').doc(user.uid);
+    const snap = await adminRef.get({ source: 'server' }).catch(() => adminRef.get());
+    if (!snap || !snap.exists) return false;
+    const data = snap.data() || {};
+    return !data.role || data.role === 'admin';
+  } catch (err) {
+    console.warn('Admin authorization verification failed:', err);
     return false;
   }
 }
 
-function updatePinDots() {
-  for (let i = 0; i < 4; i++) {
-    const dot = document.getElementById(`pinDot${i}`);
-    if (dot) {
-      if (i < enteredPin.length) {
-        dot.className = 'w-4 h-4 rounded-full border-2 border-cyan-400 bg-cyan-400 shadow-md shadow-cyan-400/50 scale-110 transition-all duration-150';
-      } else {
-        dot.className = 'w-4 h-4 rounded-full border-2 border-slate-600 bg-slate-800 transition-all duration-150';
-      }
-    }
+async function submitAdminLogin(event) {
+  if (event && typeof event.preventDefault === 'function') {
+    event.preventDefault();
   }
-}
 
-function enterPinDigit(digit) {
-  if (enteredPin.length < 6) {
-    enteredPin += String(digit);
-    updatePinDots();
-    const errEl = document.getElementById('pinErrorMessage');
-    if (errEl) errEl.textContent = '';
+  if (updateAuthLockCountdownUI()) return;
 
-    if (enteredPin.length === 4) {
-      setTimeout(() => {
-        submitPinUnlock();
-      }, 150);
-    }
+  const emailEl = document.getElementById('authAdminEmail');
+  const pwdEl = document.getElementById('authAdminPassword');
+  const rememberEl = document.getElementById('authRememberSessionCheckbox');
+  const errEl = document.getElementById('authErrorMessage');
+  const btn = document.getElementById('btnAdminSignIn');
+  const btnText = document.getElementById('btnAdminSignInText');
+
+  const email = (emailEl?.value || '').trim();
+  const password = pwdEl?.value || '';
+
+  if (!email || !password) {
+    if (errEl) errEl.textContent = 'Please enter both admin email and password.';
+    return;
   }
-}
 
-function backspacePinDigit() {
-  if (enteredPin.length > 0) {
-    enteredPin = enteredPin.slice(0, -1);
-    updatePinDots();
-    const errEl = document.getElementById('pinErrorMessage');
-    if (errEl) errEl.textContent = '';
+  const auth = getFirebaseAuthInstance();
+  if (!auth) {
+    if (errEl) errEl.textContent = 'Firebase Authentication SDK unavailable. Check internet connection and reload.';
+    return;
   }
-}
 
-function clearPin() {
-  enteredPin = '';
-  updatePinDots();
-  const errEl = document.getElementById('pinErrorMessage');
+  if (btn) btn.disabled = true;
+  if (btnText) btnText.textContent = 'Signing in...';
   if (errEl) errEl.textContent = '';
+
+  try {
+    if (typeof auth.setPersistence === 'function' && typeof firebase !== 'undefined' && firebase.auth && firebase.auth.Auth) {
+      const persistenceMode = (rememberEl && !rememberEl.checked)
+        ? firebase.auth.Auth.Persistence.SESSION
+        : firebase.auth.Auth.Persistence.LOCAL;
+      await auth.setPersistence(persistenceMode);
+    }
+
+    await auth.signInWithEmailAndPassword(email, password);
+    if (pwdEl) pwdEl.value = '';
+  } catch (err) {
+    const code = err && err.code ? err.code : '';
+    let friendly = 'Invalid email or password.';
+    if (code === 'auth/too-many-requests') {
+      friendly = 'Firebase temporarily blocked login due to repeated attempts.';
+    } else if (code === 'auth/network-request-failed') {
+      friendly = 'Network error. Please verify your internet connection.';
+    } else if (code === 'auth/user-disabled') {
+      friendly = 'This admin account has been disabled.';
+    }
+    recordFailedAuthAttempt(friendly);
+  } finally {
+    if (btnText) btnText.textContent = 'Sign In Securely';
+    if (getAuthLockRemainingSeconds() <= 0 && btn) {
+      btn.disabled = false;
+    }
+  }
 }
 
-function submitPinUnlock() {
-  const correctPin = getSecurityPin();
-  const errEl = document.getElementById('pinErrorMessage');
-  const overlay = document.getElementById('appSecurityLockOverlay');
-  const dotsWrapper = document.getElementById('pinDotsWrapper');
-
-  if (enteredPin === correctPin) {
-    try {
-      sessionStorage.setItem(STORAGE_PIN_UNLOCKED, 'true');
-      const remCheck = document.getElementById('pinRememberMeCheckbox');
-      if (remCheck && remCheck.checked) {
-        localStorage.setItem(STORAGE_PIN_UNLOCKED, 'true');
-      } else {
-        localStorage.removeItem(STORAGE_PIN_UNLOCKED);
-      }
-    } catch (e) {}
-
-    if (overlay) {
-      overlay.classList.add('transition-opacity', 'duration-300', 'opacity-0');
-      setTimeout(() => {
-        overlay.classList.add('hidden');
-        overlay.classList.remove('opacity-0');
-        overlay.style.display = 'none';
-      }, 300);
-    }
-
-    clearPin();
-    if (typeof showNotification === 'function') {
-      showNotification('✓ Dashboard Unlocked!');
-    }
-  } else {
-    if (errEl) {
-      errEl.textContent = 'Incorrect PIN! Please try again.';
-    }
-    if (dotsWrapper) {
-      dotsWrapper.classList.add('animate-bounce');
-      setTimeout(() => dotsWrapper.classList.remove('animate-bounce'), 500);
-    }
-    if (navigator.vibrate) {
-      try { navigator.vibrate(200); } catch (e) {}
-    }
-    setTimeout(() => {
-      clearPin();
-    }, 600);
+async function sendAdminPasswordReset() {
+  const emailEl = document.getElementById('authAdminEmail');
+  const errEl = document.getElementById('authErrorMessage');
+  const email = (emailEl?.value || '').trim();
+  if (!email) {
+    if (errEl) errEl.textContent = 'Enter your Admin Email above, then click Reset Password.';
+    emailEl?.focus();
+    return;
   }
+  const auth = getFirebaseAuthInstance();
+  if (!auth || typeof auth.sendPasswordResetEmail !== 'function') {
+    if (errEl) errEl.textContent = 'Authentication service unavailable.';
+    return;
+  }
+  try {
+    await auth.sendPasswordResetEmail(email);
+    if (errEl) errEl.textContent = 'If that admin email exists in Firebase Auth, a password reset link has been sent.';
+  } catch (err) {
+    if (errEl) errEl.textContent = 'Could not send reset email: ' + (err.message || 'Check email format.');
+  }
+}
+
+function handleSignedOutState(reasonMsg = '') {
+  isAdminSessionAuthenticated = false;
+  hasHydratedAdminDashboard = false;
+  currentAuthenticatedAdminEmail = '';
+  isFirestoreInitialized = false;
+  stopAdminInactivityWatchdog();
+  detachFirestoreRealtimeListeners();
+  clearSensitiveClientData();
+  updateCloudSyncStatus('offline', 'Sign In Required');
+  setAuthOverlayUIState('login', reasonMsg);
+  updateAuthLockCountdownUI();
+}
+
+function signOutAndLockDashboard(reasonMsg = 'Signed out & local cache cleared.') {
+  const seq = ++authStateSequence;
+  handleSignedOutState(reasonMsg);
+  const auth = getFirebaseAuthInstance();
+  if (auth && typeof auth.signOut === 'function') {
+    auth.signOut().catch(() => {});
+  }
+  if (typeof showNotification === 'function' && !reasonMsg.includes('inactivity')) {
+    showNotification('Signed out & locked.');
+  }
+  return seq;
 }
 
 function lockDashboard() {
-  try {
-    sessionStorage.removeItem(STORAGE_PIN_UNLOCKED);
-    localStorage.removeItem(STORAGE_PIN_UNLOCKED);
-  } catch (e) {}
-
-  clearPin();
-  const overlay = document.getElementById('appSecurityLockOverlay');
-  if (overlay) {
-    overlay.classList.remove('hidden', 'opacity-0');
-    overlay.style.display = 'flex';
-  }
-
-  const closeSettings = document.getElementById('settingsModal');
-  if (closeSettings) closeSettings.classList.add('hidden');
-
-  if (window.lucide && typeof lucide.createIcons === 'function') {
-    lucide.createIcons();
-  }
-  if (typeof showNotification === 'function') {
-    showNotification('Dashboard Locked.');
-  }
+  return signOutAndLockDashboard('Dashboard locked & cache cleared.');
 }
 
-let pinKeydownAttached = false;
 function initSecurityLock() {
   const overlay = document.getElementById('appSecurityLockOverlay');
   if (!overlay) return;
 
-  if (isDashboardUnlocked()) {
-    overlay.classList.add('hidden');
-    overlay.style.display = 'none';
-  } else {
-    overlay.classList.remove('hidden');
-    overlay.style.display = 'flex';
-    clearPin();
-  }
+  purgeLegacyWeakSecurityKeys();
+  setAuthOverlayUIState('checking', '');
 
-  if (!pinKeydownAttached) {
-    pinKeydownAttached = true;
-    window.addEventListener('keydown', (e) => {
-      const lockOverlay = document.getElementById('appSecurityLockOverlay');
-      if (lockOverlay && !lockOverlay.classList.contains('hidden') && lockOverlay.style.display !== 'none') {
-        if (e.key >= '0' && e.key <= '9') {
-          e.preventDefault();
-          enterPinDigit(e.key);
-        } else if (e.key === 'Backspace') {
-          e.preventDefault();
-          backspacePinDigit();
-        } else if (e.key === 'Enter') {
-          e.preventDefault();
-          submitPinUnlock();
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          clearPin();
-        }
-      }
-    });
-  }
-}
-
-function handleSaveNewPin() {
-  const curInput = document.getElementById('inputCurrentPin');
-  const newInput = document.getElementById('inputNewPin');
-  const confInput = document.getElementById('inputConfirmPin');
-
-  const curVal = curInput ? curInput.value.trim() : '';
-  const newVal = newInput ? newInput.value.trim() : '';
-  const confVal = confInput ? confInput.value.trim() : '';
-
-  const activePin = getSecurityPin();
-
-  if (curVal !== activePin) {
-    alert('Current PIN is incorrect! (Default is 1234)');
-    if (curInput) curInput.focus();
+  const auth = getFirebaseAuthInstance();
+  if (!auth || typeof auth.onAuthStateChanged !== 'function') {
+    // Fail closed if Firebase Auth fails to load in browser
+    handleSignedOutState('Authentication service unavailable. Please check internet connection and reload.');
     return;
   }
 
-  if (newVal.length < 4) {
-    alert('New PIN must be at least 4 digits!');
-    if (newInput) newInput.focus();
+  if (adminAuthUnsubscribe) {
+    try { adminAuthUnsubscribe(); } catch (e) {}
+    adminAuthUnsubscribe = null;
+  }
+
+  adminAuthUnsubscribe = auth.onAuthStateChanged(async (user) => {
+    const seq = ++authStateSequence;
+
+    if (!user || user.isAnonymous) {
+      if (seq !== authStateSequence) return;
+      handleSignedOutState('');
+      return;
+    }
+
+    setAuthOverlayUIState('checking', '');
+    const isAllowedAdmin = await verifyAdminAuthorizationDoc(user);
+    if (seq !== authStateSequence) return;
+
+    if (!isAllowedAdmin) {
+      isAdminSessionAuthenticated = false;
+      currentAuthenticatedAdminEmail = '';
+      if (typeof auth.signOut === 'function') {
+        auth.signOut().catch(() => {});
+      }
+      clearSensitiveClientData();
+      setAuthOverlayUIState('login', `Access Denied: "${user.email || user.uid}" is not registered in /admins/.`);
+      return;
+    }
+
+    resetAuthFailureCounters();
+    isAdminSessionAuthenticated = true;
+    currentAuthenticatedAdminEmail = user.email || '';
+    if (!hasHydratedAdminDashboard) {
+      hydrateAndBootAdminDashboard();
+    } else {
+      setAuthOverlayUIState('unlocked', '');
+      startAdminInactivityWatchdog();
+      initFirebaseSync();
+    }
+  });
+}
+
+async function handleChangeAdminPassword() {
+  const curInput = document.getElementById('inputCurrentPassword');
+  const newInput = document.getElementById('inputNewPassword');
+  const confInput = document.getElementById('inputConfirmPassword');
+  const btn = document.getElementById('btnChangeAdminPassword');
+
+  const curVal = curInput ? curInput.value : '';
+  const newVal = newInput ? newInput.value : '';
+  const confVal = confInput ? confInput.value : '';
+
+  const auth = getFirebaseAuthInstance();
+  const user = auth && auth.currentUser ? auth.currentUser : null;
+
+  if (!canAccessAdminData() || !user || !user.email) {
+    alert('Please sign in with an authorized Admin Email/Password account first.');
+    return;
+  }
+
+  if (!curVal) {
+    alert('Please enter your current password.');
+    curInput?.focus();
+    return;
+  }
+
+  if (newVal.length < 8) {
+    alert('New password must be at least 8 characters long.');
+    newInput?.focus();
     return;
   }
 
   if (newVal !== confVal) {
-    alert('New PIN and Confirm PIN do not match!');
-    if (confInput) confInput.focus();
+    alert('New password and confirmation do not match.');
+    confInput?.focus();
     return;
   }
 
+  if (btn) btn.disabled = true;
   try {
-    localStorage.setItem(STORAGE_SECURITY_PIN, newVal);
-  } catch (e) {}
-
-  if (curInput) curInput.value = '';
-  if (newInput) newInput.value = '';
-  if (confInput) confInput.value = '';
-
-  updateSettingsSecurityTab();
-  showNotification('✓ Security PIN changed successfully!');
-}
-
-function onSecurityToggleChange(enabled) {
-  try {
-    localStorage.setItem(STORAGE_SECURITY_ENABLED, enabled ? 'true' : 'false');
-  } catch (e) {}
-  updateSettingsSecurityTab();
-  showNotification(enabled ? 'PIN Lock Enabled' : 'PIN Lock Disabled');
+    if (typeof firebase !== 'undefined' && firebase.auth && firebase.auth.EmailAuthProvider) {
+      const cred = firebase.auth.EmailAuthProvider.credential(user.email, curVal);
+      await user.reauthenticateWithCredential(cred);
+    }
+    await user.updatePassword(newVal);
+    if (curInput) curInput.value = '';
+    if (newInput) newInput.value = '';
+    if (confInput) confInput.value = '';
+    if (typeof showNotification === 'function') {
+      showNotification('✓ Admin password updated successfully!');
+    }
+  } catch (err) {
+    alert('Could not update password: ' + (err && err.message ? err.message : 'Please verify current password.'));
+  } finally {
+    if (btn) btn.disabled = false;
+  }
 }
 
 function updateSettingsSecurityTab() {
-  const toggle = document.getElementById('settingsSecurityLockToggle');
+  const emailDisplay = document.getElementById('securityAdminEmailDisplay');
   const badge = document.getElementById('securityStatusBadge');
-  const enabled = isSecurityEnabled();
+  const autoLockSelect = document.getElementById('settingsAutoLockSelect');
 
-  if (toggle) toggle.checked = enabled;
+  if (emailDisplay) {
+    emailDisplay.textContent = currentAuthenticatedAdminEmail
+      ? `Signed in as ${currentAuthenticatedAdminEmail}`
+      : 'Signed in with Firebase Authentication';
+  }
+  if (autoLockSelect) {
+    autoLockSelect.value = String(getAutoLockTimeoutMinutes());
+  }
   if (badge) {
-    if (enabled) {
-      badge.textContent = 'ACTIVE';
+    if (canAccessAdminData()) {
+      badge.textContent = 'VERIFIED ADMIN';
       badge.className = 'px-2.5 py-1 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300';
     } else {
-      badge.textContent = 'DISABLED';
-      badge.className = 'px-2.5 py-1 rounded-full text-[10px] font-black bg-slate-100 text-slate-600 border border-slate-300';
+      badge.textContent = 'LOCKED';
+      badge.className = 'px-2.5 py-1 rounded-full text-[10px] font-black bg-rose-100 text-rose-700 border border-rose-300';
     }
   }
 }
@@ -15848,16 +16528,31 @@ window.getCanonicalProduct = getCanonicalProduct;
 window.cascadeCanonicalProductsToOrders = cascadeCanonicalProductsToOrders;
 window.ALL_OFFICIAL_PRODUCTS = ALL_OFFICIAL_PRODUCTS;
 
-// Security PIN Lock Exports
-window.enterPinDigit = enterPinDigit;
-window.backspacePinDigit = backspacePinDigit;
-window.clearPin = clearPin;
-window.submitPinUnlock = submitPinUnlock;
+// Firebase Admin Authentication & Session Security Exports
+window.canAccessAdminData = canAccessAdminData;
+window.submitAdminLogin = submitAdminLogin;
+window.toggleAuthPasswordVisibility = toggleAuthPasswordVisibility;
+window.sendAdminPasswordReset = sendAdminPasswordReset;
+window.signOutAndLockDashboard = signOutAndLockDashboard;
 window.lockDashboard = lockDashboard;
 window.initSecurityLock = initSecurityLock;
-window.handleSaveNewPin = handleSaveNewPin;
-window.onSecurityToggleChange = onSecurityToggleChange;
+window.initApp = initApp;
+window.hydrateAndBootAdminDashboard = hydrateAndBootAdminDashboard;
+window.handleChangeAdminPassword = handleChangeAdminPassword;
+window.onAutoLockTimeoutChange = onAutoLockTimeoutChange;
 window.updateSettingsSecurityTab = updateSettingsSecurityTab;
+window.clearSensitiveClientData = clearSensitiveClientData;
+window.verifyAdminAuthorizationDoc = verifyAdminAuthorizationDoc;
+window.getAuthLockRemainingSeconds = getAuthLockRemainingSeconds;
+window.recordFailedAuthAttempt = recordFailedAuthAttempt;
+window.resetAuthFailureCounters = resetAuthFailureCounters;
+
+// Isolated Delivery Dispatch Projection Exports
+window.buildDeliveryDispatchPayload = buildDeliveryDispatchPayload;
+window.isOrderRelevantForDeliveryDispatch = isOrderRelevantForDeliveryDispatch;
+window.syncOrderToDeliveryDispatch = syncOrderToDeliveryDispatch;
+window.deleteDeliveryDispatchDoc = deleteDeliveryDispatchDoc;
+window.reconcileDeliveryDispatchProjection = reconcileDeliveryDispatchProjection;
 
 // Staff Delivery Portal Exports
 window.openShareDeliveryModal = openShareDeliveryModal;
@@ -17258,6 +17953,11 @@ window.fetchScopedOrdersCatchupForAdmin = fetchScopedOrdersCatchupForAdmin;
 window.handleMainAppConnectionWakeup = handleMainAppConnectionWakeup;
 window.setupFirestoreRealtimeListeners = setupFirestoreRealtimeListeners;
 window.listenToSupportChats = listenToSupportChats;
+window.setAdminAuthForTest = (isAuthed, email = '') => {
+  isAdminSessionAuthenticated = Boolean(isAuthed);
+  currentAuthenticatedAdminEmail = email ? String(email) : (isAuthed ? 'admin@thirdman.test' : '');
+};
+window.setFirebaseAuthForTest = (mockAuth) => { mockAuthOverride = mockAuth || null; };
 window.setRealtimeDbForTest = (mockDb) => { db = mockDb; };
 window.getRealtimeDbForTest = () => db;
 window.resetRealtimeListenerHandlesForTest = () => {
@@ -17266,7 +17966,9 @@ window.resetRealtimeListenerHandlesForTest = () => {
   mainSettingsUnsubscribe = null;
   mainVisitsUnsubscribe = null;
   mainReportsUnsubscribe = null;
+  mainDeliveryDispatchUnsubscribe = null;
   supportChatUnsubscribe = null;
+  hasReconciledDeliveryDispatch = false;
   lastMainWakeupAt = 0;
   lastMainOnlineWakeupAt = 0;
   mainWentHiddenAt = 0;

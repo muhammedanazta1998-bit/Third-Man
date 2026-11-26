@@ -1,0 +1,418 @@
+rules_version = '2';
+
+// ===============================================================
+// Assumed Data Model — Third Man (third-man-1998)
+// ===============================================================
+//
+// Collection: admins
+// Document ID: {uid} (Firebase Auth UID; provisioned manually in Firebase Console)
+// Access: Self-read only for admin verification; all client writes forbidden
+// Fields:
+//   - role: string (required, 'admin') - Admin role indicator
+//   - email: string (optional, email) - Admin account email
+//
+// Collection: orders (Admin-only sales & invoice ledger)
+// Document ID: {orderId} (e.g., 'ORD-1005')
+// Access: Admin only (Email/Password + admins/{uid})
+// Fields:
+//   - id: string (required) - Order identifier
+//   - date: string (YYYY-MM-DD) - Order date
+//   - deliveryStatus: string ('Normal' | 'Urgent') - Priority flag
+//   - dispatchStatus: string ('Pending' | 'OutForDelivery' | 'Delivered' | 'Cancelled')
+//   - deliveryNote: string - Delivery remarks
+//   - deliveredAt: string | null - ISO 8601 timestamp when delivered
+//   - customer: map | string - Customer details & PII (name, phone, ownerPhone, staffPhone, location)
+//   - customerName: string (optional) - Denormalized customer name
+//   - items: list of maps - Line items (productId, productName, bagSize, bagQty, totalKg, perKgRate, totalAmount)
+//   - product: map - Primary product summary (id, name)
+//   - bagSize, bagQty, totalKg, perKgRate, totalAmount, paidAmount, balanceDue: number
+//   - paymentMode, notes, createdAt, updatedAt, _firestoreDocId: string
+//
+// Collection: customers (Admin-only directory & team contacts)
+// Document ID: {customerId}
+// Access: Admin only
+// Fields:
+//   - id, name, category, district, town, landmark, panchayath, area, place, location: string
+//   - ownerName, ownerPhone, staffName, staffRole, staffPhone, phone: string (PII)
+//   - members: list of maps (team contacts)
+//   - isProspect: bool; tier / visitTier, lastVisitedDate: string; visitCount: number
+//   - updatedAt, membersUpdatedAt: number | string
+//
+// Collections: dailyVisits, visits (Admin-only shop visit logs)
+// Document ID: {visitId}
+// Access: Admin only
+// Fields:
+//   - id, shopId, shopName, town, date, timestamp, createdAt, updatedAt, tier, notes, tag: string
+//   - isProspect: bool
+//
+// Collections: dailyReports, daily_reports (Admin-only daily report submissions & leave/holiday markers)
+// Document ID: {reportId} (YYYY-MM-DD)
+// Access: Admin only
+// Fields:
+//   - id, date, status ('leave' | 'holiday' | 'off' | 'submitted'), reason, sentAt, updatedAt: string
+//   - visitCount: number (optional)
+//
+// Collection: settings
+// Document ID: app_config (Admin-only app configuration & recycle bin)
+// Access: Admin only
+// Fields:
+//   - products: list of maps; bagSizes, savedAreas, trashList, permanentlyDeletedTrashIds,
+//     deletedCustomerTombstones, deletedOrderTombstones: lists
+//   - savedDistrictTowns: map; defaultRememberedBagSize: number
+//   - incentiveSchemeEffectiveDate: string; appLogo: string | null
+//
+// Document ID: delivery_config (Isolated delivery portal configuration)
+// Access: Public read (for unauthenticated delivery.html PWA); Admin create/update/delete;
+//         Unauthenticated drivers may ONLY update ['quickRemarks', 'updatedAt']
+// Fields:
+//   - deletedOrderTombstones: list (immutable for drivers; max 5000 items)
+//   - appLogo: string | null (immutable for drivers; max 900000 chars)
+//   - quickRemarks: list of strings (0..30 items, each 1..160 chars)
+//   - updatedAt: string (1..40 chars)
+//
+// Collection: delivery_dispatch (Isolated active/recent delivery order projection)
+// Document ID: {orderId}
+// Access: Admin full read/create/update/delete;
+//         Drivers can read docs where dispatchStatus in ['Pending', 'OutForDelivery', 'Delivered']
+//         and can ONLY update ['dispatchStatus', 'deliveredAt', 'deliveryNote', 'updatedAt']
+// Fields (Immutable for drivers):
+//   - id, date, deliveryStatus, notes, createdAt, customer (delivery-safe subset),
+//     items, product, bagSize, bagQty, totalKg, perKgRate, totalAmount
+// Fields (Mutable by drivers with strict validation):
+//   - dispatchStatus: string ('Pending' | 'OutForDelivery' | 'Delivered'; Admin may also write 'Cancelled')
+//   - deliveredAt: string (1..40 chars) when dispatchStatus == 'Delivered'; null (or unchanged absent) otherwise
+//   - deliveryNote: string (0..500 chars)
+//   - updatedAt: string (1..40 chars)
+//
+// Collection: support_chats (Delivery <-> Admin real-time support channel)
+// Document ID: {msgId}
+// Access: Public read (delivery.html + Admin); Admin full create/update/delete;
+//         Drivers can ONLY create 'delivery' messages (readByAdmin == false)
+//         and ONLY update readByDelivery: true on existing 'admin' messages
+// Fields:
+//   - id: string (required, 1..80 chars)
+//   - text: string (required, 1..1000 chars on driver create; 1..5000 chars on admin write)
+//   - sender: string (required, 'delivery' on driver create; 'admin' | 'delivery' on admin write)
+//   - createdAtMs: number (required, >= 0)
+//   - readByAdmin: bool (required false on driver create)
+//   - readByDelivery: bool (required bool on driver create; drivers may only set true on admin msgs)
+//   - tag: string (optional, 0..40 chars)
+//   - senderName: string (optional, 0..80 chars)
+//   - timestamp: string (optional, 0..40 chars)
+//   - createdAt: string (optional, 0..40 chars)
+//
+// ===============================================================
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    // Check if the user is authenticated
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    // Check if authenticated user owns the resource by UID
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Verify UID hasn't been tampered with on create (for UID-scoped docs)
+    function uidUnchanged() {
+      return !('uid' in request.resource.data) ||
+             request.resource.data.uid == request.auth.uid;
+    }
+
+    // Ensure UID field is not modified on update (for UID-scoped docs)
+    function uidNotModified() {
+      return !('uid' in request.resource.data) ||
+             request.resource.data.uid == resource.data.uid;
+    }
+
+    // Verify authentication used Firebase Email/Password provider
+    function isPasswordAuth() {
+      return isAuthenticated() &&
+             'firebase' in request.auth.token &&
+             request.auth.token.firebase is map &&
+             'sign_in_provider' in request.auth.token.firebase &&
+             request.auth.token.firebase.sign_in_provider == 'password';
+    }
+
+    // Verify caller is a Console-provisioned Admin authenticated via Email/Password
+    function isAdmin() {
+      return isPasswordAuth() &&
+             exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // Validate required fields exist in incoming document
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    // Validate document contains only allowed fields
+    function hasOnlyAllowedFields(fields) {
+      return request.resource.data.keys().hasOnly(fields);
+    }
+
+    // Validate specified fields have not been modified on update
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // Validate required string field length bounds
+    function validStringLength(field, minLen, maxLen) {
+      return field in request.resource.data &&
+             request.resource.data[field] is string &&
+             request.resource.data[field].size() >= minLen &&
+             request.resource.data[field].size() <= maxLen;
+    }
+
+    // Validate optional string field length bounds (if present)
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    // Validate that a value is a list within maxSize
+    function isValidList(listVal, maxSize) {
+      return listVal is list && listVal.size() <= maxSize;
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+
+    function isDriverDispatchStatus(status) {
+      return status in ['Pending', 'OutForDelivery', 'Delivered'];
+    }
+
+    function isAdminDispatchStatus(status) {
+      return status in ['Pending', 'OutForDelivery', 'Delivered', 'Cancelled'];
+    }
+
+    // Admin create/update baseline validation for delivery_dispatch projections
+    function isValidDeliveryDispatchAdminDoc(data) {
+      return 'dispatchStatus' in data &&
+             isAdminDispatchStatus(data.dispatchStatus) &&
+             (!('id' in data) || (data.id is string && data.id.size() >= 1 && data.id.size() <= 80)) &&
+             (!('deliveryNote' in data) || (data.deliveryNote is string && data.deliveryNote.size() <= 500)) &&
+             (!('deliveredAt' in data) || data.deliveredAt == null ||
+              (data.deliveredAt is string && data.deliveredAt.size() >= 1 && data.deliveredAt.size() <= 40)) &&
+             (!('updatedAt' in data) ||
+              (data.updatedAt is string && data.updatedAt.size() >= 1 && data.updatedAt.size() <= 40));
+    }
+
+    // Strict driver update validator for delivery_dispatch (update-only; create/delete denied)
+    function isValidDriverDispatchUpdate() {
+      let data = request.resource.data;
+      let prev = resource.data;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'dispatchStatus', 'deliveredAt', 'deliveryNote', 'updatedAt'
+             ]) &&
+             'dispatchStatus' in prev &&
+             isDriverDispatchStatus(prev.dispatchStatus) &&
+             'dispatchStatus' in data &&
+             isDriverDispatchStatus(data.dispatchStatus) &&
+             (
+               (data.dispatchStatus == 'Delivered' &&
+                'deliveredAt' in data &&
+                data.deliveredAt is string &&
+                data.deliveredAt.size() >= 1 &&
+                data.deliveredAt.size() <= 40) ||
+               (data.dispatchStatus != 'Delivered' &&
+                ((!('deliveredAt' in prev) && !('deliveredAt' in data)) ||
+                 ('deliveredAt' in data && data.deliveredAt == null)))
+             ) &&
+             ((!('deliveryNote' in prev) && !('deliveryNote' in data)) ||
+              ('deliveryNote' in data && data.deliveryNote is string && data.deliveryNote.size() <= 500)) &&
+             'updatedAt' in data &&
+             data.updatedAt is string &&
+             data.updatedAt.size() >= 1 &&
+             data.updatedAt.size() <= 40;
+    }
+
+    // Deep array element validation for quickRemarks (max 30 strings, each 1..160 chars)
+    function isValidRemarkAt(arr, i) {
+      return arr.size() <= i ||
+             (arr[i] is string && arr[i].size() >= 1 && arr[i].size() <= 160);
+    }
+
+    function isValidRemarkChunk5(arr, start) {
+      return isValidRemarkAt(arr, start) &&
+             isValidRemarkAt(arr, start + 1) &&
+             isValidRemarkAt(arr, start + 2) &&
+             isValidRemarkAt(arr, start + 3) &&
+             isValidRemarkAt(arr, start + 4);
+    }
+
+    function isValidQuickRemarksList(arr) {
+      return isValidList(arr, 30) &&
+             isValidRemarkChunk5(arr, 0) &&
+             isValidRemarkChunk5(arr, 5) &&
+             isValidRemarkChunk5(arr, 10) &&
+             isValidRemarkChunk5(arr, 15) &&
+             isValidRemarkChunk5(arr, 20) &&
+             isValidRemarkChunk5(arr, 25);
+    }
+
+    // Admin create/update validator for settings/delivery_config
+    function isValidDeliveryConfigAdminDoc(data) {
+      return hasOnlyAllowedFields([
+               'deletedOrderTombstones', 'appLogo', 'quickRemarks', 'updatedAt'
+             ]) &&
+             (!('deletedOrderTombstones' in data) || isValidList(data.deletedOrderTombstones, 5000)) &&
+             (!('appLogo' in data) || data.appLogo == null ||
+              (data.appLogo is string && data.appLogo.size() <= 900000)) &&
+             (!('quickRemarks' in data) || isValidQuickRemarksList(data.quickRemarks)) &&
+             (!('updatedAt' in data) ||
+              (data.updatedAt is string && data.updatedAt.size() <= 40));
+    }
+
+    // Strict driver update validator for settings/delivery_config (protects tombstones & appLogo)
+    function isValidDeliveryConfigUpdate() {
+      let data = request.resource.data;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+               'quickRemarks', 'updatedAt'
+             ]) &&
+             areImmutableFieldsUnchanged(['deletedOrderTombstones', 'appLogo']) &&
+             'quickRemarks' in data &&
+             isValidQuickRemarksList(data.quickRemarks) &&
+             validStringLength('updatedAt', 1, 40);
+    }
+
+    // Admin create/update schema validator for support_chats
+    function isValidAdminChatDoc(data) {
+      return hasOnlyAllowedFields([
+               'id', 'text', 'tag', 'sender', 'senderName',
+               'timestamp', 'createdAt', 'createdAtMs',
+               'readByAdmin', 'readByDelivery'
+             ]) &&
+             hasRequiredFields(['id', 'text', 'sender', 'createdAtMs']) &&
+             validStringLength('id', 1, 80) &&
+             validStringLength('text', 1, 5000) &&
+             data.sender in ['admin', 'delivery'] &&
+             data.createdAtMs is number &&
+             data.createdAtMs >= 0 &&
+             (!('readByAdmin' in data) || data.readByAdmin is bool) &&
+             (!('readByDelivery' in data) || data.readByDelivery is bool) &&
+             isValidOptionalString('tag', 0, 40) &&
+             isValidOptionalString('senderName', 0, 80) &&
+             isValidOptionalString('timestamp', 0, 40) &&
+             isValidOptionalString('createdAt', 0, 40);
+    }
+
+    // Strict driver create validator for support_chats
+    function isValidDeliveryChatCreate() {
+      let data = request.resource.data;
+      return hasOnlyAllowedFields([
+               'id', 'text', 'tag', 'sender', 'senderName',
+               'timestamp', 'createdAt', 'createdAtMs',
+               'readByAdmin', 'readByDelivery'
+             ]) &&
+             hasRequiredFields(['id', 'text', 'sender', 'createdAtMs']) &&
+             validStringLength('id', 1, 80) &&
+             validStringLength('text', 1, 1000) &&
+             data.sender == 'delivery' &&
+             'readByAdmin' in data &&
+             data.readByAdmin == false &&
+             'readByDelivery' in data &&
+             data.readByDelivery is bool &&
+             data.createdAtMs is number &&
+             data.createdAtMs >= 0 &&
+             isValidOptionalString('tag', 0, 40) &&
+             isValidOptionalString('senderName', 0, 80) &&
+             isValidOptionalString('timestamp', 0, 40) &&
+             isValidOptionalString('createdAt', 0, 40);
+    }
+
+    // Strict driver update validator for support_chats (read-ack on admin messages only)
+    function isValidDeliveryChatReadAck() {
+      let data = request.resource.data;
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByDelivery']) &&
+             'sender' in resource.data &&
+             resource.data.sender == 'admin' &&
+             'readByDelivery' in data &&
+             data.readByDelivery == true;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    // Console-provisioned admins (self-read for UID verification; zero client writes)
+    match /admins/{uid} {
+      allow read: if isOwner(uid);
+      allow write: if false;
+    }
+
+    // Strictly Admin-Only Business Collections
+    match /orders/{orderId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /customers/{customerId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /dailyVisits/{visitId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /visits/{visitId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /dailyReports/{reportId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /daily_reports/{reportId} {
+      allow read, write: if isAdmin();
+    }
+
+    match /settings/app_config {
+      allow read, write: if isAdmin();
+    }
+
+    // Delivery-Safe Configuration (explicitly open-read for delivery.html without Anonymous Auth)
+    match /settings/delivery_config {
+      allow read: if true;
+      allow create: if isAdmin() && isValidDeliveryConfigAdminDoc(request.resource.data);
+      allow update: if (isAdmin() && isValidDeliveryConfigAdminDoc(request.resource.data)) ||
+                       isValidDeliveryConfigUpdate();
+      allow delete: if isAdmin();
+    }
+
+    // Isolated Delivery Order Projection (explicitly open-access for delivery.html without Anonymous Auth)
+    match /delivery_dispatch/{orderId} {
+      allow read: if isAdmin() ||
+                     resource.data.dispatchStatus in ['Pending', 'OutForDelivery', 'Delivered'];
+      allow create: if isAdmin() && isValidDeliveryDispatchAdminDoc(request.resource.data);
+      allow update: if (isAdmin() && isValidDeliveryDispatchAdminDoc(request.resource.data)) ||
+                       isValidDriverDispatchUpdate();
+      allow delete: if isAdmin();
+    }
+
+    // Support Chat Channel (explicitly open-read/append for delivery.html without Anonymous Auth)
+    match /support_chats/{msgId} {
+      allow read: if true;
+      allow create: if (isAdmin() && isValidAdminChatDoc(request.resource.data)) ||
+                       isValidDeliveryChatCreate();
+      allow update: if (isAdmin() &&
+                        (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['readByAdmin']) ||
+                         isValidAdminChatDoc(request.resource.data))) ||
+                       isValidDeliveryChatReadAck();
+      allow delete: if isAdmin();
+    }
+
+    // Default Deny Fallback (blocks all unmapped collections & subcollections)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

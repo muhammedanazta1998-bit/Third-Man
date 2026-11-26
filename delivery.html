@@ -1318,9 +1318,9 @@
         reconnectOrdersTimeout = null;
       }
 
-      // Query 1: Strictly active Pending / OutForDelivery orders (attach only if missing)
+      // Query 1: Strictly active Pending / OutForDelivery orders from isolated delivery_dispatch projection
       if (!deliveryActiveOrdersUnsubscribe) {
-        deliveryActiveOrdersUnsubscribe = db.collection('orders')
+        deliveryActiveOrdersUnsubscribe = db.collection('delivery_dispatch')
           .where('dispatchStatus', 'in', ['Pending', 'OutForDelivery'])
           .onSnapshot(snapshot => {
             updateSyncStatus('synced', 'Live Synced 🟢');
@@ -1428,10 +1428,11 @@
           });
       }
 
-      // Query 2: Strictly Today's Completed Deliveries (attach only if missing)
+      // Query 2: Strictly Today's Completed Deliveries from isolated delivery_dispatch projection
+      // Uses single-field dispatchStatus == 'Delivered' filter so it satisfies security rules without composite index
       if (!deliveryDeliveredTodayUnsubscribe) {
-        deliveryDeliveredTodayUnsubscribe = db.collection('orders')
-          .where('deliveredAt', '>=', getDeliveryTodayWindowStartIso())
+        deliveryDeliveredTodayUnsubscribe = db.collection('delivery_dispatch')
+          .where('dispatchStatus', '==', 'Delivered')
           .onSnapshot(snapshot => {
             snapshot.forEach(doc => {
               const d = sanitizeOrderForDelivery(doc.data(), doc.id);
@@ -1469,8 +1470,8 @@
         fetchOrdersFromRestFallback();
         return;
       }
-      const pendingQuery = db.collection('orders').where('dispatchStatus', 'in', ['Pending', 'OutForDelivery']);
-      const todayQuery = db.collection('orders').where('deliveredAt', '>=', getDeliveryTodayWindowStartIso());
+      const pendingQuery = db.collection('delivery_dispatch').where('dispatchStatus', 'in', ['Pending', 'OutForDelivery']);
+      const todayQuery = db.collection('delivery_dispatch').where('dispatchStatus', '==', 'Delivered');
 
       Promise.all([
         pendingQuery.get({ source: 'server' }).catch(() => pendingQuery.get()),
@@ -1491,7 +1492,7 @@
           applyDeliveredTodaySnapshot(todaySnap);
         }
       }).catch(err => {
-        console.warn('Direct scoped get orders notice:', err);
+        console.warn('Direct scoped get delivery_dispatch notice:', err);
         fetchOrdersFromRestFallback();
       });
     }
@@ -1502,7 +1503,7 @@
         const restUrl = 'https://firestore.googleapis.com/v1/projects/third-man-1998/databases/(default)/documents:runQuery';
         const qPending = {
           structuredQuery: {
-            from: [{ collectionId: 'orders' }],
+            from: [{ collectionId: 'delivery_dispatch' }],
             where: {
               fieldFilter: {
                 field: { fieldPath: 'dispatchStatus' },
@@ -1514,12 +1515,12 @@
         };
         const qDeliveredToday = {
           structuredQuery: {
-            from: [{ collectionId: 'orders' }],
+            from: [{ collectionId: 'delivery_dispatch' }],
             where: {
               fieldFilter: {
-                field: { fieldPath: 'deliveredAt' },
-                op: 'GREATER_THAN_OR_EQUAL',
-                value: { stringValue: getDeliveryTodayWindowStartIso() }
+                field: { fieldPath: 'dispatchStatus' },
+                op: 'EQUAL',
+                value: { stringValue: 'Delivered' }
               }
             }
           }
@@ -2222,9 +2223,13 @@
       const o = allOrders.find(item => item.id === orderId);
       if (!o || isOrderTombstoned(orderId)) return;
       const targetDocId = o._firestoreDocId || orderId;
+      const nowIso = new Date().toISOString();
 
-      db.collection('orders').doc(targetDocId).update({
-        dispatchStatus: 'OutForDelivery'
+      db.collection('delivery_dispatch').doc(targetDocId).update({
+        dispatchStatus: 'OutForDelivery',
+        deliveredAt: null,
+        deliveryNote: o.deliveryNote || '',
+        updatedAt: nowIso
       }).then(() => {
         showToast(`🚚 Order ${orderId} marked: Out for Delivery`);
       }).catch(err => {
@@ -2239,9 +2244,12 @@
       if (!o || !isDeliveredToday(o)) return;
       if (!confirm(`Move ${orderId} back to Pending Deliveries?`)) return;
       const targetDocId = o._firestoreDocId || orderId;
-      db.collection('orders').doc(targetDocId).update({
+      const nowIso = new Date().toISOString();
+      db.collection('delivery_dispatch').doc(targetDocId).update({
         dispatchStatus: 'Pending',
-        deliveredAt: null
+        deliveredAt: null,
+        deliveryNote: o.deliveryNote || '',
+        updatedAt: nowIso
       }).then(() => {
         showToast(`↩️ Order ${orderId} reverted to Pending.`);
       }).catch(err => alert(err.message));
@@ -2615,7 +2623,7 @@
         rebuildMergedDeliveryOrders();
       }
 
-      db.collection('orders').doc(targetDocId).update(updatePayload).then(() => {
+      db.collection('delivery_dispatch').doc(targetDocId).update(updatePayload).then(() => {
         showToast(activeActionType === 'delivered' ? `✅ Order ${submittedOrderId} delivered!` : `📝 Note updated!`);
         closeDeliveryActionModal();
       }).catch(err => {
@@ -2832,18 +2840,31 @@
           id: msg.id,
           text: msg.text,
           tag: msg.tag || 'Help',
-          sender: msg.sender || 'delivery',
+          sender: 'delivery',
           senderName: msg.senderName || 'Delivery Team',
           timestamp: normalizeChatTimestampIso(msg.timestamp, msg.createdAt),
           createdAt: msg.createdAt || normalizeChatTimestampIso(msg.timestamp),
           createdAtMs: getChatTimestampMs(msg) || Date.now(),
-          readByAdmin: msg.readByAdmin === true,
+          readByAdmin: false,
           readByDelivery: true
         };
-        db.collection('support_chats').doc(id).set(payload, { merge: true }).then(() => {
-          pendingOutgoingDeliveryChats.delete(id);
-          savePendingOutgoingChatsToStorage();
-        }).catch(() => {});
+        const docRef = db.collection('support_chats').doc(id);
+        Promise.resolve(typeof docRef.get === 'function' ? docRef.get().catch(() => null) : null)
+          .then(snap => {
+            if (snap && snap.exists) {
+              pendingOutgoingDeliveryChats.delete(id);
+              savePendingOutgoingChatsToStorage();
+              return null;
+            }
+            return docRef.set(payload);
+          })
+          .then(res => {
+            if (res !== null) {
+              pendingOutgoingDeliveryChats.delete(id);
+              savePendingOutgoingChatsToStorage();
+            }
+          })
+          .catch(() => {});
       });
     }
 

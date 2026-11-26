@@ -280,6 +280,33 @@
     <input type="hidden" id="editTownOriginalName" />
     <input type="text" id="editTownNewName" />
   </div>
+
+  <!-- Firebase Admin Auth & Session Security Fixtures -->
+  <div id="appSecurityLockOverlay" class="fixed inset-0">
+    <div id="authCheckingBanner" class="hidden"></div>
+    <form id="adminAuthForm">
+      <input type="email" id="authAdminEmail" />
+      <input type="password" id="authAdminPassword" />
+      <i id="authPwdEyeIcon"></i>
+      <input type="checkbox" id="authRememberSessionCheckbox" checked />
+      <button type="button" id="btnResetAdminPassword"></button>
+      <div id="authErrorMessage"></div>
+      <button type="submit" id="btnAdminSignIn"><span id="btnAdminSignInText">Sign In Securely</span></button>
+    </form>
+  </div>
+  <span id="securityAdminEmailDisplay"></span>
+  <span id="securityStatusBadge"></span>
+  <select id="settingsAutoLockSelect">
+    <option value="5">5</option>
+    <option value="15" selected>15</option>
+    <option value="30">30</option>
+    <option value="60">60</option>
+    <option value="0">0</option>
+  </select>
+  <input type="password" id="inputCurrentPassword" />
+  <input type="password" id="inputNewPassword" />
+  <input type="password" id="inputConfirmPassword" />
+  <button type="button" id="btnChangeAdminPassword"></button>
 </div>
 
 <script>
@@ -290,7 +317,7 @@ window.onerror = function(msg, url, line, col, err) {
 </script>
 <script src="app.js" onerror="document.getElementById('output').innerHTML += '\nSCRIPT LOAD FAILED for app.js'"></script>
 <script>
-(function runTests() {
+(async function runTests() {
   const log = (msg) => {
     document.getElementById('output').innerHTML += "\n" + msg;
     console.log(msg);
@@ -1437,6 +1464,7 @@ window.onerror = function(msg, url, line, col, err) {
 
   const origDb = getRealtimeDbForTest();
   const origOrders = [...orders];
+  setAdminAuthForTest(true, 'admin@thirdman.test');
   setRealtimeDbForTest(mockRealtimeDb);
   resetRealtimeListenerHandlesForTest();
 
@@ -1552,6 +1580,7 @@ window.onerror = function(msg, url, line, col, err) {
   closeOrderSuccessModal();
 
   // Restore clean state before Town Normalization test
+  setAdminAuthForTest(false);
   setRealtimeDbForTest(origDb);
   resetRealtimeListenerHandlesForTest();
   orders = origOrders;
@@ -2073,6 +2102,215 @@ window.onerror = function(msg, url, line, col, err) {
     loadDistrictTowns();
     updateTownDatalists();
     populateDailyReportTownFilter();
+    updateDashboard();
+  }
+
+  // ==========================================
+  // TEST 23: Firebase Auth Gate, Pre-Auth Lockdown, Cooldown, Cache Wipe & Delivery Dispatch Isolation
+  // ==========================================
+  log("\n--- TEST 23: Auth Gate, Pre-Auth Lockdown, Brute-Force Cooldown, Logout Cache Wipe & Dispatch Isolation ---");
+  const snap23Customers = JSON.parse(JSON.stringify(customers));
+  const snap23Orders = JSON.parse(JSON.stringify(orders));
+  const snap23Db = getRealtimeDbForTest();
+  let capturedAuthCb = null;
+  let mockSignOutCalls = 0;
+  let rogueSignOutCalls = 0;
+  let dispatchListenerAttached = false;
+  let dispatchListenerOnNext = null;
+  const masterOrderWrites = [];
+  let ordersListenerCallsPreAuth = 0;
+
+  try {
+    // 1. Verify weak 1234 PIN logic & bypass helpers are completely removed
+    assert(typeof enterPinDigit === 'undefined' && typeof submitPinUnlock === 'undefined' && typeof handleSaveNewPin === 'undefined',
+      "Legacy 1234 PIN keypad functions (enterPinDigit, submitPinUnlock, handleSaveNewPin) are completely removed");
+
+    localStorage.setItem('third_man_security_enabled_v1', 'false');
+    localStorage.setItem('third_man_pin_unlocked_v1', 'true');
+    localStorage.setItem(STORAGE_ORDERS, JSON.stringify([{
+      id: 'ORD-SEC-1',
+      date: '2026-11-26',
+      dispatchStatus: 'Pending',
+      deliveryStatus: 'Normal',
+      customer: { id: 'c_sec_1', name: 'Secret Wholesale', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', ownerPhone: '9847011111', staffPhone: '9847022222', panchayath: 'Aluva East' },
+      items: [{ productId: 'prod_mg', productName: 'Mohabbath Green', bagSize: 26, bagQty: 10, totalKg: 260, perKgRate: 100, totalAmount: 26000 }],
+      totalKg: 260,
+      totalAmount: 26000,
+      paidAmount: 5000,
+      balanceDue: 21000,
+      paymentMode: 'Credit'
+    }]));
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify([{ id: 'c_sec_1', name: 'Secret Wholesale', town: 'Aluva', district: 'Ernakulam' }]));
+
+    orders = [];
+    customers = [];
+    setFirebaseAuthForTest(null);
+    const spyPreAuthDb = {
+      collection: (col) => ({
+        doc: () => ({ get: () => Promise.resolve({ exists: false }), set: () => Promise.resolve(), delete: () => Promise.resolve() }),
+        onSnapshot: () => { if (col === 'orders') ordersListenerCallsPreAuth++; return () => {}; },
+        get: () => Promise.resolve({ empty: true, forEach: () => {} })
+      })
+    };
+    setRealtimeDbForTest(spyPreAuthDb);
+    resetRealtimeListenerHandlesForTest();
+    initApp();
+
+    assert(canAccessAdminData() === false, "canAccessAdminData() remains false when unauthenticated");
+    assert(document.body.classList.contains('auth-locked'), "body retains auth-locked class before authentication");
+    assert(localStorage.getItem('third_man_security_enabled_v1') === null && localStorage.getItem('third_man_pin_unlocked_v1') === null,
+      "Legacy weak PIN bypass keys are purged automatically on initApp()");
+    assert(orders.length === 0 && customers.length === 0,
+      "Cached orders and customers are NOT loaded into memory before authentication");
+    assert(ordersListenerCallsPreAuth === 0,
+      "Orders Firestore listener is NOT attached before authentication");
+
+    // 2. Test Firebase Auth gate with rogue/unauthorized account vs authorized Admin in /admins/{uid}
+    const mockAuthObj = {
+      currentUser: null,
+      signOut: () => { mockSignOutCalls++; mockAuthObj.currentUser = null; return Promise.resolve(); },
+      onAuthStateChanged: (cb) => { capturedAuthCb = cb; return () => {}; }
+    };
+    const mockSecDb = {
+      batch: () => ({ set: () => {}, update: () => {}, delete: () => {}, commit: () => Promise.resolve() }),
+      collection: (name) => ({
+        doc: (docId) => ({
+          get: () => {
+            if (name === 'admins' && docId === 'admin_uid_1') {
+              return Promise.resolve({ exists: true, data: () => ({ role: 'admin', email: 'owner@thirdman.test' }) });
+            }
+            return Promise.resolve({ exists: false, data: () => null });
+          },
+          set: (payload) => {
+            if (name === 'orders') masterOrderWrites.push({ docId, payload });
+            return Promise.resolve();
+          },
+          update: () => Promise.resolve(),
+          delete: () => Promise.resolve(),
+          onSnapshot: (cb) => { if (cb) cb({ exists: false, data: () => null }); return () => {}; }
+        }),
+        onSnapshot: (cb) => {
+          if (name === 'delivery_dispatch') {
+            dispatchListenerAttached = true;
+            dispatchListenerOnNext = cb;
+          }
+          return () => {};
+        },
+        get: () => Promise.resolve({ empty: true, forEach: () => {} }),
+        where: () => ({ get: () => Promise.resolve({ empty: true, forEach: () => {} }) })
+      })
+    };
+
+    setFirebaseAuthForTest(mockAuthObj);
+    setRealtimeDbForTest(mockSecDb);
+    resetRealtimeListenerHandlesForTest();
+    initSecurityLock();
+    assert(typeof capturedAuthCb === 'function', "initSecurityLock registers Firebase onAuthStateChanged observer");
+
+    // A. Non-admin account blocked even with Firebase user object
+    await capturedAuthCb({ uid: 'rogue_uid', email: 'rogue@evil.com', isAnonymous: false });
+    rogueSignOutCalls = mockSignOutCalls;
+    assert(canAccessAdminData() === false && rogueSignOutCalls >= 1,
+      "Non-admin Firebase account (missing /admins/{uid}) is rejected and signed out immediately");
+    assert((document.getElementById('authErrorMessage')?.textContent || '').includes('Access Denied'),
+      "Rejected non-admin account sees explicit Access Denied message");
+    assert(document.body.classList.contains('auth-locked') && orders.length === 0,
+      "Rejected account cannot unlock dashboard shell or hydrate orders");
+
+    // B. Anonymous auth blocked from Admin dashboard
+    await capturedAuthCb({ uid: 'anon_1', isAnonymous: true });
+    assert(canAccessAdminData() === false && document.body.classList.contains('auth-locked'),
+      "Anonymous Firebase session is strictly rejected on Admin index.html");
+
+    // C. Failed-attempt brute-force lockout delay
+    resetAuthFailureCounters();
+    recordFailedAuthAttempt('Invalid password');
+    recordFailedAuthAttempt('Invalid password');
+    recordFailedAuthAttempt('Invalid password');
+    const remSec = getAuthLockRemainingSeconds();
+    assert(remSec >= 10 && document.getElementById('btnAdminSignIn')?.disabled === true,
+      `3 failed sign-in attempts enforce progressive lockout (${remSec}s) and disable submit button`);
+    resetAuthFailureCounters();
+    assert(getAuthLockRemainingSeconds() === 0 && document.getElementById('btnAdminSignIn')?.disabled === false,
+      "resetAuthFailureCounters clears lockout cleanly");
+
+    // D. Authorized Admin user unlocks shell, hydrates orders, attaches listeners + delivery_dispatch sync
+    localStorage.setItem(STORAGE_ORDERS, JSON.stringify([{
+      id: 'ORD-SEC-1',
+      date: '2026-11-26',
+      dispatchStatus: 'Pending',
+      deliveryStatus: 'Normal',
+      customer: { id: 'c_sec_1', name: 'Secret Wholesale', town: 'Aluva', district: 'Ernakulam', category: 'Wholesaler', ownerPhone: '9847011111', staffPhone: '9847022222', panchayath: 'Aluva East' },
+      items: [{ productId: 'prod_mg', productName: 'Mohabbath Green', bagSize: 26, bagQty: 10, totalKg: 260, perKgRate: 100, totalAmount: 26000 }],
+      totalKg: 260,
+      totalAmount: 26000,
+      paidAmount: 5000,
+      balanceDue: 21000,
+      paymentMode: 'Credit'
+    }]));
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify([{ id: 'c_sec_1', name: 'Secret Wholesale', town: 'Aluva', district: 'Ernakulam' }]));
+    mockAuthObj.currentUser = { uid: 'admin_uid_1', email: 'owner@thirdman.test', isAnonymous: false };
+    await capturedAuthCb(mockAuthObj.currentUser);
+    assert(canAccessAdminData() === true && !document.body.classList.contains('auth-locked'),
+      "Verified Admin account unlocks dashboard shell");
+    assert((document.getElementById('securityAdminEmailDisplay')?.textContent || '').includes('owner@thirdman.test'),
+      "Settings security tab displays verified Admin email");
+    assert(orders.some(o => o.id === 'ORD-SEC-1'),
+      "Orders hydrate strictly AFTER verified Admin sign-in");
+    assert(dispatchListenerAttached === true && typeof dispatchListenerOnNext === 'function',
+      "delivery_dispatch two-way realtime listener attaches upon Admin authentication");
+
+    // 3. Delivery projection schema isolation (keeps per-order billing, strips admin PII/ledger fields)
+    const secOrder = orders.find(o => o.id === 'ORD-SEC-1');
+    const dispatchProj = buildDeliveryDispatchPayload(secOrder);
+    assert(dispatchProj.totalAmount === 26000 && dispatchProj.items[0].perKgRate === 100,
+      "buildDeliveryDispatchPayload preserves per-order billing amount and per-kg rate");
+    assert(!('paidAmount' in dispatchProj) && !('balanceDue' in dispatchProj) && !('paymentMode' in dispatchProj),
+      "buildDeliveryDispatchPayload strips accounting/ledger fields (paidAmount, balanceDue, paymentMode)");
+    assert(!('ownerPhone' in dispatchProj.customer) && !('staffPhone' in dispatchProj.customer) && !('panchayath' in dispatchProj.customer) && !('category' in dispatchProj.customer),
+      "buildDeliveryDispatchPayload strips sensitive customer directory metadata (ownerPhone, staffPhone, panchayath, category)");
+
+    // 4. Two-way delivery_dispatch driver update mirrors into master order
+    dispatchListenerOnNext({
+      empty: false,
+      forEach: (cb) => cb({
+        id: 'ORD-SEC-1',
+        data: () => ({
+          id: 'ORD-SEC-1',
+          dispatchStatus: 'Delivered',
+          deliveredAt: '2026-11-26T10:30:00.000Z',
+          deliveryNote: 'Cash collected from manager',
+          updatedAt: '2099-01-01T00:00:00.000Z'
+        })
+      })
+    });
+    const updatedMasterOrd = orders.find(o => o.id === 'ORD-SEC-1');
+    assert(updatedMasterOrd && updatedMasterOrd.dispatchStatus === 'Delivered' && updatedMasterOrd.deliveryNote === 'Cash collected from manager',
+      "delivery_dispatch listener mirrors driver Delivered status and remarks back to master orders");
+    assert(masterOrderWrites.some(w => w.docId === 'ORD-SEC-1' && w.payload.dispatchStatus === 'Delivered'),
+      "Driver dispatch status update is mirrored back to master orders collection in Firestore");
+
+    // 5. Sign Out & Lock wipes in-memory data, DOM tables, and localStorage caches
+    signOutAndLockDashboard('Test sign out');
+    assert(canAccessAdminData() === false && document.body.classList.contains('auth-locked'),
+      "signOutAndLockDashboard re-locks DOM immediately");
+    assert(orders.length === 0 && customers.length === 0,
+      "signOutAndLockDashboard clears all sensitive in-memory orders and customers");
+    assert(localStorage.getItem(STORAGE_ORDERS) === null && localStorage.getItem(STORAGE_CUSTOMERS) === null,
+      "signOutAndLockDashboard wipes cached orders and customers from localStorage");
+    assert((document.getElementById('ordersTableBody')?.innerHTML || '') === '',
+      "signOutAndLockDashboard clears ordersTableBody DOM");
+  } finally {
+    resetAuthFailureCounters();
+    setFirebaseAuthForTest(null);
+    setAdminAuthForTest(false);
+    setRealtimeDbForTest(snap23Db);
+    resetRealtimeListenerHandlesForTest();
+    if (typeof document !== 'undefined' && document.body) {
+      document.body.classList.remove('auth-locked');
+    }
+    customers = snap23Customers;
+    orders = snap23Orders;
     updateDashboard();
   }
 

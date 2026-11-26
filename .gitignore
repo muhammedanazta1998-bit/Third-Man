@@ -1,2 +1,6 @@
 scratch/
 err.txt
+*.xlsx
+*.xls
+*sales_backup*.json
+*.bak
