@@ -7162,58 +7162,27 @@ function updateSchemeEffectiveDate(newDate) {
   }
 }
 
-function calculateIncentive(ordersList = [], totalKg = 0) {
+/**
+ * calculateIncentiveForMonth(monthOrders)
+ * Calculates incentive for a SINGLE calendar month's orders.
+ * Both volume slab and brand turnover slab reset each month.
+ */
+function calculateIncentiveForMonth(monthOrders = []) {
   const BASE_TARGET_KG = 10000;
   const BASE_INCENTIVE = 5000;
   const EXTRA_PER_KG_RATE = 1.0;
-  const effectiveDate = incentiveSchemeEffectiveDate || '2026-05-01';
 
-  // Partition orders: Active Scheme (date >= effectiveDate) vs Pre-Scheme (date < effectiveDate)
-  const currentOrders = [];
-  const preSchemeOrders = [];
-
-  (ordersList || []).forEach(o => {
-    if (!o) return;
-    const orderDate = o.date || '1970-01-01';
-    if (orderDate >= effectiveDate) {
-      currentOrders.push(o);
-    } else {
-      preSchemeOrders.push(o);
-    }
-  });
-
-  // Calculate volume & turnover strictly for current active scheme orders
-  let currentKg = 0;
-  let currentRevenue = 0;
-  currentOrders.forEach(o => {
-    currentKg += (parseFloat(o.totalKg) || 0);
-    currentRevenue += (parseFloat(o.totalAmount) || 0);
-  });
-
-  // Calculate separated pre-scheme orders volume & turnover
-  let preSchemeKg = 0;
-  let preSchemeRevenue = 0;
-  preSchemeOrders.forEach(o => {
-    preSchemeKg += (parseFloat(o.totalKg) || 0);
-    preSchemeRevenue += (parseFloat(o.totalAmount) || 0);
-  });
-
-  // 1. Base Volume Slab (Active Scheme Only)
-  // "aathyathe 10000 kg achive cheythaal maathraan icentive slap start aavukayullu"
-  const isTargetReached = (currentKg >= BASE_TARGET_KG);
-  const baseIncentive = isTargetReached ? BASE_INCENTIVE : 0;
-  const extraKg = isTargetReached ? Math.max(0, currentKg - BASE_TARGET_KG) : 0;
-  const extraIncentive = isTargetReached ? (extraKg * EXTRA_PER_KG_RATE) : 0;
-  const weightIncentive = baseIncentive + extraIncentive;
-  const progressPercent = Math.min(100, Math.round((currentKg / BASE_TARGET_KG) * 100));
-  const remainingKg = Math.max(0, BASE_TARGET_KG - currentKg);
-
-  // 2. Special Brands Turnover Slab (Mohabbath Green, Mohabbath Gold, Jasmine) - Active Scheme Only
-  // "mohabbath green, mohabbath gold and jasmine brandukalkk normalin purame additional incentive und.(₹15 Lakhs 0.15%, ₹20 Lakhs 0.25%, ₹25 Lakhs onwards 0.33%)"
+  let monthKg = 0;
+  let monthRevenue = 0;
   let specialBrandRevenue = 0;
   let specialBrandKg = 0;
 
-  currentOrders.forEach(o => {
+  monthOrders.forEach(o => {
+    if (!o) return;
+    monthKg += (parseFloat(o.totalKg) || 0);
+    monthRevenue += (parseFloat(o.totalAmount) || 0);
+
+    // Special Brand Turnover
     if (o.items && Array.isArray(o.items) && o.items.length > 0) {
       o.items.forEach(it => {
         if (isSpecialBrand(it.productName)) {
@@ -7227,7 +7196,17 @@ function calculateIncentive(ordersList = [], totalKg = 0) {
     }
   });
 
-  let specialBrandRate = 0; // percentage e.g. 0.15, 0.25, 0.33
+  // Volume slab
+  const isTargetReached = (monthKg >= BASE_TARGET_KG);
+  const baseIncentive = isTargetReached ? BASE_INCENTIVE : 0;
+  const extraKg = isTargetReached ? Math.max(0, monthKg - BASE_TARGET_KG) : 0;
+  const extraIncentive = isTargetReached ? (extraKg * EXTRA_PER_KG_RATE) : 0;
+  const weightIncentive = baseIncentive + extraIncentive;
+  const progressPercent = Math.min(100, Math.round((monthKg / BASE_TARGET_KG) * 100));
+  const remainingKg = Math.max(0, BASE_TARGET_KG - monthKg);
+
+  // Brand slab
+  let specialBrandRate = 0;
   let specialBrandSlabName = 'Below ₹15L (0%)';
   let nextBrandTarget = 1500000;
   let brandRemainingToNext = Math.max(0, 1500000 - specialBrandRevenue);
@@ -7258,10 +7237,9 @@ function calculateIncentive(ordersList = [], totalKg = 0) {
   const totalIncentive = weightIncentive + specialBrandIncentive;
 
   return {
-    effectiveDate,
-    currentOrdersCount: currentOrders.length,
-    currentKg,
-    currentRevenue,
+    monthKg,
+    monthRevenue,
+    orderCount: monthOrders.length,
     totalIncentive,
     weightIncentive,
     baseIncentive,
@@ -7270,14 +7248,124 @@ function calculateIncentive(ordersList = [], totalKg = 0) {
     isTargetReached,
     progressPercent,
     remainingKg,
-    // Special Brand Fields
     specialBrandRevenue,
     specialBrandKg,
     specialBrandRate,
     specialBrandSlabName,
     specialBrandIncentive,
     nextBrandTarget,
-    brandRemainingToNext,
+    brandRemainingToNext
+  };
+}
+
+/**
+ * calculateIncentive(ordersList, totalKg)
+ * Main incentive calculator. CRITICAL RULE: Slabs reset every calendar month.
+ * - For single-month periods (Today, This Week within one month, This Month, Specific Month):
+ *   calculates one month's incentive directly.
+ * - For multi-month periods (All Time, Year, Custom Range spanning months):
+ *   groups orders by YYYY-MM, calculates each month independently, sums the totals.
+ *   The "current month" (latest month with data) is highlighted for dashboard display.
+ */
+function calculateIncentive(ordersList = [], totalKg = 0) {
+  const effectiveDate = incentiveSchemeEffectiveDate || '2026-05-01';
+
+  // Partition orders: Active Scheme (date >= effectiveDate) vs Pre-Scheme (date < effectiveDate)
+  const currentOrders = [];
+  const preSchemeOrders = [];
+
+  (ordersList || []).forEach(o => {
+    if (!o) return;
+    const orderDate = o.date || '1970-01-01';
+    if (orderDate >= effectiveDate) {
+      currentOrders.push(o);
+    } else {
+      preSchemeOrders.push(o);
+    }
+  });
+
+  // Pre-scheme aggregates
+  let preSchemeKg = 0;
+  let preSchemeRevenue = 0;
+  preSchemeOrders.forEach(o => {
+    preSchemeKg += (parseFloat(o.totalKg) || 0);
+    preSchemeRevenue += (parseFloat(o.totalAmount) || 0);
+  });
+
+  // Group active-scheme orders by calendar month (YYYY-MM)
+  const monthBuckets = {};
+  currentOrders.forEach(o => {
+    const dateStr = String(o.date || '').split('T')[0];
+    const monthKey = dateStr.substring(0, 7); // 'YYYY-MM'
+    if (!monthBuckets[monthKey]) monthBuckets[monthKey] = [];
+    monthBuckets[monthKey].push(o);
+  });
+
+  const monthKeys = Object.keys(monthBuckets).sort(); // chronological
+  const monthBreakdowns = []; // array of per-month results
+  let grandTotalIncentive = 0;
+  let grandWeightIncentive = 0;
+  let grandBrandIncentive = 0;
+  let grandCurrentKg = 0;
+  let grandCurrentRevenue = 0;
+  let grandSpecialBrandRevenue = 0;
+  let grandSpecialBrandKg = 0;
+  let monthsTargetReached = 0;
+
+  monthKeys.forEach(mk => {
+    const mOrders = monthBuckets[mk];
+    const mInc = calculateIncentiveForMonth(mOrders);
+    monthBreakdowns.push({ monthKey: mk, ...mInc });
+    grandTotalIncentive += mInc.totalIncentive;
+    grandWeightIncentive += mInc.weightIncentive;
+    grandBrandIncentive += mInc.specialBrandIncentive;
+    grandCurrentKg += mInc.monthKg;
+    grandCurrentRevenue += mInc.monthRevenue;
+    grandSpecialBrandRevenue += mInc.specialBrandRevenue;
+    grandSpecialBrandKg += mInc.specialBrandKg;
+    if (mInc.isTargetReached) monthsTargetReached++;
+  });
+
+  // For dashboard display: show the CURRENT / LATEST month's slab status
+  // (progress bar, remaining kg, locked/unlocked badges)
+  const isMultiMonth = monthKeys.length > 1;
+  const now = new Date();
+  const currentMonthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  // If current month has data use it; otherwise use latest month
+  const displayMonthKey = monthBuckets[currentMonthKey] ? currentMonthKey : (monthKeys.length > 0 ? monthKeys[monthKeys.length - 1] : currentMonthKey);
+  const displayMonth = monthBreakdowns.find(m => m.monthKey === displayMonthKey) || calculateIncentiveForMonth([]);
+
+  return {
+    effectiveDate,
+    currentOrdersCount: currentOrders.length,
+    currentKg: grandCurrentKg,
+    currentRevenue: grandCurrentRevenue,
+    totalIncentive: grandTotalIncentive,
+    weightIncentive: grandWeightIncentive,
+    // Display month slab status (for progress bar / badges)
+    baseIncentive: displayMonth.baseIncentive,
+    extraIncentive: displayMonth.extraIncentive,
+    extraKg: displayMonth.extraKg,
+    isTargetReached: displayMonth.isTargetReached,
+    progressPercent: displayMonth.progressPercent,
+    remainingKg: displayMonth.remainingKg,
+    // Display month brand status
+    specialBrandRevenue: displayMonth.specialBrandRevenue,
+    specialBrandKg: displayMonth.specialBrandKg,
+    specialBrandRate: displayMonth.specialBrandRate,
+    specialBrandSlabName: displayMonth.specialBrandSlabName,
+    specialBrandIncentive: displayMonth.specialBrandIncentive,
+    nextBrandTarget: displayMonth.nextBrandTarget,
+    brandRemainingToNext: displayMonth.brandRemainingToNext,
+    // Multi-month aggregation fields
+    isMultiMonth,
+    monthBreakdowns,
+    monthsTargetReached,
+    grandBrandIncentive,
+    grandSpecialBrandRevenue,
+    grandSpecialBrandKg,
+    displayMonthKey,
+    displayMonthKg: displayMonth.monthKg,
     // Pre-Scheme Partition Fields (Separated from May Scheme)
     preSchemeOrdersCount: preSchemeOrders.length,
     preSchemeKg,
@@ -7372,6 +7460,17 @@ function toggleIncentivePrivacy() {
   applyIncentivePrivacy();
 }
 
+/**
+ * formatMonthKeyShort('2026-05') → 'May 2026'
+ */
+function formatMonthKeyShort(monthKey) {
+  if (!monthKey || monthKey.length < 7) return monthKey || '';
+  const [y, m] = monthKey.split('-');
+  const mIdx = parseInt(m, 10) - 1;
+  const names = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${names[mIdx] || m} ${y}`;
+}
+
 function updateIncentiveCard(ordersList = [], totalKg = 0) {
   const inc = calculateIncentive(ordersList, totalKg);
 
@@ -7395,20 +7494,32 @@ function updateIncentiveCard(ordersList = [], totalKg = 0) {
     amountEl.setAttribute('data-real-amount', `₹${Math.round(inc.totalIncentive).toLocaleString('en-IN')}`);
   }
 
-  // Subtext on Orange Metric Card
+  // Subtext on Orange Metric Card — multi-month shows aggregate info
   if (subTextEl) {
     let realSub = '';
-    if (inc.isTargetReached) {
-      if (inc.specialBrandIncentive > 0) {
-        realSub = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} + Brand ₹${Math.round(inc.specialBrandIncentive)})`;
+    if (inc.isMultiMonth) {
+      // Multi-month: show aggregate across months
+      const monthCount = inc.monthBreakdowns.length;
+      const displayMonthLabel = formatMonthKeyShort(inc.displayMonthKey);
+      if (inc.isTargetReached) {
+        realSub = `${displayMonthLabel}: Unlocked • ${monthCount} months = ₹${Math.round(inc.totalIncentive).toLocaleString('en-IN')}`;
       } else {
-        realSub = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} Extra Bonus)`;
+        realSub = `${displayMonthLabel}: ${Math.round(inc.remainingKg).toLocaleString('en-IN')} kg left • ${monthCount} months total`;
       }
     } else {
-      if (inc.specialBrandIncentive > 0) {
-        realSub = `(Brand Bonus: ₹${Math.round(inc.specialBrandIncentive)} • 10T Locked)`;
+      // Single month: original behavior
+      if (inc.isTargetReached) {
+        if (inc.specialBrandIncentive > 0) {
+          realSub = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} + Brand ₹${Math.round(inc.specialBrandIncentive)})`;
+        } else {
+          realSub = `(₹5,000 + ₹${Math.round(inc.extraIncentive)} Extra Bonus)`;
+        }
       } else {
-        realSub = `${Math.round(inc.remainingKg).toLocaleString('en-IN')} kg to Unlock 10T Slab`;
+        if (inc.specialBrandIncentive > 0) {
+          realSub = `(Brand Bonus: ₹${Math.round(inc.specialBrandIncentive)} • 10T Locked)`;
+        } else {
+          realSub = `${Math.round(inc.remainingKg).toLocaleString('en-IN')} kg to Unlock 10T Slab`;
+        }
       }
     }
     subTextEl.setAttribute('data-real-subtext', realSub);
@@ -7416,9 +7527,10 @@ function updateIncentiveCard(ordersList = [], totalKg = 0) {
     subTextEl.setAttribute('data-remaining-kg', Math.round(inc.remainingKg).toLocaleString('en-IN'));
   }
 
-  // Volume Progress (strictly for active scheme volume)
+  // Volume Progress — show DISPLAY MONTH's kg for multi-month, or currentKg for single-month
+  const displayKg = inc.isMultiMonth ? inc.displayMonthKg : inc.currentKg;
   if (progressTextEl) {
-    progressTextEl.textContent = `${Math.round(inc.currentKg).toLocaleString('en-IN')} / 10,000 kg`;
+    progressTextEl.textContent = `${Math.round(displayKg).toLocaleString('en-IN')} / 10,000 kg`;
   }
   if (percentEl) {
     percentEl.textContent = inc.isTargetReached ? '100% (Unlocked)' : `${inc.progressPercent}%`;
@@ -7478,9 +7590,15 @@ function updateIncentiveCard(ordersList = [], totalKg = 0) {
     dateInput.value = inc.effectiveDate;
   }
 
-  // Detail Modal Elements
+  // Detail Modal Elements — show display month's data for single-month, grand totals for multi-month
   const modalKg = document.getElementById('modalCalcKg');
-  if (modalKg) modalKg.textContent = `${Math.round(inc.currentKg).toLocaleString('en-IN')} kg`;
+  if (modalKg) {
+    if (inc.isMultiMonth) {
+      modalKg.textContent = `${Math.round(inc.displayMonthKg).toLocaleString('en-IN')} kg (${formatMonthKeyShort(inc.displayMonthKey)})`;
+    } else {
+      modalKg.textContent = `${Math.round(inc.currentKg).toLocaleString('en-IN')} kg`;
+    }
+  }
 
   const modalActiveSchemeDateLabel = document.getElementById('modalActiveSchemeDateLabel');
   if (modalActiveSchemeDateLabel) {
@@ -7525,6 +7643,65 @@ function updateIncentiveCard(ordersList = [], totalKg = 0) {
   const modalTotal = document.getElementById('modalCalcTotal');
   if (modalTotal) {
     modalTotal.textContent = `₹${Math.round(inc.totalIncentive).toLocaleString('en-IN')}`;
+  }
+
+  // Multi-Month Breakdown Container (shows per-month rows when isMultiMonth)
+  const monthlyBreakdownContainer = document.getElementById('modalMonthlyBreakdownContainer');
+  if (monthlyBreakdownContainer) {
+    if (inc.isMultiMonth && inc.monthBreakdowns.length > 1) {
+      let rowsHtml = '';
+      inc.monthBreakdowns.forEach(mb => {
+        const mLabel = formatMonthKeyShort(mb.monthKey);
+        const isDisplay = mb.monthKey === inc.displayMonthKey;
+        const targetBadge = mb.isTargetReached
+          ? '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-emerald-100 text-emerald-700">✓ 10T</span>'
+          : `<span class="text-[9px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">${mb.progressPercent}%</span>`;
+        const brandBadge = mb.specialBrandIncentive > 0
+          ? `<span class="text-[9px] text-purple-700">+₹${Math.round(mb.specialBrandIncentive).toLocaleString('en-IN')}</span>`
+          : '';
+        const rowBg = isDisplay ? 'bg-blue-50/80 border-blue-200' : 'bg-slate-50/60 border-slate-100';
+        rowsHtml += `
+          <div class="flex items-center justify-between p-2.5 rounded-xl ${rowBg} border text-xs">
+            <div class="flex items-center gap-2 min-w-0">
+              <span class="font-bold text-slate-900">${mLabel}</span>
+              ${isDisplay ? '<span class="text-[8px] font-black px-1 py-0.5 rounded bg-blue-200 text-blue-800 uppercase">Display</span>' : ''}
+              ${targetBadge}
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              ${brandBadge}
+              <span class="font-black ${mb.totalIncentive > 0 ? 'text-emerald-700' : 'text-slate-400'}">₹${Math.round(mb.totalIncentive).toLocaleString('en-IN')}</span>
+            </div>
+          </div>`;
+      });
+      // Grand total row
+      rowsHtml += `
+        <div class="flex items-center justify-between p-2.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs mt-1">
+          <span class="font-black text-slate-900">Grand Total (${inc.monthBreakdowns.length} months)</span>
+          <span class="font-black text-emerald-700 text-sm">₹${Math.round(inc.totalIncentive).toLocaleString('en-IN')}</span>
+        </div>`;
+      monthlyBreakdownContainer.innerHTML = `
+        <div class="space-y-1.5">
+          <p class="font-bold text-slate-800 uppercase text-[10px] tracking-wider pb-1.5 border-b border-slate-200 flex items-center gap-1.5">
+            <i data-lucide="layers" class="w-3.5 h-3.5 text-blue-600"></i>
+            <span>Monthly Breakdown (Slabs Reset Each Month)</span>
+          </p>
+          <div class="space-y-1">${rowsHtml}</div>
+        </div>`;
+      monthlyBreakdownContainer.classList.remove('hidden');
+    } else {
+      monthlyBreakdownContainer.innerHTML = '';
+      monthlyBreakdownContainer.classList.add('hidden');
+    }
+  }
+
+  // Multi-month header label on breakdown section
+  const modalBreakdownHeader = document.getElementById('modalCalcBreakdownHeader');
+  if (modalBreakdownHeader) {
+    if (inc.isMultiMonth) {
+      modalBreakdownHeader.innerHTML = `<span>Calculation Breakdown — ${formatMonthKeyShort(inc.displayMonthKey)}:</span>`;
+    } else {
+      modalBreakdownHeader.innerHTML = `<span>Calculation Breakdown (Active Scheme):</span>`;
+    }
   }
 
   const modalVolBadge = document.getElementById('modalVolumeStatusBadge');
