@@ -1495,10 +1495,16 @@
                 <div class="space-y-2.5 pt-1">
                   <!-- Owner Box -->
                   <div class="bg-amber-50/50 p-3 rounded-xl border border-amber-200/80 space-y-2">
-                    <span class="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
-                      <i data-lucide="crown" class="w-3.5 h-3.5 text-amber-500"></i>
-                      <span>Owner Details</span>
-                    </span>
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-[11px] font-bold text-amber-950 flex items-center gap-1.5">
+                        <i data-lucide="crown" class="w-3.5 h-3.5 text-amber-500"></i>
+                        <span>Owner Details</span>
+                      </span>
+                      <button type="button" onclick="clearCustOwnerFields()" class="text-[10px] font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-0.5 rounded-md transition inline-flex items-center gap-1" title="Clear Owner Details">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        <span>Clear Owner</span>
+                      </button>
+                    </div>
                     <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div>
                         <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Owner Name</label>
@@ -1513,10 +1519,16 @@
 
                   <!-- Staff Box -->
                   <div class="bg-indigo-50/50 p-3 rounded-xl border border-indigo-200/80 space-y-2">
-                    <span class="text-[11px] font-bold text-indigo-950 flex items-center gap-1.5">
-                      <i data-lucide="chef-hat" class="w-3.5 h-3.5 text-indigo-500"></i>
-                      <span>Staff Details</span>
-                    </span>
+                    <div class="flex items-center justify-between gap-2">
+                      <span class="text-[11px] font-bold text-indigo-950 flex items-center gap-1.5">
+                        <i data-lucide="chef-hat" class="w-3.5 h-3.5 text-indigo-500"></i>
+                        <span>Staff Details</span>
+                      </span>
+                      <button type="button" onclick="clearCustStaffFields()" class="text-[10px] font-bold text-rose-600 hover:text-rose-800 hover:bg-rose-50 px-2 py-0.5 rounded-md transition inline-flex items-center gap-1" title="Clear Staff Details">
+                        <i data-lucide="trash-2" class="w-3 h-3"></i>
+                        <span>Clear Staff</span>
+                      </button>
+                    </div>
                     <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
                       <div>
                         <label class="block text-[10px] font-bold text-slate-600 mb-0.5">Staff Name</label>

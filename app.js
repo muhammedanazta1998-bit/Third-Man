@@ -1683,34 +1683,61 @@ function processIncomingCloudCustomers(remoteCustomers) {
     merged.location = cleanLocation;
 
     if (localMatch) {
-      // Merge members from both remote (cloud) and local (this device)
+      // Merge members respecting latest timestamp so deleted owners/staff never resurrect
       const remoteMembers = Array.isArray(remoteCust.members) ? [...remoteCust.members] : (typeof getCustomerMembers === 'function' ? getCustomerMembers(remoteCust) : []);
       const localMembers = Array.isArray(localMatch.members) ? [...localMatch.members] : (typeof getCustomerMembers === 'function' ? getCustomerMembers(localMatch) : []);
+      const remoteTs = Number(remoteCust.membersUpdatedAt) || 0;
+      const localTs = Number(localMatch.membersUpdatedAt) || 0;
 
       let localHasNewMembers = false;
-      localMembers.forEach(lm => {
-        const lmP = typeof cleanPhoneNumber === 'function' ? cleanPhoneNumber(lm.phone) : (lm.phone || '');
-        const lmName = (lm.name || '').trim().toLowerCase();
-        const existsInRemote = remoteMembers.some(rm => {
-          const rmP = typeof cleanPhoneNumber === 'function' ? cleanPhoneNumber(rm.phone) : (rm.phone || '');
-          const rmName = (rm.name || '').trim().toLowerCase();
-          return (rm.id && lm.id && rm.id === lm.id) || (lmP && rmP && lmP === rmP) || (lmName && rmName && lmName === rmName);
-        });
-        if (!existsInRemote) {
-          remoteMembers.push(lm);
-          localHasNewMembers = true;
+      if (localTs > remoteTs) {
+        // Local edit/deletion is newer than Firestore snapshot: keep local contact/member state and push to cloud
+        merged.members = [...localMembers];
+        merged.ownerName = localMatch.ownerName || '';
+        merged.ownerPhone = localMatch.ownerPhone || '';
+        merged.staffName = localMatch.staffName || '';
+        merged.staffRole = localMatch.staffRole || 'Chef / Cook';
+        merged.staffPhone = localMatch.staffPhone || '';
+        merged.phone = localMatch.phone || '';
+        merged.membersUpdatedAt = localTs;
+        localHasNewMembers = true;
+      } else if (remoteTs > localTs) {
+        // Remote Firestore edit/deletion is newer: trust remote state completely without re-injecting deleted local members
+        merged.members = remoteMembers;
+        merged.membersUpdatedAt = remoteTs;
+        if (typeof syncCustomerMemberLegacyFields === 'function') {
+          syncCustomerMemberLegacyFields(merged);
         }
-      });
-
-      merged.members = remoteMembers;
-      if (typeof syncCustomerMemberLegacyFields === 'function') {
-        syncCustomerMemberLegacyFields(merged);
+      } else {
+        // Same timestamp (legacy records without timestamp or already in sync)
+        if (remoteTs === 0) {
+          localMembers.forEach(lm => {
+            const lmP = typeof cleanPhoneNumber === 'function' ? cleanPhoneNumber(lm.phone) : (lm.phone || '');
+            const lmName = (lm.name || '').trim().toLowerCase();
+            const existsInRemote = remoteMembers.some(rm => {
+              const rmP = typeof cleanPhoneNumber === 'function' ? cleanPhoneNumber(rm.phone) : (rm.phone || '');
+              const rmName = (rm.name || '').trim().toLowerCase();
+              return (rm.id && lm.id && rm.id === lm.id) || (lmP && rmP && lmP === rmP) || (lmName && rmName && lmName === rmName);
+            });
+            if (!existsInRemote) {
+              remoteMembers.push(lm);
+              localHasNewMembers = true;
+            }
+          });
+        }
+        merged.members = remoteMembers;
+        if (typeof syncCustomerMemberLegacyFields === 'function') {
+          syncCustomerMemberLegacyFields(merged);
+        }
+        // Only copy local fields for untimestamped legacy records
+        if (remoteTs === 0) {
+          if (!merged.ownerPhone && localMatch.ownerPhone) merged.ownerPhone = localMatch.ownerPhone;
+          if (!merged.staffPhone && localMatch.staffPhone) merged.staffPhone = localMatch.staffPhone;
+          if (!merged.phone && localMatch.phone) merged.phone = localMatch.phone;
+        }
       }
 
-      // Preserve local custom data if remote was empty
-      if (!merged.ownerPhone && localMatch.ownerPhone) merged.ownerPhone = localMatch.ownerPhone;
-      if (!merged.staffPhone && localMatch.staffPhone) merged.staffPhone = localMatch.staffPhone;
-      if (!merged.phone && localMatch.phone) merged.phone = localMatch.phone;
+      // Preserve local custom notes & branch group if remote was empty
       if (!merged.notes && localMatch.notes) merged.notes = localMatch.notes;
       let localHasBranchGroup = false;
       if (!merged.branchGroupId && localMatch.branchGroupId) {
@@ -1718,7 +1745,7 @@ function processIncomingCloudCustomers(remoteCustomers) {
         localHasBranchGroup = true;
       }
 
-      // If local device had new members, branch link, or remote had dirty town chars, queue customer to upload to cloud
+      // If local device had newer members/edits, branch link, or remote had dirty town chars, queue customer to upload to cloud
       if (localHasNewMembers || remoteTownCleaned || localHasBranchGroup) {
         needsCloudUpload.push(merged);
       }
@@ -11535,6 +11562,8 @@ function handleCustomerFormSubmit(event) {
 
         if (idx !== -1) {
           const prevName = customers[idx].name;
+          const prevStaffName = (customers[idx].staffName || '').trim().toLowerCase();
+          const prevStaffPhone = cleanPhoneNumber(customers[idx].staffPhone);
           customers[idx] = {
             ...customers[idx],
             name: name,
@@ -11550,29 +11579,64 @@ function handleCustomerFormSubmit(event) {
             staffName: staffName,
             staffRole: staffRole,
             staffPhone: cleanStaffPhone,
-            phone: primaryPhone || customers[idx].phone || '',
+            phone: primaryPhone || '',
             location: combinedLoc || 'Ernakulam',
-            notes: notes || ''
+            notes: notes || '',
+            membersUpdatedAt: Date.now()
           };
 
-          // Keep members in sync if owner or staff contact fields were updated
-          if (Array.isArray(customers[idx].members)) {
-            if (ownerName || cleanOwnerPhone) {
-              const ownerMember = customers[idx].members.find(m => m.role === 'Owner' || m.isPrimary);
-              if (ownerMember) {
-                if (ownerName) ownerMember.name = ownerName;
-                if (cleanOwnerPhone) ownerMember.phone = cleanOwnerPhone;
-              }
-            }
-            if (staffName || cleanStaffPhone) {
-              const staffMember = customers[idx].members.find(m => m.role === staffRole || m.role === 'Chef / Cook' || m.role === 'Staff');
-              if (staffMember) {
-                if (staffName) staffMember.name = staffName;
-                if (staffRole) staffMember.role = staffRole;
-                if (cleanStaffPhone) staffMember.phone = cleanStaffPhone;
-              }
+          // Keep members array strictly in sync (handle edits AND explicit clear/deletions!)
+          if (!Array.isArray(customers[idx].members)) {
+            customers[idx].members = [];
+          }
+          // 1. Sync or remove Owner member
+          const isOwnerRole = m => m && (m.role === 'Owner' || m.role === 'Managing Partner');
+          if (!ownerName && !cleanOwnerPhone) {
+            customers[idx].members = customers[idx].members.filter(m => !isOwnerRole(m));
+          } else {
+            const ownerMember = customers[idx].members.find(isOwnerRole);
+            if (ownerMember) {
+              ownerMember.name = ownerName || 'Owner';
+              ownerMember.phone = cleanOwnerPhone;
+            } else {
+              customers[idx].members.unshift({
+                id: 'm_owner_' + Date.now(),
+                name: ownerName || 'Owner',
+                role: 'Owner',
+                phone: cleanOwnerPhone,
+                isPrimary: true
+              });
             }
           }
+
+          // 2. Sync or remove Staff member
+          const isStaffRole = m => m && m.role && (m.role.includes('Chef') || m.role === 'Manager' || m.role.includes('Purchase') || m.role === 'Staff' || m.role === 'Supervisor');
+          if (!staffName && !cleanStaffPhone) {
+            customers[idx].members = customers[idx].members.filter(m => {
+              if (!isStaffRole(m)) return true;
+              const mName = (m.name || '').trim().toLowerCase();
+              const mPhone = cleanPhoneNumber(m.phone);
+              const matchesLegacyStaff = (prevStaffName && mName === prevStaffName) || (prevStaffPhone && mPhone === prevStaffPhone);
+              return !matchesLegacyStaff && customers[idx].members.filter(isStaffRole).length > 1;
+            });
+          } else {
+            const staffMember = customers[idx].members.find(isStaffRole);
+            if (staffMember) {
+              staffMember.name = staffName || 'Staff';
+              staffMember.role = staffRole;
+              staffMember.phone = cleanStaffPhone;
+            } else {
+              customers[idx].members.push({
+                id: 'm_staff_' + (Date.now() + 1),
+                name: staffName || 'Staff',
+                role: staffRole,
+                phone: cleanStaffPhone,
+                isPrimary: customers[idx].members.length === 0
+              });
+            }
+          }
+
+          syncCustomerMemberLegacyFields(customers[idx]);
 
           // Also update customer references in existing orders if name or contact changed
           orders.forEach(o => {
@@ -11590,12 +11654,12 @@ function handleCustomerFormSubmit(event) {
                 o.customer.panchayath = panchayath;
                 o.customer.area = area;
                 o.customer.place = place;
-                o.customer.ownerName = ownerName;
-                o.customer.ownerPhone = cleanOwnerPhone;
-                o.customer.staffName = staffName;
-                o.customer.staffRole = staffRole;
-                o.customer.staffPhone = cleanStaffPhone;
-                if (primaryPhone) o.customer.phone = primaryPhone;
+                o.customer.ownerName = customers[idx].ownerName;
+                o.customer.ownerPhone = customers[idx].ownerPhone;
+                o.customer.staffName = customers[idx].staffName;
+                o.customer.staffRole = customers[idx].staffRole;
+                o.customer.staffPhone = customers[idx].staffPhone;
+                o.customer.phone = customers[idx].phone || '';
                 if (combinedLoc) o.customer.location = combinedLoc;
               } else if (typeof o.customer === 'string') {
                 o.customer = name;
@@ -11773,8 +11837,11 @@ function editCustomer(customerId) {
     if (areaInput) areaInput.value = custTown || getCustomerLocation(cust);
     if (placeInput) placeInput.value = custLandmark;
     if (locInput) locInput.value = getCustomerLocation(cust);
+    const cleanStaffP = cleanPhoneNumber(cust.staffPhone);
+    const cleanCustP = cleanPhoneNumber(cust.phone);
+    const fallbackOwnerPhone = (cleanCustP && cleanCustP !== cleanStaffP && !cleanStaffP) ? cust.phone : '';
     if (ownerNameInput) ownerNameInput.value = cust.ownerName || '';
-    if (ownerPhoneInput) ownerPhoneInput.value = cust.ownerPhone || (cust.phone || '');
+    if (ownerPhoneInput) ownerPhoneInput.value = cust.ownerPhone || fallbackOwnerPhone;
     if (staffNameInput) staffNameInput.value = cust.staffName || '';
     if (staffRoleInput) staffRoleInput.value = cust.staffRole || 'Chef / Cook';
     if (staffPhoneInput) staffPhoneInput.value = cust.staffPhone || '';
@@ -11849,6 +11916,26 @@ function openAddCustomerForm(prelinkCustomerId = null) {
   if (window.lucide && typeof lucide.createIcons === 'function') {
     lucide.createIcons();
   }
+}
+
+function clearCustOwnerFields() {
+  const ownerNameInp = document.getElementById('custOwnerNameInput');
+  const ownerPhoneInp = document.getElementById('custOwnerPhoneInput');
+  const phoneInp = document.getElementById('custPhoneInput');
+  if (ownerNameInp) ownerNameInp.value = '';
+  if (ownerPhoneInp) ownerPhoneInp.value = '';
+  if (phoneInp && !document.getElementById('custStaffPhoneInput')?.value.trim()) {
+    phoneInp.value = '';
+  }
+  showNotification('Owner details cleared in form. Click Update Customer to save.');
+}
+
+function clearCustStaffFields() {
+  const staffNameInp = document.getElementById('custStaffNameInput');
+  const staffPhoneInp = document.getElementById('custStaffPhoneInput');
+  if (staffNameInp) staffNameInp.value = '';
+  if (staffPhoneInp) staffPhoneInp.value = '';
+  showNotification('Staff details cleared in form. Click Update Customer to save.');
 }
 
 function cancelEditCustomer() {
@@ -12240,20 +12327,26 @@ function syncCustomerMemberLegacyFields(cust) {
 
   const owner = members.find(m => m.role === 'Owner' || m.role === 'Managing Partner');
   if (owner) {
-    cust.ownerName = owner.name;
-    cust.ownerPhone = owner.phone;
+    cust.ownerName = owner.name || '';
+    cust.ownerPhone = owner.phone || '';
+  } else {
+    cust.ownerName = '';
+    cust.ownerPhone = '';
   }
 
-  const staff = members.find(m => m.role.includes('Chef') || m.role === 'Manager' || m.role.includes('Purchase') || m.role === 'Staff' || m.role === 'Supervisor');
+  const staff = members.find(m => m.role && (m.role.includes('Chef') || m.role === 'Manager' || m.role.includes('Purchase') || m.role === 'Staff' || m.role === 'Supervisor'));
   if (staff) {
-    cust.staffName = staff.name;
-    cust.staffRole = staff.role;
-    cust.staffPhone = staff.phone;
+    cust.staffName = staff.name || '';
+    cust.staffRole = staff.role || 'Chef / Cook';
+    cust.staffPhone = staff.phone || '';
+  } else {
+    cust.staffName = '';
+    cust.staffPhone = '';
   }
 
   const primary = members.find(m => m.isPrimary) || members[0];
-  const primaryPhone = primary?.phone || cust.ownerPhone || cust.staffPhone || '';
-  if (primaryPhone) cust.phone = primaryPhone;
+  const primaryPhone = (primary && primary.phone) || cust.ownerPhone || cust.staffPhone || '';
+  cust.phone = primaryPhone;
 }
 
 function findDuplicateMemberPhone(phone, currentCustId = null, currentMemberId = null) {
@@ -12534,6 +12627,7 @@ function handleSaveMember(event) {
     showNotification(`Member '${name}' added!`);
   }
 
+  cust.membersUpdatedAt = Date.now();
   syncCustomerMemberLegacyFields(cust);
   saveDataToStorage();
   if (typeof syncCloudCustomer === 'function') {
@@ -12542,10 +12636,17 @@ function handleSaveMember(event) {
   closeAddMemberForm();
   renderCustomerMembersList();
   renderCustomersList();
+  if (typeof currentProfileCustomerId !== 'undefined' && currentProfileCustomerId === cust.id && typeof openCustomerProfile === 'function') {
+    openCustomerProfile(cust.id);
+  }
 }
 
 function editCustomerMember(customerId, memberId) {
   activeDetailCustomerId = customerId;
+  const modal = document.getElementById('customerDetailModal');
+  if (modal && modal.classList.contains('hidden') && typeof openCustomerDetailModal === 'function') {
+    openCustomerDetailModal(customerId, false);
+  }
   openAddMemberForm(memberId);
 }
 
@@ -12563,11 +12664,12 @@ function deleteCustomerMember(customerId, memberId) {
   showConfirmModal({
     title: `Remove Member: ${member.name}?`,
     message: `Remove <strong>${escapeHtml(member.name)}</strong> (${escapeHtml(member.role)}) from ${escapeHtml(cust.name)}'s team?`,
-    hint: 'This contact will be removed from this customer profile.',
+    hint: 'This contact will be removed from this customer profile and synced.',
     confirmText: 'Remove Member',
     confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
     onConfirm: () => {
       cust.members = cust.members.filter(m => m.id !== memberId);
+      cust.membersUpdatedAt = Date.now();
       syncCustomerMemberLegacyFields(cust);
       saveDataToStorage();
       if (typeof syncCloudCustomer === 'function') {
@@ -12575,6 +12677,9 @@ function deleteCustomerMember(customerId, memberId) {
       }
       renderCustomerMembersList();
       renderCustomersList();
+      if (typeof currentProfileCustomerId !== 'undefined' && currentProfileCustomerId === customerId && typeof openCustomerProfile === 'function') {
+        openCustomerProfile(customerId);
+      }
       showNotification(`Member '${member.name}' removed.`);
     }
   });
@@ -15416,6 +15521,9 @@ window.areCustomersLinked = areCustomersLinked;
 window.linkCustomersAsBranches = linkCustomersAsBranches;
 window.unlinkBranchCustomer = unlinkBranchCustomer;
 window.onCustBranchLinkChange = onCustBranchLinkChange;
+window.clearCustOwnerFields = clearCustOwnerFields;
+window.clearCustStaffFields = clearCustStaffFields;
+window.syncCustomerMemberLegacyFields = syncCustomerMemberLegacyFields;
 window.renderCustomerOrderHistory = renderCustomerOrderHistory;
 window.updateDashboard = updateDashboard;
 window.openLeaderboardModal = openLeaderboardModal;

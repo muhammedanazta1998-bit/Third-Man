@@ -1872,6 +1872,82 @@ window.onerror = function(msg, url, line, col, err) {
     assert(afterUnlinkAluva && !afterUnlinkAluva.branchGroupId && afterUnlinkMain && !afterUnlinkMain.branchGroupId,
       "unlinkBranchCustomer detaches branch and dissolves 1-member orphan group");
     closeCustomerProfile();
+
+    // 14. Deleting / Clearing Owner Details Stays Permanently Deleted Across Sync & Refresh
+    log("\n--- Testing Owner/Staff Clear & Deletion Persistence (Ameen Traders Scenario) ---");
+    let ameenCust = customers.find(c => c.id === 'c_hist_013' || (c.name && c.name.toLowerCase() === 'ameen traders'));
+    if (!ameenCust) {
+      ameenCust = { id: 'c_hist_013', name: 'Ameen traders', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler' };
+      customers.push(ameenCust);
+    }
+    ameenCust.ownerName = 'Stale Parallex Owner';
+    ameenCust.ownerPhone = '9847001122';
+    ameenCust.staffName = 'Umar';
+    ameenCust.staffRole = 'Staff';
+    ameenCust.staffPhone = '9847003344';
+    ameenCust.phone = '9847001122';
+    ameenCust.members = [
+      { id: 'm_old_own', name: 'Stale Parallex Owner', role: 'Owner', phone: '9847001122', isPrimary: true },
+      { id: 'm_umar_stf', name: 'Umar', role: 'Staff', phone: '9847003344', isPrimary: false }
+    ];
+
+    // User opens Edit Customer, clears Owner fields, keeps Staff Umar, and saves
+    editCustomer(ameenCust.id);
+    clearCustOwnerFields();
+    document.getElementById('custStaffNameInput').value = 'Umar';
+    document.getElementById('custStaffPhoneInput').value = '9847003344';
+    handleCustomerFormSubmit({ preventDefault: () => {} });
+
+    let ameenUpdated = customers.find(c => c.id === ameenCust.id);
+    assert(ameenUpdated && !ameenUpdated.ownerName && !ameenUpdated.ownerPhone,
+      "Clearing Owner details in Edit Customer clears ownerName and ownerPhone");
+    assert(ameenUpdated && !ameenUpdated.members.some(m => m.role === 'Owner'),
+      "Clearing Owner details removes stale Owner from members array");
+    assert(ameenUpdated && ameenUpdated.staffName === 'Umar' && ameenUpdated.staffPhone === '9847003344',
+      "Staff Umar remains intact when Owner details are deleted");
+
+    // Re-open Edit Customer: Umar's staff phone MUST NOT leak into Owner Mobile field
+    editCustomer(ameenCust.id);
+    assert(document.getElementById('custOwnerPhoneInput').value === '',
+      "Edit Customer keeps Owner Mobile blank (does not copy staff phone into Owner Mobile)");
+    cancelEditCustomer();
+
+    // Simulate stale cloud snapshot arriving containing the OLD deleted Owner
+    processIncomingCloudCustomers([{
+      id: ameenCust.id,
+      name: 'Ameen traders',
+      town: 'Ernakulam',
+      district: 'Ernakulam',
+      category: 'Wholesaler',
+      ownerName: 'Stale Parallex Owner',
+      ownerPhone: '9847001122',
+      staffName: 'Umar',
+      staffPhone: '9847003344',
+      phone: '9847001122',
+      members: [
+        { id: 'm_old_own', name: 'Stale Parallex Owner', role: 'Owner', phone: '9847001122', isPrimary: true },
+        { id: 'm_umar_stf', name: 'Umar', role: 'Staff', phone: '9847003344', isPrimary: false }
+      ],
+      membersUpdatedAt: 0
+    }]);
+    ameenUpdated = customers.find(c => c.id === ameenCust.id);
+    assert(ameenUpdated && !ameenUpdated.ownerName && !ameenUpdated.ownerPhone,
+      "Stale Firestore snapshot NEVER resurrects deleted Owner details");
+    assert(ameenUpdated && ameenUpdated.staffName === 'Umar',
+      "Umar staff contact survives cloud sync cleanly");
+
+    // Verify syncCustomerMemberLegacyFields clears owner fields when Owner removed directly
+    const directDelTest = {
+      id: 'c_direct_del_test',
+      name: 'Direct Member Test',
+      ownerName: 'Temp Owner',
+      ownerPhone: '9847555666',
+      phone: '9847555666',
+      members: []
+    };
+    syncCustomerMemberLegacyFields(directDelTest);
+    assert(!directDelTest.ownerName && !directDelTest.ownerPhone && !directDelTest.phone,
+      "syncCustomerMemberLegacyFields clears ownerName, ownerPhone, and phone when Owner member is removed");
   } finally {
     window.confirm = origConfirmFn;
     window.alert = origAlertFn;
