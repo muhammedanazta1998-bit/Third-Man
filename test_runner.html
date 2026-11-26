@@ -151,6 +151,9 @@
   <button id="btnRemoveLeaveHoliday" class="hidden"></button>
 
   <!-- Delivery Live Alerts Notification Fixtures -->
+  <div id="viewLeaderboard" class="hidden">
+    <div id="lbLocationsList"></div>
+  </div>
   <div id="deliveryAlertBellContainer">
     <button type="button" id="btnDeliveryAlertBell" onclick="toggleDeliveryAlertMenu()"></button>
     <span id="deliveryAlertBadge" class="hidden"></span>
@@ -1948,6 +1951,115 @@ window.onerror = function(msg, url, line, col, err) {
     syncCustomerMemberLegacyFields(directDelTest);
     assert(!directDelTest.ownerName && !directDelTest.ownerPhone && !directDelTest.phone,
       "syncCustomerMemberLegacyFields clears ownerName, ownerPhone, and phone when Owner member is removed");
+
+    // 15. Top Routes Live Sync, Strict Town Grouping (No Landmark), & ?Kothamangalam Deduplication
+    log("\n--- Testing Top Routes Live Sync, Town-Only Grouping & ?Kothamangalam Deduplication ---");
+    const preTest15Orders = [...orders];
+    const preTest15Customers = [...customers];
+    const routeCustA = {
+      id: 'c_route_a',
+      name: 'Route Customer A',
+      category: 'Wholesaler',
+      district: 'Ernakulam',
+      town: 'Muvattupuzha',
+      area: 'Muvattupuzha',
+      landmark: 'Near Private Bus Stand',
+      place: 'Near Private Bus Stand',
+      location: 'Near Private Bus Stand, Muvattupuzha, Ernakulam',
+      updatedAt: Date.now(),
+      membersUpdatedAt: Date.now()
+    };
+    const routeCustB = {
+      id: 'c_route_b',
+      name: 'Route Customer B',
+      category: 'Retailer',
+      district: 'Ernakulam',
+      town: '?Kothamangalam',
+      area: '\u2060Kothamangalam',
+      landmark: 'College Junction',
+      place: 'College Junction',
+      location: '?Kothamangalam, Ernakulam'
+    };
+    const routeCustC = {
+      id: 'c_route_c',
+      name: 'Route Customer C',
+      category: 'Wholesaler',
+      district: 'Ernakulam',
+      town: '\uFFFDKothamangalam',
+      area: 'kothamangalam',
+      landmark: 'Bypass Road',
+      place: 'Bypass Road'
+    };
+    const routeCustNoTown = {
+      id: 'c_route_notown',
+      name: 'No Town Shop',
+      category: 'Caterer',
+      district: 'Thrissur',
+      town: '',
+      area: '',
+      landmark: 'Temple Gate',
+      place: 'Temple Gate',
+      location: 'Temple Gate, Thrissur',
+      updatedAt: Date.now()
+    };
+    customers = [routeCustA, routeCustB, routeCustC, routeCustNoTown];
+
+    // Orders still contain STALE embedded customer.town ('Ernakulam') and dirty '?Kothamangalam' variants!
+    orders = [
+      { id: 'ORD-RT-1', date: '2026-11-24', customer: { id: 'c_route_a', name: 'Route Customer A', district: 'Ernakulam', town: 'Ernakulam', area: 'Ernakulam', landmark: 'Near Private Bus Stand', location: 'Ernakulam' }, totalKg: 5000, totalAmount: 500000, dispatchStatus: 'Delivered' },
+      { id: 'ORD-RT-2', date: '2026-11-24', customer: { id: 'c_route_b', name: 'Route Customer B', district: 'Ernakulam', town: '?Kothamangalam', area: '?Kothamangalam', location: '?Kothamangalam' }, totalKg: 1200, totalAmount: 120000, dispatchStatus: 'Delivered' },
+      { id: 'ORD-RT-3', date: '2026-11-25', customer: { id: 'c_route_c', name: 'Route Customer C', district: 'Ernakulam', town: '\u2060kothamangalam', area: '\uFFFDKothamangalam' }, totalKg: 800, totalAmount: 80000, dispatchStatus: 'Delivered' },
+      { id: 'ORD-RT-4', date: '2026-11-25', customer: { id: 'c_route_notown', name: 'No Town Shop', district: 'Thrissur', town: '', landmark: 'Temple Gate', location: 'Temple Gate, Thrissur' }, totalKg: 400, totalAmount: 40000, dispatchStatus: 'Delivered' }
+    ];
+
+    // Verify getCustomerTown resolves LIVE master town even when order snapshot says 'Ernakulam'
+    assert(getCustomerTown(orders.find(o => o.id === 'ORD-RT-1').customer) === 'Muvattupuzha',
+      "getCustomerTown resolves live master customer town ('Muvattupuzha') over stale order snapshot ('Ernakulam')");
+    assert(getCustomerTown(orders.find(o => o.id === 'ORD-RT-2').customer) === 'Kothamangalam',
+      "cleanTownString strips leading '?' from '?Kothamangalam' -> 'Kothamangalam'");
+    assert(getCustomerTown(orders.find(o => o.id === 'ORD-RT-3').customer) === 'Kothamangalam',
+      "cleanTownString strips U+2060 & U+FFFD from Kothamangalam -> 'Kothamangalam'");
+    assert(getCustomerTown(routeCustNoTown) === '',
+      "getCustomerTown does NOT treat Landmark ('Temple Gate') as a Town when town is blank");
+
+    // Render Top Routes and verify strict Town-only grouping with ZERO duplicate Kothamangalam rows
+    leaderboardPeriod = 'all';
+    renderLocationsLeaderboard();
+    const lbLocHtml = document.getElementById('lbLocationsList')?.innerHTML || '';
+    const kothMatches = (lbLocHtml.match(/Kothamangalam/g) || []).length;
+    assert(lbLocHtml.includes('Muvattupuzha'),
+      "Top Routes immediately reflects edited customer town 'Muvattupuzha'");
+    assert(!lbLocHtml.includes('Near Private Bus Stand') && !lbLocHtml.includes('Temple Gate'),
+      "Top Routes NEVER displays Landmarks ('Near Private Bus Stand' / 'Temple Gate')");
+    assert(kothMatches === 1 && !lbLocHtml.includes('?Kothamangalam') && !lbLocHtml.includes('\uFFFD'),
+      `Top Routes combines all Kothamangalam variants into strictly ONE clean 'Kothamangalam' entry (count: ${kothMatches})`);
+    assert(lbLocHtml.includes('2,000 kg') && lbLocHtml.includes('2 buyers • 2 orders'),
+      "Top Routes sums Kothamangalam orders accurately into single row (2,000 kg, 2 buyers • 2 orders)");
+
+    // Verify syncOrdersCustomerLocationsFromMaster heals stale order snapshot to match master
+    const healed = syncOrdersCustomerLocationsFromMaster(false);
+    const healedOrd1 = orders.find(o => o.id === 'ORD-RT-1');
+    const healedOrd2 = orders.find(o => o.id === 'ORD-RT-2');
+    assert(healed === true && healedOrd1.customer.town === 'Muvattupuzha' && healedOrd2.customer.town === 'Kothamangalam',
+      "syncOrdersCustomerLocationsFromMaster repairs stale embedded order towns & ?Kothamangalam");
+
+    // Verify processIncomingCloudCustomers preserves newer local town edit when stale cloud snapshot arrives
+    processIncomingCloudCustomers([{
+      id: 'c_route_a',
+      name: 'Route Customer A',
+      category: 'Wholesaler',
+      district: 'Ernakulam',
+      town: 'Ernakulam',
+      area: 'Ernakulam',
+      location: 'Ernakulam',
+      updatedAt: 0,
+      membersUpdatedAt: 0
+    }]);
+    const custAAfterStaleSync = customers.find(c => c.id === 'c_route_a');
+    assert(custAAfterStaleSync && custAAfterStaleSync.town === 'Muvattupuzha',
+      "processIncomingCloudCustomers preserves newer local town ('Muvattupuzha') when stale cloud snapshot arrives");
+    orders = preTest15Orders;
+    customers = preTest15Customers;
   } finally {
     window.confirm = origConfirmFn;
     window.alert = origAlertFn;
