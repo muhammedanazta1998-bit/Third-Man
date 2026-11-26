@@ -38,6 +38,19 @@
     <div id="cpActiveStatus"></div>
     <div id="cpMembersContainer"></div>
     <div id="cpMembersCountBadge"></div>
+    <div id="cpBranchesSection">
+      <span id="cpBranchesCountBadge"></span>
+      <div id="cpLinkExistingBranchPicker" class="hidden"><select id="cpLinkExistingBranchSelect"></select></div>
+      <div id="cpBranchNetworkSummary" class="hidden">
+        <div id="cpGroupTotalOrders"></div>
+        <div id="cpGroupTotalKg"></div>
+        <div id="cpGroupTotalSpend"></div>
+      </div>
+      <div id="cpBranchesContainer"></div>
+    </div>
+    <select id="custBranchLinkSelect"><option value="">-- Standalone --</option></select>
+    <input type="hidden" id="custBranchGroupIdInput" value="">
+    <span id="custBranchLinkInfoBadge" class="hidden"></span>
     <span id="cpVisitsCountBadge"></span>
     <div id="cpVisitsList"></div>
     <input id="cpOrderSearchInput" type="text" />
@@ -1772,6 +1785,93 @@ window.onerror = function(msg, url, line, col, err) {
     setCustomerTownFilter('all');
     setCustomerDistrictFilter('all');
     renderCustomersList();
+
+    // 13. Multi-Branch Linking & Shared Owner Phone System
+    log("\n--- Testing Multi-Branch & Same-Owner Shared Phone Linking ---");
+    const branchMain = {
+      id: 'c_branch_main_1',
+      name: 'Royal Biryani Main',
+      category: 'Hotel / Restaurant',
+      district: 'Ernakulam',
+      town: 'Ernakulam',
+      ownerName: 'Haji Kareem',
+      ownerPhone: '9847999888',
+      phone: '9847999888',
+      members: []
+    };
+    const branchAluva = {
+      id: 'c_branch_aluva_2',
+      name: 'Royal Biryani Aluva',
+      category: 'Hotel / Restaurant',
+      district: 'Ernakulam',
+      town: 'Aluva',
+      ownerName: 'Haji Kareem',
+      ownerPhone: '9847999888',
+      phone: '9847999888',
+      members: []
+    };
+    customers.push(branchMain, branchAluva);
+
+    // Unlinked duplicate phone is strictly blocked
+    const dupUnlinked = findDuplicateCustomer('Another Unrelated Shop', '9847999888', '', '9847999888', null);
+    assert(dupUnlinked && dupUnlinked.type === 'ownerPhone',
+      "Unlinked shop with duplicate owner phone is strictly flagged/blocked");
+
+    // Link Branch 1 and Branch 2 together
+    const gid = linkCustomersAsBranches(branchMain.id, branchAluva.id);
+    assert(Boolean(gid) && branchMain.branchGroupId === gid && branchAluva.branchGroupId === gid,
+      "linkCustomersAsBranches assigns shared branchGroupId to both shops");
+    assert(areCustomersLinked(branchMain, branchAluva),
+      "areCustomersLinked returns true for connected branches");
+
+    // Linked branch 3 with same owner phone is allowed by findDuplicateCustomer
+    const dupLinked = findDuplicateCustomer('Royal Biryani Kakkanad', '9847999888', '', '9847999888', null, gid, branchMain.id);
+    assert(dupLinked === null,
+      "Linked branch / same-owner shop is ALLOWED to share owner phone number");
+
+    // Same name is STILL blocked even within same branch group
+    const dupSameName = findDuplicateCustomer('Royal Biryani Main', '9847999888', '', '9847999888', null, gid, branchMain.id);
+    assert(dupSameName && dupSameName.type === 'name',
+      "Identical shop name is still blocked even when linked");
+
+    // Deduplication preserves both distinct linked branches sharing the same phone
+    customers = deduplicateCustomersList(customers, false);
+    assert(customers.some(c => c.id === 'c_branch_main_1') && customers.some(c => c.id === 'c_branch_aluva_2'),
+      "deduplicateCustomersList keeps both linked branches separate despite identical ownerPhone");
+
+    // Order history remains strictly isolated per branch despite sharing ownerPhone
+    orders.push(
+      { id: 'ORD-BR-1', date: '2026-11-24', customer: { id: 'c_branch_main_1', name: 'Royal Biryani Main', ownerPhone: '9847999888' }, totalKg: 200, totalAmount: 20000, dispatchStatus: 'Delivered' },
+      { id: 'ORD-BR-2', date: '2026-11-25', customer: { id: 'c_branch_aluva_2', name: 'Royal Biryani Aluva', ownerPhone: '9847999888' }, totalKg: 350, totalAmount: 35000, dispatchStatus: 'Delivered' }
+    );
+    const mainOnlyOrders = getCustomerOrders(branchMain, false);
+    const aluvaOnlyOrders = getCustomerOrders(branchAluva, false);
+    assert(mainOnlyOrders.length === 1 && mainOnlyOrders[0].id === 'ORD-BR-1',
+      "Branch Main order history isolates only Main branch orders (does not mix Aluva branch orders via shared phone)");
+    assert(aluvaOnlyOrders.length === 1 && aluvaOnlyOrders[0].id === 'ORD-BR-2',
+      "Branch Aluva order history isolates only Aluva branch orders (does not mix Main branch orders via shared phone)");
+
+    // Profile branch section renders combined network stats + both branches
+    openCustomerProfile(branchMain.id, 'customers');
+    const brBadgeText = document.getElementById('cpBranchesCountBadge')?.textContent || '';
+    const brGroupOrders = document.getElementById('cpGroupTotalOrders')?.textContent || '';
+    const brGroupKg = document.getElementById('cpGroupTotalKg')?.textContent || '';
+    const brGroupSpend = document.getElementById('cpGroupTotalSpend')?.textContent || '';
+    const brHtml = document.getElementById('cpBranchesContainer')?.innerHTML || '';
+    assert(brBadgeText.includes('2'), "Profile branch count badge shows 2 Branches");
+    assert(brGroupOrders.includes('2'), "Combined group orders shows 2 Orders");
+    assert(brGroupKg.includes('550'), "Combined group volume shows 550 kg");
+    assert(brGroupSpend.includes('55,000'), "Combined group spend shows ₹55,000");
+    assert(brHtml.includes('Royal Biryani Aluva') && brHtml.includes('Royal Biryani Main'),
+      "Connected branches section lists both linked branches");
+
+    // Unlink cleans up both single-member orphans
+    unlinkBranchCustomer(branchAluva.id);
+    const afterUnlinkMain = customers.find(c => c.id === 'c_branch_main_1');
+    const afterUnlinkAluva = customers.find(c => c.id === 'c_branch_aluva_2');
+    assert(afterUnlinkAluva && !afterUnlinkAluva.branchGroupId && afterUnlinkMain && !afterUnlinkMain.branchGroupId,
+      "unlinkBranchCustomer detaches branch and dissolves 1-member orphan group");
+    closeCustomerProfile();
   } finally {
     window.confirm = origConfirmFn;
     window.alert = origAlertFn;

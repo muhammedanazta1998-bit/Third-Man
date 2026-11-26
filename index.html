@@ -1474,6 +1474,22 @@
                 <input type="hidden" id="custAreaInput" value="">
                 <input type="hidden" id="custPlaceInput" value="">
                 <input type="hidden" id="custLocationInput" value="">
+                <input type="hidden" id="custBranchGroupIdInput" value="">
+
+                <!-- Branch / Same Owner Connection -->
+                <div class="bg-sky-50/70 p-3 rounded-xl border border-sky-200/80 space-y-2">
+                  <div class="flex items-center justify-between gap-2 flex-wrap">
+                    <span class="text-[11px] font-bold text-sky-950 flex items-center gap-1.5">
+                      <i data-lucide="git-branch" class="w-3.5 h-3.5 text-sky-600"></i>
+                      <span>Branch / Same Owner Link <span class="font-normal text-slate-500">(Optional)</span></span>
+                    </span>
+                    <span id="custBranchLinkInfoBadge" class="hidden text-[10px] font-bold px-2 py-0.5 rounded-full bg-sky-100 text-sky-800 border border-sky-200"></span>
+                  </div>
+                  <select id="custBranchLinkSelect" onchange="onCustBranchLinkChange(this.value)" class="w-full text-xs p-2 bg-white border border-sky-200 rounded-lg focus:ring-2 focus:ring-sky-500/20 font-medium text-slate-800">
+                    <option value="">-- Standalone Shop (No Branch Link) --</option>
+                  </select>
+                  <p class="text-[10px] text-slate-500 leading-snug">💡 If this shop is another branch or belongs to the same owner, link it here to allow sharing the same owner phone number.</p>
+                </div>
 
                 <!-- Owner & Staff Details Groups -->
                 <div class="space-y-2.5 pt-1">
@@ -1748,6 +1764,69 @@
               <div id="cpLastOrderDate" class="text-base sm:text-xl font-black text-purple-900 mt-0.5">—</div>
               <span id="cpActiveStatus" class="text-[11px] font-semibold text-purple-600">Buyer</span>
             </div>
+          </div>
+        </div>
+
+        <!-- Connected Branches & Same-Owner Shops Section -->
+        <div id="cpBranchesSection" class="bg-white border border-slate-200 rounded-2xl p-4 sm:p-5 shadow-xs space-y-3">
+          <div class="flex items-center justify-between gap-2 pb-2.5 border-b border-slate-100 flex-wrap">
+            <div class="flex items-center gap-2">
+              <div class="w-7 h-7 rounded-lg bg-sky-50 text-sky-700 flex items-center justify-center">
+                <i data-lucide="git-branch" class="w-3.5 h-3.5"></i>
+              </div>
+              <div>
+                <h4 class="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <span>Connected Branches &amp; Same Owner</span>
+                  <span id="cpBranchesCountBadge" class="bg-sky-100 text-sky-800 px-2 py-0.5 rounded-full text-[10px] font-extrabold">1</span>
+                </h4>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5 flex-wrap">
+              <button type="button" onclick="toggleLinkExistingBranchPicker()" class="text-xs bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold px-3 py-1.5 rounded-xl transition inline-flex items-center gap-1 border border-slate-200 shadow-2xs active:scale-95">
+                <i data-lucide="link" class="w-3.5 h-3.5 text-sky-600"></i>
+                <span>Link Existing Shop</span>
+              </button>
+              <button type="button" onclick="openAddBranchFromProfile()" class="text-xs bg-sky-50 hover:bg-sky-100 text-sky-700 font-bold px-3 py-1.5 rounded-xl transition inline-flex items-center gap-1 border border-sky-200 shadow-2xs active:scale-95">
+                <i data-lucide="plus" class="w-3.5 h-3.5"></i>
+                <span>+ Add Branch</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Inline Existing Shop Link Picker -->
+          <div id="cpLinkExistingBranchPicker" class="hidden p-3 bg-sky-50/60 border border-sky-200 rounded-xl space-y-2">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-bold text-sky-950">Select an existing shop in directory to connect as a branch / same-owner shop:</span>
+              <button type="button" onclick="toggleLinkExistingBranchPicker(false)" class="text-[11px] font-bold text-slate-500 hover:text-slate-700">Cancel</button>
+            </div>
+            <div class="flex items-center gap-2 flex-col sm:flex-row">
+              <select id="cpLinkExistingBranchSelect" class="w-full flex-1 text-xs p-2 bg-white border border-sky-200 rounded-lg font-medium text-slate-800">
+                <option value="">-- Choose Shop to Link --</option>
+              </select>
+              <button type="button" onclick="confirmLinkExistingBranchFromProfile()" class="w-full sm:w-auto px-4 py-2 bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold rounded-lg transition shadow-xs active:scale-95 shrink-0">
+                Connect Branch
+              </button>
+            </div>
+          </div>
+
+          <!-- Combined Branch Network Totals (Shown when 2+ shops are linked) -->
+          <div id="cpBranchNetworkSummary" class="hidden grid grid-cols-3 gap-2 p-2.5 bg-gradient-to-r from-sky-50 to-indigo-50/60 border border-sky-200/80 rounded-xl text-center">
+            <div>
+              <span class="text-[9px] font-bold uppercase tracking-wider text-sky-700">Group Orders</span>
+              <div id="cpGroupTotalOrders" class="text-xs sm:text-sm font-black text-slate-900">0</div>
+            </div>
+            <div>
+              <span class="text-[9px] font-bold uppercase tracking-wider text-emerald-700">Group Volume</span>
+              <div id="cpGroupTotalKg" class="text-xs sm:text-sm font-black text-emerald-800">0 kg</div>
+            </div>
+            <div>
+              <span class="text-[9px] font-bold uppercase tracking-wider text-blue-700">Group Spend</span>
+              <div id="cpGroupTotalSpend" class="text-xs sm:text-sm font-black text-blue-800">₹0</div>
+            </div>
+          </div>
+
+          <div id="cpBranchesContainer" class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <!-- Dynamically populated -->
           </div>
         </div>
 

@@ -1712,9 +1712,14 @@ function processIncomingCloudCustomers(remoteCustomers) {
       if (!merged.staffPhone && localMatch.staffPhone) merged.staffPhone = localMatch.staffPhone;
       if (!merged.phone && localMatch.phone) merged.phone = localMatch.phone;
       if (!merged.notes && localMatch.notes) merged.notes = localMatch.notes;
+      let localHasBranchGroup = false;
+      if (!merged.branchGroupId && localMatch.branchGroupId) {
+        merged.branchGroupId = localMatch.branchGroupId;
+        localHasBranchGroup = true;
+      }
 
-      // If local device had new members or remote had dirty town chars, queue customer to upload to cloud
-      if (localHasNewMembers || remoteTownCleaned) {
+      // If local device had new members, branch link, or remote had dirty town chars, queue customer to upload to cloud
+      if (localHasNewMembers || remoteTownCleaned || localHasBranchGroup) {
         needsCloudUpload.push(merged);
       }
     } else {
@@ -3663,9 +3668,13 @@ function extractCustomersFromOrdersIfMissing(syncToCloud = false) {
 
     const exists = customers.some(existing => {
       const nameMatch = existing.name && existing.name.trim().toLowerCase() === cName.toLowerCase();
-      const phoneMatch = cleanP && existing.phone && cleanPhoneNumber(existing.phone) === cleanP;
-      const ownMatch = cleanOwn && existing.ownerPhone && cleanPhoneNumber(existing.ownerPhone) === cleanOwn;
-      return nameMatch || phoneMatch || ownMatch;
+      if (nameMatch) return true;
+      if (!cName) {
+        const phoneMatch = cleanP && existing.phone && cleanPhoneNumber(existing.phone) === cleanP;
+        const ownMatch = cleanOwn && existing.ownerPhone && cleanPhoneNumber(existing.ownerPhone) === cleanOwn;
+        return phoneMatch || ownMatch;
+      }
+      return false;
     });
 
     if (!exists) {
@@ -4962,32 +4971,195 @@ function isValidPhone(phone) {
   return cleaned.length === 10;
 }
 
-function findDuplicateCustomer(name, ownerPhone = '', staffPhone = '', legacyPhone = '', excludeId = null) {
+// ==================== MULTI-BRANCH & SAME-OWNER LINKING ====================
+
+function generateBranchGroupId() {
+  return 'bg_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4);
+}
+
+/**
+ * Returns all customers connected to the same branch / same-owner group.
+ */
+function getLinkedBranches(custOrId, includeSelf = true) {
+  if (!custOrId || !Array.isArray(customers)) return [];
+  const cust = typeof custOrId === 'string'
+    ? customers.find(c => c && c.id === custOrId)
+    : custOrId;
+  if (!cust) return [];
+  const gid = cust.branchGroupId;
+  if (!gid) return includeSelf ? [cust] : [];
+  return customers.filter(c => {
+    if (!c || !c.branchGroupId || c.branchGroupId !== gid) return false;
+    if (!includeSelf && c.id === cust.id) return false;
+    return true;
+  });
+}
+
+/**
+ * Checks whether two customers belong to the same branch / owner network.
+ */
+function areCustomersLinked(custA, custB) {
+  if (!custA || !custB) return false;
+  if (custA.id && custB.id && custA.id === custB.id) return true;
+  return Boolean(custA.branchGroupId && custB.branchGroupId && custA.branchGroupId === custB.branchGroupId);
+}
+
+/**
+ * Connects two customers (and merges any existing branch groups) into one shared branchGroupId.
+ */
+function linkCustomersAsBranches(sourceCustId, targetCustId) {
+  if (!sourceCustId || !targetCustId || sourceCustId === targetCustId) return '';
+  const src = customers.find(c => c && c.id === sourceCustId);
+  const tgt = customers.find(c => c && c.id === targetCustId);
+  if (!src || !tgt) return '';
+
+  const targetOldGid = tgt.branchGroupId || '';
+  const srcOldGid = src.branchGroupId || '';
+  const sharedGid = targetOldGid || srcOldGid || generateBranchGroupId();
+
+  const updatedCustomers = [];
+  customers.forEach(c => {
+    if (!c) return;
+    const inTargetGroup = targetOldGid && c.branchGroupId === targetOldGid;
+    const inSrcGroup = srcOldGid && c.branchGroupId === srcOldGid;
+    if (c.id === src.id || c.id === tgt.id || inTargetGroup || inSrcGroup) {
+      if (c.branchGroupId !== sharedGid) {
+        c.branchGroupId = sharedGid;
+        updatedCustomers.push(c);
+      }
+    }
+  });
+
+  if (updatedCustomers.length > 0) {
+    saveDataToStorage();
+    updatedCustomers.forEach(c => {
+      if (typeof syncCloudCustomer === 'function') syncCloudCustomer(c);
+    });
+  }
+  return sharedGid;
+}
+
+/**
+ * Detaches a customer from its branch group and dissolves single-member orphan groups.
+ */
+function unlinkBranchCustomer(customerId) {
+  if (!customerId || !Array.isArray(customers)) return;
+  const target = customers.find(c => c && c.id === customerId);
+  if (!target || !target.branchGroupId) return;
+
+  const oldGid = target.branchGroupId;
+  target.branchGroupId = '';
+  const changed = [target];
+
+  const remaining = customers.filter(c => c && c.branchGroupId === oldGid);
+  if (remaining.length === 1) {
+    remaining[0].branchGroupId = '';
+    changed.push(remaining[0]);
+  }
+
+  saveDataToStorage();
+  changed.forEach(c => {
+    if (typeof syncCloudCustomer === 'function') syncCloudCustomer(c);
+  });
+}
+
+function populateCustBranchLinkSelect(excludeId = null, selectedTargetId = '') {
+  const select = document.getElementById('custBranchLinkSelect');
+  if (!select) return;
+
+  const sorted = (Array.isArray(customers) ? [...customers] : [])
+    .filter(c => c && c.id && c.id !== excludeId)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  let html = '<option value="">-- Standalone Shop (No Branch Link) --</option>';
+  sorted.forEach(c => {
+    const town = typeof getCustomerTown === 'function' ? getCustomerTown(c) : (c.town || '');
+    const owner = c.ownerName ? ` • Owner: ${c.ownerName}` : '';
+    const loc = town ? ` (${town})` : '';
+    html += `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}${escapeHtml(loc)}${escapeHtml(owner)}</option>`;
+  });
+  select.innerHTML = html;
+  select.value = selectedTargetId && sorted.some(c => c.id === selectedTargetId) ? selectedTargetId : '';
+}
+
+function onCustBranchLinkChange(selectedTargetId) {
+  const badge = document.getElementById('custBranchLinkInfoBadge');
+  if (!selectedTargetId) {
+    const hiddenGid = document.getElementById('custBranchGroupIdInput');
+    if (hiddenGid) hiddenGid.value = '';
+    if (badge) {
+      badge.textContent = '';
+      badge.classList.add('hidden');
+    }
+    return;
+  }
+
+  const target = customers.find(c => c && c.id === selectedTargetId);
+  if (!target) return;
+
+  const hiddenGid = document.getElementById('custBranchGroupIdInput');
+  if (hiddenGid) hiddenGid.value = target.branchGroupId || '';
+
+  // Auto-fill owner details & category if currently blank (new branch entry convenience)
+  const ownerNameInp = document.getElementById('custOwnerNameInput');
+  const ownerPhoneInp = document.getElementById('custOwnerPhoneInput');
+  const catInp = document.getElementById('custCategoryInput');
+  const editId = document.getElementById('custEditId')?.value.trim();
+
+  if (!editId) {
+    if (ownerNameInp && !ownerNameInp.value.trim() && target.ownerName) {
+      ownerNameInp.value = target.ownerName;
+    }
+    const tgtOwnPhone = target.ownerPhone || target.phone || '';
+    if (ownerPhoneInp && !ownerPhoneInp.value.trim() && tgtOwnPhone) {
+      ownerPhoneInp.value = tgtOwnPhone;
+    }
+    if (catInp && target.category) {
+      catInp.value = target.category;
+    }
+  }
+
+  if (badge) {
+    const branchCount = getLinkedBranches(target, true).length;
+    badge.textContent = `🔗 Linking with ${target.name}${branchCount > 1 ? ` (${branchCount} branches)` : ''}`;
+    badge.classList.remove('hidden');
+  }
+}
+
+function findDuplicateCustomer(name, ownerPhone = '', staffPhone = '', legacyPhone = '', excludeId = null, branchGroupId = '', linkTargetId = '') {
   const cleanName = (name || '').trim().toLowerCase();
   const cleanOwner = cleanPhoneNumber(ownerPhone);
   const cleanStaff = cleanPhoneNumber(staffPhone);
   const cleanLegacy = cleanPhoneNumber(legacyPhone);
 
+  const linkTargetCust = linkTargetId ? customers.find(x => x && x.id === linkTargetId) : null;
+  const effectiveGroupId = branchGroupId || (linkTargetCust && linkTargetCust.branchGroupId) || '';
+
   for (const c of customers) {
     if (excludeId && c.id === excludeId) continue;
 
-    // Check duplicate name
+    // Always block identical customer/branch names
     if (cleanName && c.name && c.name.trim().toLowerCase() === cleanName) {
       return { type: 'name', customer: c };
     }
+
+    // Linked branches / same-owner shops are allowed to share phone numbers
+    const isLinkedSameOwner = (linkTargetId && c.id === linkTargetId) ||
+      (effectiveGroupId && c.branchGroupId && c.branchGroupId === effectiveGroupId);
+    if (isLinkedSameOwner) continue;
 
     const cOwner = cleanPhoneNumber(c.ownerPhone);
     const cStaff = cleanPhoneNumber(c.staffPhone);
     const cPhone = cleanPhoneNumber(c.phone);
 
-    // Check duplicate owner phone against other customers
+    // Check duplicate owner phone against unrelated customers
     if (cleanOwner) {
       if ((cOwner && cOwner === cleanOwner) || (cPhone && cPhone === cleanOwner) || (cStaff && cStaff === cleanOwner)) {
         return { type: 'ownerPhone', customer: c, phone: cleanOwner };
       }
     }
 
-    // Check duplicate staff phone against other customers
+    // Check duplicate staff phone against unrelated customers
     if (cleanStaff) {
       if ((cStaff && cStaff === cleanStaff) || (cOwner && cOwner === cleanStaff) || (cPhone && cPhone === cleanStaff)) {
         return { type: 'staffPhone', customer: c, phone: cleanStaff };
@@ -5299,9 +5471,12 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
       matchIndex = unique.findIndex(u => u.name && cleanInvisibleAndWhitespace(u.name).toLowerCase() === lowerName);
     }
 
-    // 3. Match by normalized 10-digit primary phone or owner phone
-    if (matchIndex === -1 && (cleanOwn || cleanP)) {
+    // 3. Match by normalized 10-digit primary phone or owner phone (never merge linked branches or distinct named shops)
+    if (matchIndex === -1 && (cleanOwn || cleanP) && !item.branchGroupId) {
       matchIndex = unique.findIndex(u => {
+        if (u.branchGroupId) return false;
+        const uName = u.name ? cleanInvisibleAndWhitespace(u.name).toLowerCase() : '';
+        if (uName && lowerName && uName !== lowerName && u.id && item.id && u.id !== item.id) return false;
         const uOwn = cleanPhoneNumber(u.ownerPhone);
         const uP = cleanPhoneNumber(u.phone);
         const uStf = cleanPhoneNumber(u.staffPhone);
@@ -6608,7 +6783,7 @@ function saveQuickCustomerAndApply() {
       const lowerQuick = quickName.toLowerCase();
       existingIndex = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === lowerQuick);
     }
-    if (existingIndex === -1 && (ownerPhone || staffPhone)) {
+    if (existingIndex === -1 && !quickName && (ownerPhone || staffPhone)) {
       existingIndex = customers.findIndex(c => {
         const cOwn = cleanPhoneNumber(c.ownerPhone);
         const cStf = cleanPhoneNumber(c.staffPhone);
@@ -6850,7 +7025,7 @@ async function handleSaveOrder(event) {
       const cleanLower = customerName.trim().toLowerCase();
       existingIndex = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === cleanLower);
     }
-    if (existingIndex === -1 && (cleanOwnerPhone || cleanStaffPhone)) {
+    if (existingIndex === -1 && !customerName && (cleanOwnerPhone || cleanStaffPhone)) {
       existingIndex = customers.findIndex(c => {
         const cOwn = cleanPhoneNumber(c.ownerPhone);
         const cStf = cleanPhoneNumber(c.staffPhone);
@@ -11338,112 +11513,148 @@ function handleCustomerFormSubmit(event) {
     }
 
     const primaryPhone = cleanOwnerPhone || cleanStaffPhone || cleanPhoneNumber(rawLegacyPhone) || '';
+    const branchLinkSelectEl = document.getElementById('custBranchLinkSelect');
+    const selectedLinkTargetId = branchLinkSelectEl ? branchLinkSelectEl.value.trim() : '';
+    const existingBranchGroupId = document.getElementById('custBranchGroupIdInput')?.value.trim() || '';
 
     // Duplicate checks
-    const duplicate = findDuplicateCustomer(name, cleanOwnerPhone, cleanStaffPhone, primaryPhone, editId || null);
-    if (duplicate) {
-      if (duplicate.type === 'name') {
-        alert(`A customer with the name "${name}" already exists in the directory.`);
-      } else if (duplicate.type === 'ownerPhone') {
-        alert(`Owner phone "${cleanOwnerPhone}" is already registered for "${duplicate.customer.name}".`);
-      } else if (duplicate.type === 'staffPhone') {
-        alert(`Staff phone "${cleanStaffPhone}" is already registered for "${duplicate.customer.name}".`);
-      } else if (duplicate.type === 'phone') {
-        alert(`Phone number "${primaryPhone}" is already registered for "${duplicate.customer.name}".`);
-      }
+    const duplicate = findDuplicateCustomer(name, cleanOwnerPhone, cleanStaffPhone, primaryPhone, editId || null, existingBranchGroupId, selectedLinkTargetId);
+    if (duplicate && duplicate.type === 'name') {
+      alert(`A customer with the name "${name}" already exists in the directory.`);
       return;
     }
 
-    if (editId) {
-      // Update existing customer
-      let idx = customers.findIndex(c => c.id === editId);
-      if (idx === -1) {
-        // Fallback: search by name
-        idx = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === name.trim().toLowerCase());
-      }
-
-      if (idx !== -1) {
-        const prevName = customers[idx].name;
-        customers[idx] = {
-          ...customers[idx],
-          name: name,
-          category: category,
-          district: district,
-          town: town,
-          landmark: landmark,
-          panchayath: panchayath,
-          area: area,
-          place: place,
-          ownerName: ownerName,
-          ownerPhone: cleanOwnerPhone,
-          staffName: staffName,
-          staffRole: staffRole,
-          staffPhone: cleanStaffPhone,
-          phone: primaryPhone || customers[idx].phone || '',
-          location: combinedLoc || 'Ernakulam',
-          notes: notes || ''
-        };
-
-        // Keep members in sync if owner or staff contact fields were updated
-        if (Array.isArray(customers[idx].members)) {
-          if (ownerName || cleanOwnerPhone) {
-            const ownerMember = customers[idx].members.find(m => m.role === 'Owner' || m.isPrimary);
-            if (ownerMember) {
-              if (ownerName) ownerMember.name = ownerName;
-              if (cleanOwnerPhone) ownerMember.phone = cleanOwnerPhone;
-            }
-          }
-          if (staffName || cleanStaffPhone) {
-            const staffMember = customers[idx].members.find(m => m.role === staffRole || m.role === 'Chef / Cook' || m.role === 'Staff');
-            if (staffMember) {
-              if (staffName) staffMember.name = staffName;
-              if (staffRole) staffMember.role = staffRole;
-              if (cleanStaffPhone) staffMember.phone = cleanStaffPhone;
-            }
-          }
+    const performCustomerSave = (resolvedLinkTargetId) => {
+      if (editId) {
+        // Update existing customer
+        let idx = customers.findIndex(c => c.id === editId);
+        if (idx === -1) {
+          // Fallback: search by name
+          idx = customers.findIndex(c => c.name && c.name.trim().toLowerCase() === name.trim().toLowerCase());
         }
 
-        // Also update customer references in existing orders if name or contact changed
-        orders.forEach(o => {
-          if (!o || !o.customer) return;
-          const matchesPrev = (typeof o.customer === 'object' && o.customer.id && o.customer.id === editId) ||
-                              (getCustomerName(o.customer).trim().toLowerCase() === prevName.trim().toLowerCase());
-          if (matchesPrev) {
-            if (typeof o.customer === 'object') {
-              o.customer.id = editId;
-              o.customer.name = name;
-              o.customer.category = category;
-              o.customer.district = district;
-              o.customer.town = town;
-              o.customer.landmark = landmark;
-              o.customer.panchayath = panchayath;
-              o.customer.area = area;
-              o.customer.place = place;
-              o.customer.ownerName = ownerName;
-              o.customer.ownerPhone = cleanOwnerPhone;
-              o.customer.staffName = staffName;
-              o.customer.staffRole = staffRole;
-              o.customer.staffPhone = cleanStaffPhone;
-              if (primaryPhone) o.customer.phone = primaryPhone;
-              if (combinedLoc) o.customer.location = combinedLoc;
-            } else if (typeof o.customer === 'string') {
-              o.customer = name;
+        if (idx !== -1) {
+          const prevName = customers[idx].name;
+          customers[idx] = {
+            ...customers[idx],
+            name: name,
+            category: category,
+            district: district,
+            town: town,
+            landmark: landmark,
+            panchayath: panchayath,
+            area: area,
+            place: place,
+            ownerName: ownerName,
+            ownerPhone: cleanOwnerPhone,
+            staffName: staffName,
+            staffRole: staffRole,
+            staffPhone: cleanStaffPhone,
+            phone: primaryPhone || customers[idx].phone || '',
+            location: combinedLoc || 'Ernakulam',
+            notes: notes || ''
+          };
+
+          // Keep members in sync if owner or staff contact fields were updated
+          if (Array.isArray(customers[idx].members)) {
+            if (ownerName || cleanOwnerPhone) {
+              const ownerMember = customers[idx].members.find(m => m.role === 'Owner' || m.isPrimary);
+              if (ownerMember) {
+                if (ownerName) ownerMember.name = ownerName;
+                if (cleanOwnerPhone) ownerMember.phone = cleanOwnerPhone;
+              }
+            }
+            if (staffName || cleanStaffPhone) {
+              const staffMember = customers[idx].members.find(m => m.role === staffRole || m.role === 'Chef / Cook' || m.role === 'Staff');
+              if (staffMember) {
+                if (staffName) staffMember.name = staffName;
+                if (staffRole) staffMember.role = staffRole;
+                if (cleanStaffPhone) staffMember.phone = cleanStaffPhone;
+              }
             }
           }
-        });
 
-        saveDataToStorage();
-        if (customers[idx]) syncCloudCustomer(customers[idx]);
-        populateCustomerDropdown();
-        populateSavedAreasDatalists();
-        cancelEditCustomer();
-        renderCustomersList();
-        updateDashboard();
-        showNotification(`Customer '${name}' updated successfully!`);
+          // Also update customer references in existing orders if name or contact changed
+          orders.forEach(o => {
+            if (!o || !o.customer) return;
+            const matchesPrev = (typeof o.customer === 'object' && o.customer.id && o.customer.id === editId) ||
+                                (getCustomerName(o.customer).trim().toLowerCase() === prevName.trim().toLowerCase());
+            if (matchesPrev) {
+              if (typeof o.customer === 'object') {
+                o.customer.id = editId;
+                o.customer.name = name;
+                o.customer.category = category;
+                o.customer.district = district;
+                o.customer.town = town;
+                o.customer.landmark = landmark;
+                o.customer.panchayath = panchayath;
+                o.customer.area = area;
+                o.customer.place = place;
+                o.customer.ownerName = ownerName;
+                o.customer.ownerPhone = cleanOwnerPhone;
+                o.customer.staffName = staffName;
+                o.customer.staffRole = staffRole;
+                o.customer.staffPhone = cleanStaffPhone;
+                if (primaryPhone) o.customer.phone = primaryPhone;
+                if (combinedLoc) o.customer.location = combinedLoc;
+              } else if (typeof o.customer === 'string') {
+                o.customer = name;
+              }
+            }
+          });
+
+          if (resolvedLinkTargetId) {
+            linkCustomersAsBranches(customers[idx].id, resolvedLinkTargetId);
+          } else if (branchLinkSelectEl && customers[idx].branchGroupId) {
+            unlinkBranchCustomer(customers[idx].id);
+          }
+
+          saveDataToStorage();
+          if (customers[idx]) syncCloudCustomer(customers[idx]);
+          populateCustomerDropdown();
+          populateSavedAreasDatalists();
+          cancelEditCustomer();
+          renderCustomersList();
+          updateDashboard();
+          showNotification(`Customer '${name}' updated successfully!`);
+        } else {
+          // Fallback: customer was somehow not found, save as new entry
+          const fallbackCust = {
+            id: editId || ('c_' + Date.now()),
+            name: name,
+            category: category,
+            district: district,
+            town: town,
+            landmark: landmark,
+            panchayath: panchayath,
+            area: area,
+            place: place,
+            ownerName: ownerName,
+            ownerPhone: cleanOwnerPhone,
+            staffName: staffName,
+            staffRole: staffRole,
+            staffPhone: cleanStaffPhone,
+            phone: primaryPhone,
+            location: combinedLoc || 'Ernakulam',
+            notes: notes || ''
+          };
+          customers.push(fallbackCust);
+          if (resolvedLinkTargetId) {
+            linkCustomersAsBranches(fallbackCust.id, resolvedLinkTargetId);
+          }
+          saveDataToStorage();
+          syncCloudCustomer(fallbackCust);
+          populateCustomerDropdown();
+          populateSavedAreasDatalists();
+          cancelEditCustomer();
+          renderCustomersList();
+          updateDashboard();
+          showNotification(`Customer '${name}' saved!`);
+        }
       } else {
-        // Fallback: customer was somehow not found, save as new entry
-        const fallbackCust = {
-          id: editId || ('c_' + Date.now()),
+        // Add new customer
+        const newCust = {
+          id: 'c_' + Date.now(),
           name: name,
           category: category,
           district: district,
@@ -11461,49 +11672,42 @@ function handleCustomerFormSubmit(event) {
           location: combinedLoc || 'Ernakulam',
           notes: notes || ''
         };
-        customers.push(fallbackCust);
+        removeCustomerTombstone(name);
+        customers.push(newCust);
+
+        if (resolvedLinkTargetId) {
+          linkCustomersAsBranches(newCust.id, resolvedLinkTargetId);
+        }
+
         saveDataToStorage();
-        syncCloudCustomer(fallbackCust);
+        syncCloudCustomer(newCust);
         populateCustomerDropdown();
         populateSavedAreasDatalists();
-        cancelEditCustomer();
         renderCustomersList();
-        updateDashboard();
-        showNotification(`Customer '${name}' saved!`);
+        cancelEditCustomer();
+
+        showNotification(`Customer '${name}' added!`);
       }
-    } else {
-      // Add new customer
-      const newCust = {
-        id: 'c_' + Date.now(),
-        name: name,
-        category: category,
-        district: district,
-        town: town,
-        landmark: landmark,
-        panchayath: panchayath,
-        area: area,
-        place: place,
-        ownerName: ownerName,
-        ownerPhone: cleanOwnerPhone,
-        staffName: staffName,
-        staffRole: staffRole,
-        staffPhone: cleanStaffPhone,
-        phone: primaryPhone,
-        location: combinedLoc || 'Ernakulam',
-        notes: notes || ''
-      };
-      removeCustomerTombstone(name);
-      customers.push(newCust);
+    };
 
-      saveDataToStorage();
-      syncCloudCustomer(newCust);
-      populateCustomerDropdown();
-      populateSavedAreasDatalists();
-      renderCustomersList();
-      cancelEditCustomer();
-
-      showNotification(`Customer '${name}' added!`);
+    if (duplicate) {
+      const dupCust = duplicate.customer;
+      const dupPhone = duplicate.phone || primaryPhone;
+      const ownerLabel = dupCust.ownerName ? ` (Owner: ${escapeHtml(dupCust.ownerName)})` : '';
+      showConfirmModal({
+        title: 'Same Owner / Branch Detected?',
+        message: `Phone number <strong>${escapeHtml(dupPhone)}</strong> is already registered for <strong>${escapeHtml(dupCust.name)}</strong>${ownerLabel}.<br><br>Unrelated shops cannot share a phone number. Is <strong>${escapeHtml(name)}</strong> another branch or owned by the <strong>same owner</strong>?`,
+        hint: `💡 Confirming will connect '${escapeHtml(name)}' and '${escapeHtml(dupCust.name)}' as Same-Owner / Linked Branches.`,
+        confirmText: 'Yes, Same Owner / Link Branch',
+        confirmClass: 'bg-sky-600 hover:bg-sky-700 text-white',
+        onConfirm: () => {
+          performCustomerSave(dupCust.id);
+        }
+      });
+      return;
     }
+
+    performCustomerSave(selectedLinkTargetId);
   } catch (err) {
     console.error('Error submitting customer form:', err);
     showNotification('Error saving customer: ' + (err.message || 'Unknown error'));
@@ -11577,6 +11781,23 @@ function editCustomer(customerId) {
     if (phoneInput) phoneInput.value = cust.phone || '';
     if (notesInput) notesInput.value = cust.notes || '';
 
+    // Populate branch link dropdown & existing group state
+    const hiddenGroupInput = document.getElementById('custBranchGroupIdInput');
+    if (hiddenGroupInput) hiddenGroupInput.value = cust.branchGroupId || '';
+    const linkedSisters = getLinkedBranches(cust, false);
+    const firstSisterId = linkedSisters.length > 0 ? linkedSisters[0].id : '';
+    populateCustBranchLinkSelect(cust.id, firstSisterId);
+    const branchInfoBadge = document.getElementById('custBranchLinkInfoBadge');
+    if (branchInfoBadge) {
+      if (linkedSisters.length > 0) {
+        branchInfoBadge.textContent = `🔗 Linked with ${linkedSisters.length} sister branch${linkedSisters.length === 1 ? '' : 'es'}`;
+        branchInfoBadge.classList.remove('hidden');
+      } else {
+        branchInfoBadge.textContent = '';
+        branchInfoBadge.classList.add('hidden');
+      }
+    }
+
     if (titleText) titleText.textContent = `Edit Customer: ${cust.name}`;
     if (submitText) submitText.textContent = 'Update Customer';
     if (cancelBtn) cancelBtn.classList.remove('hidden');
@@ -11597,7 +11818,7 @@ function editCustomer(customerId) {
   }
 }
 
-function openAddCustomerForm() {
+function openAddCustomerForm(prelinkCustomerId = null) {
   cancelEditCustomer();
   const formCard = document.getElementById('customerFormCard');
   const titleText = document.getElementById('custFormTitleText');
@@ -11605,7 +11826,15 @@ function openAddCustomerForm() {
   const cancelBtn = document.getElementById('custCancelEditBtn');
   const nameInput = document.getElementById('custNameInput');
 
-  if (titleText) titleText.textContent = 'Add New Customer';
+  populateCustBranchLinkSelect(null, prelinkCustomerId || '');
+  if (prelinkCustomerId) {
+    onCustBranchLinkChange(prelinkCustomerId);
+    const parentCust = customers.find(c => c && c.id === prelinkCustomerId);
+    if (titleText) titleText.textContent = parentCust ? `Add Branch for ${parentCust.name}` : 'Add New Branch';
+  } else {
+    if (titleText) titleText.textContent = 'Add New Customer';
+  }
+
   if (submitText) submitText.textContent = 'Save Customer';
   if (cancelBtn) cancelBtn.classList.remove('hidden');
 
@@ -11666,6 +11895,16 @@ function cancelEditCustomer() {
   if (staffPhoneInput) staffPhoneInput.value = '';
   if (phoneInput) phoneInput.value = '';
   if (notesInput) notesInput.value = '';
+
+  const hiddenGroupInput = document.getElementById('custBranchGroupIdInput');
+  const branchLinkSelect = document.getElementById('custBranchLinkSelect');
+  const branchInfoBadge = document.getElementById('custBranchLinkInfoBadge');
+  if (hiddenGroupInput) hiddenGroupInput.value = '';
+  if (branchLinkSelect) branchLinkSelect.value = '';
+  if (branchInfoBadge) {
+    branchInfoBadge.textContent = '';
+    branchInfoBadge.classList.add('hidden');
+  }
 
   if (titleText) titleText.textContent = 'Add New Customer';
   if (submitText) submitText.textContent = 'Save Customer';
@@ -11780,14 +12019,19 @@ function renderCustomersList() {
 
   uniqueFiltered.forEach((c, idx) => {
     const custId = getCustomerDisplayId(c, idx);
+    const linkedBranches = getLinkedBranches(c, true);
+    const branchBadge = linkedBranches.length > 1
+      ? `<span class="text-[10px] font-bold px-1.5 py-0.5 rounded-md bg-sky-50 text-sky-700 border border-sky-200 shrink-0 inline-flex items-center gap-0.5" title="Connected Branches / Same Owner"><i data-lucide="git-branch" class="w-2.5 h-2.5"></i><span>${linkedBranches.length} Branches</span></span>`
+      : '';
     const row = document.createElement('div');
     row.className = 'flex items-center justify-between px-3.5 py-2.5 bg-white hover:bg-slate-50 border border-slate-200/80 hover:border-blue-300 rounded-xl cursor-pointer transition shadow-2xs group active:scale-[0.99]';
     row.onclick = () => openCustomerProfile(c.id, 'customers');
     row.title = `Click to view profile of ${c.name}`;
     row.innerHTML = `
-      <div class="flex items-center gap-3 min-w-0">
+      <div class="flex items-center gap-2.5 min-w-0">
         <span class="text-[11px] font-mono font-bold px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 border border-slate-200 shrink-0 group-hover:bg-blue-50 group-hover:text-blue-700 group-hover:border-blue-200 transition-colors">${custId}</span>
         <span class="font-bold text-xs sm:text-sm text-slate-900 group-hover:text-blue-600 transition-colors truncate">${escapeHtml(c.name)}</span>
+        ${branchBadge}
       </div>
       <div class="flex items-center gap-1.5 shrink-0 text-slate-400 group-hover:text-blue-600 transition-colors">
         <i data-lucide="chevron-right" class="w-4 h-4"></i>
@@ -12015,6 +12259,7 @@ function syncCustomerMemberLegacyFields(cust) {
 function findDuplicateMemberPhone(phone, currentCustId = null, currentMemberId = null) {
   const clean = cleanPhoneNumber(phone);
   if (!clean) return null;
+  const currentCust = currentCustId ? customers.find(x => x && x.id === currentCustId) : null;
 
   for (const c of customers) {
     if (c.id === currentCustId) {
@@ -12027,6 +12272,11 @@ function findDuplicateMemberPhone(phone, currentCustId = null, currentMemberId =
           }
         }
       }
+      continue;
+    }
+
+    // Linked branches / same-owner shops may share the owner/manager phone
+    if (currentCust && areCustomersLinked(currentCust, c)) {
       continue;
     }
 
@@ -14362,11 +14612,19 @@ function getCustomerOrders(customerOrId, includeCancelled = false) {
       }
     }
 
-    // Match 4: By phone number
+    // Match 4: By phone number (only when order doesn't belong to another explicitly identified customer/branch)
     if (!isMatch && cleanPhones.length > 0) {
-      const oPhone = cleanPhoneNumber(typeof o.customer === 'object' ? (o.customer?.phone || o.customer?.ownerPhone || o.customer?.staffPhone) : '');
-      if (oPhone && cleanPhones.includes(oPhone)) {
-        isMatch = true;
+      const oCustId = (o.customer && typeof o.customer === 'object' && o.customer.id) ? o.customer.id : '';
+      const rawOName = (typeof o.customer === 'object' ? (o.customer?.name || '') : String(o.customer || '')).trim().toLowerCase();
+      const belongsToOtherId = Boolean(oCustId && targetId && oCustId !== targetId && customers.some(c => c && c.id === oCustId));
+      const belongsToOtherNamedShop = Boolean(rawOName && rawOName !== targetName && !aliasNames.has(rawOName) &&
+        customers.some(c => c && c.id !== targetId && c.name && c.name.trim().toLowerCase() === rawOName));
+
+      if (!belongsToOtherId && !belongsToOtherNamedShop) {
+        const oPhone = cleanPhoneNumber(typeof o.customer === 'object' ? (o.customer?.phone || o.customer?.ownerPhone || o.customer?.staffPhone) : '');
+        if (oPhone && cleanPhones.includes(oPhone)) {
+          isMatch = true;
+        }
       }
     }
 
@@ -14612,6 +14870,9 @@ function openCustomerProfile(customerId, fromView = null) {
   if (totalTonnesEl) totalTonnesEl.textContent = `${(totalKg / 1000).toFixed(2)} Tonnes`;
   if (lastOrderDateEl) lastOrderDateEl.textContent = lastOrderDate;
   if (activeStatusEl) activeStatusEl.textContent = ordersCount > 0 ? 'Active Buyer 🟢' : 'New Account 🌱';
+
+  // 2.5 Connected Branches & Same-Owner Shops Section
+  renderProfileBranchesSection(cust);
 
   // 3. Team Members Section
   renderProfileMembersList(cust);
@@ -14985,6 +15246,157 @@ function renderProfileMembersList(cust) {
   }).join('');
 }
 
+function renderProfileBranchesSection(cust) {
+  const container = document.getElementById('cpBranchesContainer');
+  const countBadge = document.getElementById('cpBranchesCountBadge');
+  const summaryBox = document.getElementById('cpBranchNetworkSummary');
+  const picker = document.getElementById('cpLinkExistingBranchPicker');
+  if (!container || !cust) return;
+
+  if (picker) picker.classList.add('hidden');
+
+  const branches = getLinkedBranches(cust, true);
+  if (countBadge) {
+    countBadge.textContent = `${branches.length} ${branches.length === 1 ? 'Shop' : 'Branches'}`;
+  }
+
+  if (branches.length <= 1) {
+    if (summaryBox) summaryBox.classList.add('hidden');
+    container.innerHTML = `
+      <div class="sm:col-span-2 p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-xs text-slate-500 flex items-center justify-between gap-2 flex-wrap">
+        <span>Standalone shop — no other branches connected yet.</span>
+        <span class="text-[11px] text-sky-700 font-semibold">Click '+ Add Branch' or 'Link Existing Shop' to connect same-owner outlets.</span>
+      </div>
+    `;
+    return;
+  }
+
+  // Compute Combined Branch Network Stats across all linked branches
+  let groupOrders = 0;
+  let groupKg = 0;
+  let groupSpend = 0;
+  const branchStats = branches.map(b => {
+    const bOrders = getCustomerOrders(b, false);
+    let bKg = 0;
+    let bAmt = 0;
+    bOrders.forEach(o => {
+      bKg += parseFloat(o.totalKg) || 0;
+      bAmt += parseFloat(o.totalAmount) || 0;
+    });
+    groupOrders += bOrders.length;
+    groupKg += bKg;
+    groupSpend += bAmt;
+    return { branch: b, ordersCount: bOrders.length, kg: bKg, spend: bAmt };
+  });
+
+  if (summaryBox) {
+    summaryBox.classList.remove('hidden');
+    const ordEl = document.getElementById('cpGroupTotalOrders');
+    const kgEl = document.getElementById('cpGroupTotalKg');
+    const spendEl = document.getElementById('cpGroupTotalSpend');
+    if (ordEl) ordEl.textContent = `${groupOrders} Orders`;
+    if (kgEl) kgEl.textContent = `${groupKg.toLocaleString('en-IN')} kg`;
+    if (spendEl) spendEl.textContent = `₹${Math.round(groupSpend).toLocaleString('en-IN')}`;
+  }
+
+  container.innerHTML = branchStats.map(({ branch, ordersCount, kg, spend }) => {
+    const isCurrent = branch.id === cust.id;
+    const bTown = getCustomerTown(branch) || getCustomerDistrict(branch) || 'Local';
+    const bCat = branch.category || 'Customer';
+    return `
+      <div class="p-3 rounded-xl border ${isCurrent ? 'bg-sky-50/70 border-sky-300 ring-1 ring-sky-200' : 'bg-white border-slate-200 hover:border-sky-300 hover:bg-slate-50'} transition flex items-center justify-between gap-2">
+        <div class="min-w-0 flex-1 ${isCurrent ? '' : 'cursor-pointer'}" ${isCurrent ? '' : `onclick="openCustomerProfile('${escapeHtml(branch.id)}')"`}>
+          <div class="flex items-center gap-1.5 flex-wrap">
+            <span class="font-extrabold text-xs text-slate-900 truncate">${escapeHtml(branch.name)}</span>
+            ${isCurrent ? '<span class="text-[9px] font-black px-1.5 py-0.5 rounded bg-sky-600 text-white">CURRENT</span>' : '<span class="text-[9px] font-bold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600">BRANCH</span>'}
+          </div>
+          <div class="text-[11px] text-slate-500 mt-0.5 truncate">🏙️ ${escapeHtml(bTown)} • ${escapeHtml(bCat)}</div>
+          <div class="text-[10px] font-bold text-slate-600 mt-1">${ordersCount} Orders • ${kg.toLocaleString('en-IN')} kg • <span class="text-blue-700">₹${Math.round(spend).toLocaleString('en-IN')}</span></div>
+        </div>
+        <div class="flex items-center gap-1 shrink-0">
+          ${!isCurrent ? `<button type="button" onclick="openCustomerProfile('${escapeHtml(branch.id)}')" class="p-1.5 text-sky-600 hover:bg-sky-100 rounded-lg text-xs font-bold transition" title="Open Branch Profile"><i data-lucide="external-link" class="w-3.5 h-3.5"></i></button>` : ''}
+          <button type="button" onclick="confirmUnlinkBranchCustomer('${escapeHtml(branch.id)}')" class="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition" title="Unlink from Branch Group"><i data-lucide="unlink" class="w-3.5 h-3.5"></i></button>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function openAddBranchFromProfile() {
+  if (!currentProfileCustomerId) return;
+  const custId = currentProfileCustomerId;
+  customerProfilePreviousView = 'customers';
+  closeCustomerProfile();
+  openAddCustomerForm(custId);
+}
+
+function toggleLinkExistingBranchPicker(forceState = null) {
+  const picker = document.getElementById('cpLinkExistingBranchPicker');
+  const select = document.getElementById('cpLinkExistingBranchSelect');
+  if (!picker || !currentProfileCustomerId) return;
+
+  const shouldOpen = forceState !== null ? forceState : picker.classList.contains('hidden');
+  if (!shouldOpen) {
+    picker.classList.add('hidden');
+    return;
+  }
+
+  const currentCust = customers.find(c => c && c.id === currentProfileCustomerId);
+  if (!currentCust) return;
+
+  if (select) {
+    const candidates = customers
+      .filter(c => c && c.id && c.id !== currentCust.id && !areCustomersLinked(currentCust, c))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+    let html = '<option value="">-- Choose Shop to Link --</option>';
+    candidates.forEach(c => {
+      const t = getCustomerTown(c) || '';
+      const o = c.ownerName ? ` • Owner: ${c.ownerName}` : '';
+      html += `<option value="${escapeHtml(c.id)}">${escapeHtml(c.name)}${t ? ` (${escapeHtml(t)})` : ''}${escapeHtml(o)}</option>`;
+    });
+    select.innerHTML = html;
+  }
+
+  picker.classList.remove('hidden');
+}
+
+function confirmLinkExistingBranchFromProfile() {
+  const select = document.getElementById('cpLinkExistingBranchSelect');
+  const targetId = select?.value;
+  if (!currentProfileCustomerId || !targetId) {
+    showNotification('Please select an existing shop to connect.');
+    return;
+  }
+
+  linkCustomersAsBranches(currentProfileCustomerId, targetId);
+  toggleLinkExistingBranchPicker(false);
+  openCustomerProfile(currentProfileCustomerId);
+  renderCustomersList();
+  showNotification('✓ Branch connected successfully!');
+}
+
+function confirmUnlinkBranchCustomer(branchId) {
+  if (!branchId) return;
+  const target = customers.find(c => c && c.id === branchId);
+  if (!target) return;
+
+  showConfirmModal({
+    title: 'Unlink Branch Connection?',
+    message: `Remove <strong>${escapeHtml(target.name)}</strong> from this connected branch group?`,
+    hint: 'The customer profile and its orders will stay intact as a standalone shop.',
+    confirmText: 'Unlink Branch',
+    confirmClass: 'bg-rose-600 hover:bg-rose-700 text-white',
+    onConfirm: () => {
+      unlinkBranchCustomer(branchId);
+      if (currentProfileCustomerId) {
+        openCustomerProfile(currentProfileCustomerId);
+      }
+      renderCustomersList();
+      showNotification(`Unlinked '${target.name}' from branch group.`);
+    }
+  });
+}
+
 window.initApp = initApp;
 window.openCustomerProfile = openCustomerProfile;
 window.closeCustomerProfile = closeCustomerProfile;
@@ -14994,6 +15406,16 @@ window.startOrderFromCustomerProfile = startOrderFromCustomerProfile;
 window.editCustomerFromProfile = editCustomerFromProfile;
 window.openAddMemberFormForProfile = openAddMemberFormForProfile;
 window.renderProfileMembersList = renderProfileMembersList;
+window.renderProfileBranchesSection = renderProfileBranchesSection;
+window.openAddBranchFromProfile = openAddBranchFromProfile;
+window.toggleLinkExistingBranchPicker = toggleLinkExistingBranchPicker;
+window.confirmLinkExistingBranchFromProfile = confirmLinkExistingBranchFromProfile;
+window.confirmUnlinkBranchCustomer = confirmUnlinkBranchCustomer;
+window.getLinkedBranches = getLinkedBranches;
+window.areCustomersLinked = areCustomersLinked;
+window.linkCustomersAsBranches = linkCustomersAsBranches;
+window.unlinkBranchCustomer = unlinkBranchCustomer;
+window.onCustBranchLinkChange = onCustBranchLinkChange;
 window.renderCustomerOrderHistory = renderCustomerOrderHistory;
 window.updateDashboard = updateDashboard;
 window.openLeaderboardModal = openLeaderboardModal;
