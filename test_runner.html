@@ -2420,6 +2420,128 @@ window.onerror = function(msg, url, line, col, err) {
     resetRealtimeListenerHandlesForTest();
   }
 
+  // ==========================================
+  // TEST 25: Polluted 'Ernakulam' Landmark Purge Across Customers, Cloud Sync, Orders & Delivery Display
+  // ==========================================
+  log("\n--- TEST 25: Polluted 'Ernakulam' Landmark Sanitization & Clean Propagation ---");
+  const snap25Customers = JSON.parse(JSON.stringify(customers));
+  const snap25Orders = JSON.parse(JSON.stringify(orders));
+  const snap25LsCust = localStorage.getItem(STORAGE_CUSTOMERS);
+  const snap25LsOrd = localStorage.getItem(STORAGE_ORDERS);
+  try {
+    // 1. Direct sanitizeCustomerLandmark rules
+    assert(sanitizeCustomerLandmark('Ernakulam', 'Thodupuzha', 'Idukki') === '',
+      "sanitizeCustomerLandmark strips stray 'Ernakulam' from Idukki/Thodupuzha customer");
+    assert(sanitizeCustomerLandmark('  Ernakulam\u2060 ', 'Ernakulam', 'Ernakulam') === '',
+      "sanitizeCustomerLandmark strips 'Ernakulam' even when customer town & district are Ernakulam");
+    assert(sanitizeCustomerLandmark('Idukki', 'Thodupuzha', 'Idukki') === '',
+      "sanitizeCustomerLandmark strips district name from landmark");
+    assert(sanitizeCustomerLandmark('Thodupuzha', 'Thodupuzha', 'Idukki') === '',
+      "sanitizeCustomerLandmark strips exact duplicate town name from landmark");
+    assert(sanitizeCustomerLandmark('Near Private Bus Stand', 'Thodupuzha', 'Idukki') === 'Near Private Bus Stand',
+      "sanitizeCustomerLandmark preserves genuine landmark ('Near Private Bus Stand')");
+    assert(sanitizeCustomerLandmark('MG Road, Near Padma Junction', 'Ernakulam', 'Ernakulam') === 'MG Road, Near Padma Junction',
+      "sanitizeCustomerLandmark preserves real multi-word landmarks");
+
+    // 2. Startup loadDataFromStorage purges polluted 'Ernakulam' landmark/place/location on Thodupuzha shop
+    const pollutedShop = {
+      id: 'c_thodupuzha_polluted_1',
+      name: 'Idukki Spice Mill',
+      category: 'Wholesaler',
+      district: 'Idukki',
+      town: 'Thodupuzha',
+      area: 'Thodupuzha',
+      landmark: 'Ernakulam',
+      place: 'Ernakulam',
+      location: 'Ernakulam, Thodupuzha, Idukki',
+      members: []
+    };
+    const genuineShop = {
+      id: 'c_thodupuzha_clean_2',
+      name: 'Thodupuzha Bakery',
+      category: 'Retailer',
+      district: 'Idukki',
+      town: 'Thodupuzha',
+      area: 'Thodupuzha',
+      landmark: 'Near Muncipal Stand',
+      place: 'Near Muncipal Stand',
+      location: 'Near Muncipal Stand, Thodupuzha, Idukki',
+      members: []
+    };
+    localStorage.setItem(STORAGE_CUSTOMERS, JSON.stringify([pollutedShop, genuineShop]));
+    loadDataFromStorage();
+
+    const cleanedThodu = customers.find(c => c.id === 'c_thodupuzha_polluted_1');
+    const keptGenuine = customers.find(c => c.id === 'c_thodupuzha_clean_2');
+    assert(cleanedThodu && cleanedThodu.landmark === '' && cleanedThodu.place === 'Thodupuzha' && cleanedThodu.location === 'Thodupuzha, Idukki',
+      `loadDataFromStorage heals polluted Thodupuzha customer (landmark: '${cleanedThodu?.landmark}', place: '${cleanedThodu?.place}', loc: '${cleanedThodu?.location}')`);
+    assert(keptGenuine && keptGenuine.landmark === 'Near Muncipal Stand',
+      "loadDataFromStorage keeps real landmark ('Near Muncipal Stand') untouched");
+    assert(getCustomerLandmark(cleanedThodu) === '' && getCustomerPlace(cleanedThodu) === 'Thodupuzha',
+      "getCustomerLandmark returns '' and getCustomerPlace returns 'Thodupuzha' after cleanup");
+
+    // 3. processIncomingCloudCustomers purges stale cloud 'Ernakulam' landmark & place
+    processIncomingCloudCustomers([{
+      id: 'c_thodupuzha_polluted_1',
+      name: 'Idukki Spice Mill',
+      category: 'Wholesaler',
+      district: 'Idukki',
+      town: 'Thodupuzha',
+      area: 'Thodupuzha',
+      landmark: 'Ernakulam',
+      place: 'Ernakulam',
+      location: 'Ernakulam, Thodupuzha, Idukki',
+      updatedAt: 0,
+      membersUpdatedAt: 0
+    }]);
+    const cloudCleanedThodu = customers.find(c => c.id === 'c_thodupuzha_polluted_1');
+    assert(cloudCleanedThodu && cloudCleanedThodu.landmark === '' && cloudCleanedThodu.place === 'Thodupuzha',
+      "processIncomingCloudCustomers strips 'Ernakulam' landmark & stale 'Ernakulam' place from cloud snapshots");
+
+    // 4. syncOrdersCustomerLocationsFromMaster + normalizeOrderCustomerNames heals polluted orders for Delivery App
+    orders = [{
+      id: 'ORD-THODU-25',
+      date: '2026-11-26',
+      customer: {
+        id: 'c_thodupuzha_polluted_1',
+        name: 'Idukki Spice Mill',
+        district: 'Idukki',
+        town: 'Thodupuzha',
+        area: 'Thodupuzha',
+        landmark: 'Ernakulam',
+        place: 'Ernakulam',
+        location: 'Ernakulam, Thodupuzha, Idukki'
+      },
+      items: [],
+      totalKg: 100,
+      totalAmount: 9000
+    }];
+    syncOrdersCustomerLocationsFromMaster(false);
+    const healedOrd25 = orders.find(o => o.id === 'ORD-THODU-25');
+    assert(healedOrd25 && healedOrd25.customer.landmark === '' && healedOrd25.customer.place === 'Thodupuzha' && healedOrd25.customer.location === 'Thodupuzha, Idukki',
+      "syncOrdersCustomerLocationsFromMaster purges polluted 'Ernakulam' landmark from order records for Delivery App");
+
+    // 5. Clearing landmark in Edit Customer succeeds even if hidden custPlaceInput holds 'Ernakulam'
+    document.getElementById('custEditId').value = 'c_thodupuzha_clean_2';
+    document.getElementById('custNameInput').value = 'Thodupuzha Bakery';
+    document.getElementById('custDistrictSelect').value = 'Idukki';
+    document.getElementById('custTownInput').value = 'Thodupuzha';
+    document.getElementById('custLandmarkInput').value = '';
+    document.getElementById('custPlaceInput').value = 'Ernakulam';
+    handleCustomerFormSubmit({ preventDefault: () => {} });
+    const afterClearLm = customers.find(c => c.id === 'c_thodupuzha_clean_2');
+    assert(afterClearLm && afterClearLm.landmark === '' && afterClearLm.place === 'Thodupuzha',
+      "Clearing custLandmarkInput permanently clears landmark despite hidden custPlaceInput='Ernakulam'");
+  } finally {
+    customers = snap25Customers;
+    orders = snap25Orders;
+    if (snap25LsCust !== null) localStorage.setItem(STORAGE_CUSTOMERS, snap25LsCust);
+    else localStorage.removeItem(STORAGE_CUSTOMERS);
+    if (snap25LsOrd !== null) localStorage.setItem(STORAGE_ORDERS, snap25LsOrd);
+    else localStorage.removeItem(STORAGE_ORDERS);
+    updateDashboard();
+  }
+
   log(`\n================================`);
   log(`TEST RESULTS: ${passed} PASSED, ${failed} FAILED`);
   if (failed === 0) {

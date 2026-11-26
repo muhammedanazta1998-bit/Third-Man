@@ -1336,24 +1336,31 @@ function loadDataFromStorage() {
 
     // Ensure all customers have stripped/canonical district, town, landmark, and members before harvesting towns
     customers.forEach(c => {
-      const nextDistrict = cleanInvisibleAndWhitespace(c.district) || 'Ernakulam';
-      const rawTownCandidate = cleanInvisibleAndWhitespace(c.town) ||
-        cleanInvisibleAndWhitespace(c.area) ||
-        (cleanInvisibleAndWhitespace(c.location) && getTownNormalizedKey(c.location) !== 'local' ? cleanInvisibleAndWhitespace(c.location) : 'Ernakulam');
+      const nextDistrict = cleanTownString(c.district) || 'Ernakulam';
+      const rawTownCandidate = cleanTownString(c.town) ||
+        cleanTownString(c.area) ||
+        (cleanTownString(c.location) && !String(c.location).includes(',') && getTownNormalizedKey(c.location) !== 'local' ? cleanTownString(c.location) : 'Ernakulam');
       const nextTown = resolveCanonicalTownName(rawTownCandidate, nextDistrict) || 'Ernakulam';
-      const nextLandmark = cleanInvisibleAndWhitespace(c.landmark || c.place || '');
+      const rawExistingLandmark = cleanInvisibleAndWhitespace(c.landmark || '');
+      const nextLandmark = sanitizeCustomerLandmark(rawExistingLandmark, nextTown, nextDistrict);
       const nextPanchayath = cleanInvisibleAndWhitespace(c.panchayath || '');
-      const rawAreaCandidate = cleanInvisibleAndWhitespace(c.area);
+      const rawAreaCandidate = cleanTownString(c.area);
       const nextArea = rawAreaCandidate ? (resolveCanonicalTownName(rawAreaCandidate, nextDistrict) || nextTown) : nextTown;
-      const nextPlace = cleanInvisibleAndWhitespace(c.place) || nextLandmark || nextTown;
+      const nextPlace = nextLandmark || nextTown;
       const rawLoc = cleanInvisibleAndWhitespace(c.location);
-      const nextLocation = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
-        ? (resolveCanonicalTownName(rawLoc, nextDistrict) || nextTown)
-        : (rawLoc || nextTown);
+      const rawLocLower = rawLoc.toLowerCase();
+      const landmarkWasStripped = Boolean(rawExistingLandmark && !nextLandmark);
+      const hasPollutedLocation = !rawLoc ||
+        getTownNormalizedKey(rawLoc) === 'local' ||
+        (rawLocLower.startsWith('ernakulam,') && getTownNormalizedKey(nextTown) !== 'ernakulam') ||
+        (landmarkWasStripped && rawLocLower.includes(rawExistingLandmark.toLowerCase()));
+      const nextLocation = hasPollutedLocation
+        ? formatCleanCustomerLocation(nextLandmark, nextTown, nextDistrict, nextPanchayath)
+        : (rawLoc.includes(',') ? rawLoc : (resolveCanonicalTownName(rawLoc, nextDistrict) || nextTown));
 
-      if (c.district !== nextDistrict || c.town !== nextTown || c.landmark !== nextLandmark ||
-          c.panchayath !== nextPanchayath || c.area !== nextArea || c.place !== nextPlace ||
-          c.location !== nextLocation) {
+      if ((c.district || '') !== nextDistrict || (c.town || '') !== nextTown || (c.landmark || '') !== nextLandmark ||
+          (c.panchayath || '') !== nextPanchayath || (c.area || '') !== nextArea || (c.place || '') !== nextPlace ||
+          (c.location || '') !== nextLocation) {
         customersLocationNormalized = true;
       }
 
@@ -1758,15 +1765,22 @@ function processIncomingCloudCustomers(remoteCustomers) {
       cleanTownString(merged.area) ||
       (cleanTownString(merged.location) && !String(merged.location).includes(',') && getTownNormalizedKey(merged.location) !== 'local' ? cleanTownString(merged.location) : '');
     const cleanTown = rawTown ? resolveCanonicalTownName(rawTown, cleanDistrict) : '';
-    const cleanLandmark = cleanInvisibleAndWhitespace(merged.landmark || merged.place || '');
+    const rawRemoteLandmark = cleanInvisibleAndWhitespace(merged.landmark || '');
+    const cleanLandmark = sanitizeCustomerLandmark(rawRemoteLandmark, cleanTown, cleanDistrict);
     const cleanPanchayath = cleanInvisibleAndWhitespace(merged.panchayath || '');
     const rawArea = cleanTownString(merged.area || '');
     const cleanArea = rawArea ? (resolveCanonicalTownName(rawArea, cleanDistrict) || cleanTown) : cleanTown;
-    const cleanPlace = cleanInvisibleAndWhitespace(merged.place || '') || cleanLandmark || cleanTown;
+    const cleanPlace = cleanLandmark || cleanTown;
     const rawLoc = cleanInvisibleAndWhitespace(merged.location || '');
-    const cleanLocation = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
-      ? (rawLoc.includes(',') ? rawLoc : (resolveCanonicalTownName(rawLoc, cleanDistrict) || cleanTown || 'Ernakulam'))
-      : (rawLoc || cleanTown || 'Ernakulam');
+    const rawLocLower = rawLoc.toLowerCase();
+    const remoteLandmarkStripped = Boolean(rawRemoteLandmark && !cleanLandmark);
+    const hasPollutedRemoteLoc = !rawLoc ||
+      getTownNormalizedKey(rawLoc) === 'local' ||
+      (rawLocLower.startsWith('ernakulam,') && getTownNormalizedKey(cleanTown) !== 'ernakulam') ||
+      (remoteLandmarkStripped && rawLocLower.includes(rawRemoteLandmark.toLowerCase()));
+    const cleanLocation = hasPollutedRemoteLoc
+      ? formatCleanCustomerLocation(cleanLandmark, cleanTown, cleanDistrict, cleanPanchayath)
+      : (rawLoc.includes(',') ? rawLoc : (resolveCanonicalTownName(rawLoc, cleanDistrict) || cleanTown || 'Ernakulam'));
 
     if (merged.district !== cleanDistrict || (cleanTown && merged.town !== cleanTown) ||
         (merged.landmark || '') !== cleanLandmark || (merged.panchayath || '') !== cleanPanchayath ||
@@ -1796,11 +1810,11 @@ function processIncomingCloudCustomers(remoteCustomers) {
         merged.category = localMatch.category || merged.category;
         merged.district = cleanTownString(localMatch.district) || merged.district;
         merged.town = cleanTownString(localMatch.town) || '';
-        merged.landmark = cleanInvisibleAndWhitespace(localMatch.landmark || '');
+        merged.landmark = sanitizeCustomerLandmark(localMatch.landmark || '', merged.town, merged.district);
         merged.panchayath = cleanInvisibleAndWhitespace(localMatch.panchayath || '');
         merged.area = cleanTownString(localMatch.area) || merged.town;
-        merged.place = cleanInvisibleAndWhitespace(localMatch.place || '') || merged.landmark || merged.town;
-        merged.location = cleanInvisibleAndWhitespace(localMatch.location || '') || merged.town || 'Ernakulam';
+        merged.place = merged.landmark || merged.town;
+        merged.location = formatCleanCustomerLocation(merged.landmark, merged.town, merged.district, merged.panchayath);
         merged.notes = localMatch.notes !== undefined ? localMatch.notes : (merged.notes || '');
         if (localMatch.branchGroupId) merged.branchGroupId = localMatch.branchGroupId;
         else delete merged.branchGroupId;
@@ -3328,13 +3342,22 @@ function syncOrdersCustomerLocationsFromMaster(syncToCloud = true) {
         if (expectedPlace && (o.customer.place || '') !== expectedPlace) { o.customer.place = expectedPlace; changed = true; }
         if (mLocation && (o.customer.location || '') !== mLocation) { o.customer.location = mLocation; changed = true; }
       } else {
-        // Still strip any dirty/invisible/? chars from standalone orders
+        // Still strip any dirty/invisible/? chars or polluted Ernakulam landmark from standalone orders
         const cleanDist = cleanTownString(o.customer.district) || 'Ernakulam';
         const rawT = cleanTownString(o.customer.town || o.customer.area || '');
         const cleanT = rawT ? resolveCanonicalTownName(rawT, cleanDist) : '';
+        const cleanLm = sanitizeCustomerLandmark(o.customer.landmark || '', cleanT, cleanDist);
+        const expectedPl = cleanLm || cleanT;
         if (o.customer.district !== cleanDist) { o.customer.district = cleanDist; changed = true; }
         if (cleanT && o.customer.town !== cleanT) { o.customer.town = cleanT; changed = true; }
         if (cleanT && o.customer.area !== cleanT) { o.customer.area = cleanT; changed = true; }
+        if ((o.customer.landmark || '') !== cleanLm) { o.customer.landmark = cleanLm; changed = true; }
+        if (expectedPl && (o.customer.place || '') !== expectedPl) { o.customer.place = expectedPl; changed = true; }
+        const rawLocStr = cleanInvisibleAndWhitespace(o.customer.location || '');
+        if (!rawLocStr || (cleanT && getTownNormalizedKey(cleanT) !== 'ernakulam' && rawLocStr.toLowerCase().startsWith('ernakulam,'))) {
+          const rebuiltLoc = formatCleanCustomerLocation(cleanLm, cleanT, cleanDist, cleanInvisibleAndWhitespace(o.customer.panchayath || ''));
+          if (o.customer.location !== rebuiltLoc) { o.customer.location = rebuiltLoc; changed = true; }
+        }
       }
 
       if (changed) {
@@ -4235,17 +4258,22 @@ function extractCustomersFromOrdersIfMissing(syncToCloud = false) {
     });
 
     if (!exists) {
+      const extDist = (typeof c === 'object' && c.district) ? cleanTownString(c.district) || 'Ernakulam' : 'Ernakulam';
+      const extTownRaw = (typeof c === 'object' && (c.town || c.area)) ? (c.town || c.area) : ((typeof c === 'object' && c.location && !String(c.location).includes(',')) ? c.location : 'Ernakulam');
+      const extTown = resolveCanonicalTownName(extTownRaw, extDist) || 'Ernakulam';
+      const extLandmark = (typeof c === 'object') ? sanitizeCustomerLandmark(c.landmark || '', extTown, extDist) : '';
+      const extPanch = (typeof c === 'object' && c.panchayath) ? cleanInvisibleAndWhitespace(c.panchayath) : '';
       const newCust = {
         id: (typeof c === 'object' && c.id) ? c.id : ('c_' + Date.now() + '_' + Math.random().toString(36).substr(2, 4)),
         name: cName,
         category: (typeof c === 'object' && c.category) ? c.category : 'Caterer',
-        district: (typeof c === 'object' && c.district) ? c.district : 'Ernakulam',
-        town: (typeof c === 'object' && (c.town || c.area || c.location)) ? (c.town || c.area || c.location) : 'Ernakulam',
-        landmark: (typeof c === 'object' && (c.landmark || c.place)) ? (c.landmark || c.place) : '',
-        panchayath: (typeof c === 'object' && c.panchayath) ? c.panchayath : '',
-        area: (typeof c === 'object' && (c.area || c.town || c.location)) ? (c.area || c.town || c.location) : 'Ernakulam',
-        place: (typeof c === 'object' && (c.place || c.landmark)) ? (c.place || c.landmark) : '',
-        location: (typeof c === 'object' && (c.location || c.town)) ? c.location : 'Ernakulam',
+        district: extDist,
+        town: extTown,
+        landmark: extLandmark,
+        panchayath: extPanch,
+        area: extTown,
+        place: extLandmark || extTown,
+        location: formatCleanCustomerLocation(extLandmark, extTown, extDist, extPanch),
         ownerName: (typeof c === 'object' && c.ownerName) ? c.ownerName : '',
         ownerPhone: cOwnerPhone || cPhone,
         staffName: (typeof c === 'object' && c.staffName) ? c.staffName : '',
@@ -4288,15 +4316,18 @@ function sanitizeOrderForFirestore(order) {
   const custDistrict = cleanTownString(rawCust.district) || 'Ernakulam';
   const rawTownCandidate = cleanTownString(rawCust.town || rawCust.area || '');
   const custTown = rawTownCandidate ? resolveCanonicalTownName(rawTownCandidate, custDistrict) : '';
-  const custLandmark = cleanInvisibleAndWhitespace(rawCust.landmark || '');
+  const custLandmark = sanitizeCustomerLandmark(rawCust.landmark || '', custTown, custDistrict);
   const custPanchayath = cleanInvisibleAndWhitespace(rawCust.panchayath || '');
   const rawAreaCandidate = cleanTownString(rawCust.area || '');
   const custArea = rawAreaCandidate ? resolveCanonicalTownName(rawAreaCandidate, custDistrict) : custTown;
-  const custPlace = cleanInvisibleAndWhitespace(rawCust.place || '') || custLandmark || custTown;
+  const custPlace = custLandmark || custTown;
   const rawLoc = cleanInvisibleAndWhitespace(rawCust.location || '');
-  const custLocation = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
-    ? (rawLoc.includes(',') ? rawLoc : (resolveCanonicalTownName(rawLoc, custDistrict) || custTown || 'Ernakulam'))
-    : (rawLoc || custTown || 'Ernakulam');
+  const custLocPolluted = !rawLoc ||
+    getTownNormalizedKey(rawLoc) === 'local' ||
+    (rawLoc.toLowerCase().startsWith('ernakulam,') && getTownNormalizedKey(custTown) !== 'ernakulam');
+  const custLocation = custLocPolluted
+    ? formatCleanCustomerLocation(custLandmark, custTown, custDistrict, custPanchayath)
+    : (rawLoc.includes(',') ? rawLoc : (resolveCanonicalTownName(rawLoc, custDistrict) || custTown || 'Ernakulam'));
 
   const cleanCustomer = {
     id: String(rawCust.id || ('c_' + Date.now())),
@@ -4985,6 +5016,39 @@ function getTownNormalizedKey(rawTown) {
   return cleanTownString(rawTown).toLowerCase();
 }
 
+/**
+ * Strips polluted/default District or Town names (especially stray "Ernakulam")
+ * from a shop's Landmark / Spot so only genuine landmarks are stored or shown.
+ */
+function sanitizeCustomerLandmark(rawLandmark, town = '', district = '') {
+  const clean = cleanInvisibleAndWhitespace(rawLandmark || '');
+  if (!clean) return '';
+  const key = getTownNormalizedKey(clean);
+  if (!key || key === 'local' || key === 'nil' || key === 'none' || key === 'n/a') return '';
+  if (key === 'ernakulam') return '';
+
+  const townKey = getTownNormalizedKey(town || '');
+  const distKey = getTownNormalizedKey(district || '');
+  if (townKey && key === townKey) return '';
+  if (distKey && key === distKey) return '';
+
+  if (typeof DEFAULT_DISTRICT_TOWNS === 'object' && DEFAULT_DISTRICT_TOWNS) {
+    const isDistrictName = Object.keys(DEFAULT_DISTRICT_TOWNS).some(d => getTownNormalizedKey(d) === key);
+    if (isDistrictName) return '';
+  }
+
+  return clean;
+}
+
+function formatCleanCustomerLocation(landmark, town, district, panchayath = '') {
+  const parts = [];
+  if (landmark) parts.push(landmark);
+  if (town) parts.push(town);
+  if (district && district.toLowerCase() !== (town || '').toLowerCase()) parts.push(district);
+  if (panchayath) parts.push(`(${panchayath})`);
+  return parts.length > 0 ? parts.join(', ') : (district || 'Ernakulam');
+}
+
 function formatCanonicalTownLabel(rawTown) {
   const clean = cleanTownString(rawTown);
   if (!clean) return '';
@@ -5183,11 +5247,13 @@ function getCustomerLandmark(cust) {
   if (!cust) return '';
   const extractDirectLandmark = (obj) => {
     if (!obj || typeof obj !== 'object') return '';
-    const lm = cleanInvisibleAndWhitespace(obj.landmark || '');
+    const dist = cleanTownString(obj.district || '') || 'Ernakulam';
+    const town = cleanTownString(obj.town || obj.area || '');
+    const lm = sanitizeCustomerLandmark(obj.landmark || '', town, dist);
     if (lm) return lm;
-    const pl = cleanInvisibleAndWhitespace(obj.place || '');
-    const tKey = getTownNormalizedKey(obj.town || obj.area || '');
-    if (pl && getTownNormalizedKey(pl) !== tKey) return pl;
+    // Only fall back to place when it passes strict landmark sanitization (not a district/town/Ernakulam)
+    const pl = sanitizeCustomerLandmark(obj.place || '', town, dist);
+    if (pl) return pl;
     return '';
   };
   const master = resolveMasterCustomerRecord(cust);
@@ -5897,15 +5963,22 @@ function normalizeOrderCustomerNames() {
       const nextDist = cleanTownString(o.customer.district) || 'Ernakulam';
       const rawTownCandidate = cleanTownString(o.customer.town || o.customer.area || '');
       const nextTown = rawTownCandidate ? resolveCanonicalTownName(rawTownCandidate, nextDist) : '';
-      const nextLandmark = cleanInvisibleAndWhitespace(o.customer.landmark || '');
+      const rawExistingOrderLm = cleanInvisibleAndWhitespace(o.customer.landmark || '');
+      const nextLandmark = sanitizeCustomerLandmark(rawExistingOrderLm, nextTown, nextDist);
       const nextPanchayath = cleanInvisibleAndWhitespace(o.customer.panchayath || '');
       const rawAreaCandidate = cleanTownString(o.customer.area || '');
       const nextArea = rawAreaCandidate ? (resolveCanonicalTownName(rawAreaCandidate, nextDist) || nextTown) : nextTown;
-      const nextPlace = cleanInvisibleAndWhitespace(o.customer.place || '') || nextLandmark || nextTown;
+      const nextPlace = nextLandmark || nextTown;
       const rawLoc = cleanInvisibleAndWhitespace(o.customer.location || '');
-      const nextLoc = (rawLoc && getTownNormalizedKey(rawLoc) !== 'local')
-        ? (rawLoc.includes(',') ? rawLoc : (resolveCanonicalTownName(rawLoc, nextDist) || nextTown || 'Ernakulam'))
-        : (rawLoc || nextTown || o.customer.location || '');
+      const rawLocLower = rawLoc.toLowerCase();
+      const orderLmStripped = Boolean(rawExistingOrderLm && !nextLandmark);
+      const orderLocPolluted = !rawLoc ||
+        getTownNormalizedKey(rawLoc) === 'local' ||
+        (rawLocLower.startsWith('ernakulam,') && getTownNormalizedKey(nextTown) !== 'ernakulam') ||
+        (orderLmStripped && rawLocLower.includes(rawExistingOrderLm.toLowerCase()));
+      const nextLoc = orderLocPolluted
+        ? formatCleanCustomerLocation(nextLandmark, nextTown, nextDist, nextPanchayath)
+        : (rawLoc.includes(',') ? rawLoc : (resolveCanonicalTownName(rawLoc, nextDist) || nextTown || 'Ernakulam'));
 
       if (o.customer.district !== nextDist ||
           (nextTown && o.customer.town !== nextTown) ||
@@ -6089,15 +6162,22 @@ function deduplicateCustomersList(inputList = null, syncDeletionsToCloud = false
       : (cleanTownString(item.location) && !String(item.location).includes(',') && getTownNormalizedKey(item.location) !== 'local'
           ? resolveCanonicalTownName(item.location, cleanDist)
           : '');
-    const cleanLandmarkStr = cleanInvisibleAndWhitespace(item.landmark || '');
+    const rawLmStr = cleanInvisibleAndWhitespace(item.landmark || '');
+    const cleanLandmarkStr = sanitizeCustomerLandmark(rawLmStr, cleanTownStr, cleanDist);
     const cleanPanchayathStr = cleanInvisibleAndWhitespace(item.panchayath || '');
     const rawAreaStr = cleanTownString(item.area || '');
     const cleanAreaStr = rawAreaStr ? (resolveCanonicalTownName(rawAreaStr, cleanDist) || cleanTownStr) : cleanTownStr;
-    const cleanPlaceStr = cleanInvisibleAndWhitespace(item.place || '') || cleanLandmarkStr || cleanTownStr;
+    const cleanPlaceStr = cleanLandmarkStr || cleanTownStr;
     const rawLocStr = cleanInvisibleAndWhitespace(item.location || '');
-    const cleanLocStr = (rawLocStr && getTownNormalizedKey(rawLocStr) !== 'local')
-      ? (rawLocStr.includes(',') ? rawLocStr : (resolveCanonicalTownName(rawLocStr, cleanDist) || cleanTownStr || 'Ernakulam'))
-      : (rawLocStr || cleanTownStr || 'Ernakulam');
+    const rawLocStrLower = rawLocStr.toLowerCase();
+    const dedupLmStripped = Boolean(rawLmStr && !cleanLandmarkStr);
+    const dedupLocPolluted = !rawLocStr ||
+      getTownNormalizedKey(rawLocStr) === 'local' ||
+      (rawLocStrLower.startsWith('ernakulam,') && getTownNormalizedKey(cleanTownStr) !== 'ernakulam') ||
+      (dedupLmStripped && rawLocStrLower.includes(rawLmStr.toLowerCase()));
+    const cleanLocStr = dedupLocPolluted
+      ? formatCleanCustomerLocation(cleanLandmarkStr, cleanTownStr, cleanDist, cleanPanchayathStr)
+      : (rawLocStr.includes(',') ? rawLocStr : (resolveCanonicalTownName(rawLocStr, cleanDist) || cleanTownStr || 'Ernakulam'));
 
     item.district = cleanDist;
     if (cleanTownStr) item.town = cleanTownStr;
@@ -7425,7 +7505,7 @@ function saveQuickCustomerAndApply() {
     const staffName = document.getElementById('customerStaffName')?.value.trim() || '';
     const staffRole = document.getElementById('customerStaffRole')?.value || 'Chef / Cook';
     const staffPhone = cleanPhoneNumber(document.getElementById('customerStaffPhone')?.value.trim() || '');
-    const landmark = cleanInvisibleAndWhitespace(document.getElementById('orderLandmarkInput')?.value || '');
+    const landmark = sanitizeCustomerLandmark(document.getElementById('orderLandmarkInput')?.value || '', town, dist);
     const panchayath = cleanInvisibleAndWhitespace(document.getElementById('orderPanchayathInput')?.value || '');
 
     let locParts = [];
@@ -7578,8 +7658,9 @@ async function handleSaveOrder(event) {
   const customerDistrict = cleanInvisibleAndWhitespace(document.getElementById('orderDistrictSelect')?.value || '') || 'Ernakulam';
   let customerTown = cleanInvisibleAndWhitespace(document.getElementById('orderTownInput')?.value || '') ||
     cleanInvisibleAndWhitespace(document.getElementById('customerArea')?.value || '');
-  const customerLandmark = cleanInvisibleAndWhitespace(document.getElementById('orderLandmarkInput')?.value || '') ||
-    cleanInvisibleAndWhitespace(document.getElementById('customerPlace')?.value || '');
+  const orderLandmarkEl = document.getElementById('orderLandmarkInput');
+  const rawOrderLandmark = orderLandmarkEl ? orderLandmarkEl.value : (document.getElementById('customerPlace')?.value || '');
+  const customerLandmark = sanitizeCustomerLandmark(rawOrderLandmark, customerTown, customerDistrict);
   const customerPanchayath = cleanInvisibleAndWhitespace(document.getElementById('orderPanchayathInput')?.value || '');
   const customerLocationRaw = cleanInvisibleAndWhitespace(document.getElementById('customerLocation')?.value || '');
 
@@ -12452,8 +12533,11 @@ function handleCustomerFormSubmit(event) {
     const district = cleanInvisibleAndWhitespace(document.getElementById('custDistrictSelect')?.value || '') || 'Ernakulam';
     const rawTown = cleanInvisibleAndWhitespace(document.getElementById('custTownInput')?.value || '') ||
       cleanInvisibleAndWhitespace(document.getElementById('custAreaInput')?.value || '');
-    const landmark = cleanInvisibleAndWhitespace(document.getElementById('custLandmarkInput')?.value || '') ||
-      cleanInvisibleAndWhitespace(document.getElementById('custPlaceInput')?.value || '');
+    const town = rawTown ? (saveNewDistrictTown(district, rawTown) || resolveCanonicalTownName(rawTown, district)) : '';
+    const custLandmarkInputEl = document.getElementById('custLandmarkInput');
+    const rawCustLandmark = custLandmarkInputEl ? custLandmarkInputEl.value : (document.getElementById('custPlaceInput')?.value || '');
+    const landmark = sanitizeCustomerLandmark(rawCustLandmark, town, district);
+    if (custLandmarkInputEl) custLandmarkInputEl.value = landmark;
     const panchayath = cleanInvisibleAndWhitespace(document.getElementById('custPanchayathInput')?.value || '');
     const loc = cleanInvisibleAndWhitespace(document.getElementById('custLocationInput')?.value || '');
     const ownerName = document.getElementById('custOwnerNameInput')?.value.trim() || '';
@@ -12469,7 +12553,6 @@ function handleCustomerFormSubmit(event) {
       return;
     }
 
-    const town = rawTown ? (saveNewDistrictTown(district, rawTown) || resolveCanonicalTownName(rawTown, district)) : '';
     const custTownInputEl = document.getElementById('custTownInput');
     if (custTownInputEl && town) custTownInputEl.value = town;
 
@@ -12829,7 +12912,7 @@ function editCustomer(customerId) {
     if (nameInput) nameInput.value = cleanInvisibleAndWhitespace(cust.name || '');
     if (catInput) catInput.value = cust.category || 'Caterer';
     if (areaInput) areaInput.value = custTown || getCustomerLocation(cust);
-    if (placeInput) placeInput.value = custLandmark;
+    if (placeInput) placeInput.value = custLandmark || custTown;
     if (locInput) locInput.value = getCustomerLocation(cust);
     const cleanStaffP = cleanPhoneNumber(cust.staffPhone);
     const cleanCustP = cleanPhoneNumber(cust.phone);
@@ -16535,6 +16618,8 @@ window.startOrderFromLeaderboard = startOrderFromLeaderboard;
 window.renderLeaderboard = renderLeaderboard;
 window.renderLocationsLeaderboard = renderLocationsLeaderboard;
 window.cleanTownString = cleanTownString;
+window.sanitizeCustomerLandmark = sanitizeCustomerLandmark;
+window.formatCleanCustomerLocation = formatCleanCustomerLocation;
 window.resolveMasterCustomerRecord = resolveMasterCustomerRecord;
 window.syncOrdersCustomerLocationsFromMaster = syncOrdersCustomerLocationsFromMaster;
 window.toggleModalFullscreen = toggleModalFullscreen;

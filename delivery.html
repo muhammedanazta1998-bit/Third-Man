@@ -653,6 +653,33 @@
         .trim();
     }
 
+    const DELIVERY_DISTRICT_NAMES = new Set([
+      'thiruvananthapuram', 'kollam', 'pathanamthitta', 'alappuzha', 'kottayam',
+      'idukki', 'ernakulam', 'thrissur', 'palakkad', 'malappuram',
+      'kozhikode', 'wayanad', 'kannur', 'kasaragod'
+    ]);
+
+    function cleanDeliveryLandmark(rawLm, town = '', district = '') {
+      const clean = cleanDeliveryLocationText(rawLm || '');
+      if (!clean) return '';
+      const key = clean.toLowerCase();
+      if (key === 'local' || key === 'nil' || key === 'none' || key === 'n/a' || key === 'ernakulam') return '';
+      if (DELIVERY_DISTRICT_NAMES.has(key)) return '';
+      if (town && key === cleanDeliveryLocationText(town).toLowerCase()) return '';
+      if (district && key === cleanDeliveryLocationText(district).toLowerCase()) return '';
+      return clean;
+    }
+
+    function formatDeliveryDisplayLocation(town, landmark) {
+      const cleanT = cleanDeliveryLocationText(town || '');
+      const cleanLm = cleanDeliveryLocationText(landmark || '');
+      if (cleanT && cleanLm) {
+        if (cleanLm.toLowerCase().includes(cleanT.toLowerCase())) return cleanLm;
+        return `${cleanT} • ${cleanLm}`;
+      }
+      return cleanT || cleanLm || '';
+    }
+
     function sanitizeOrderForDelivery(raw, docId) {
       if (!raw || !raw.id) return null;
       const c = (raw.customer && typeof raw.customer === 'object') ? raw.customer : {};
@@ -668,6 +695,13 @@
         totalAmount: (it.totalAmount !== undefined && it.totalAmount !== null) ? parseFloat(it.totalAmount) : 0
       }));
 
+      const custDistrict = cleanDeliveryLocationText(c.district || '');
+      const rawTown = cleanDeliveryLocationText(c.town || c.area || '');
+      const fallbackLocTown = (!rawTown && c.location && !String(c.location).includes(',')) ? cleanDeliveryLocationText(c.location) : '';
+      const custTown = rawTown || (fallbackLocTown && fallbackLocTown.toLowerCase() !== 'local' ? fallbackLocTown : '');
+      const custLandmark = cleanDeliveryLandmark(c.landmark || '', custTown, custDistrict) ||
+                           cleanDeliveryLandmark(c.place || '', custTown, custDistrict);
+
       const sanitized = {
         id: String(raw.id),
         _firestoreDocId: docId ? String(docId) : (raw._firestoreDocId ? String(raw._firestoreDocId) : String(raw.id)),
@@ -681,10 +715,11 @@
         updatedAt: raw.updatedAt || '',
         customer: {
           name: custName,
-          town: cleanDeliveryLocationText(c.town || c.area || c.location || ''),
-          landmark: cleanDeliveryLocationText(c.landmark || ''),
-          place: cleanDeliveryLocationText(c.place || ''),
-          area: cleanDeliveryLocationText(c.area || ''),
+          district: custDistrict,
+          town: custTown,
+          landmark: custLandmark,
+          place: custLandmark || custTown,
+          area: custTown,
           location: cleanDeliveryLocationText(c.location || ''),
           phone: contactPhone
         },
@@ -952,7 +987,7 @@
 
       activeBannerOrderId = order.id;
       const custName = getCustName(order);
-      const location = getCustLandmark(order) || getCustTown(order) || '';
+      const location = formatDeliveryDisplayLocation(getCustTown(order), getCustLandmark(order));
       const items = Array.isArray(order.items) ? order.items : [];
       const totalBags = (order.bagQty !== undefined) ? order.bagQty : items.reduce((s, it) => s + (parseFloat(it.bagQty) || 0), 0);
       const totalAmount = (order.totalAmount !== undefined && order.totalAmount !== null)
@@ -1891,7 +1926,7 @@
       const custLandmark = getCustLandmark(o);
       const custPhone = getCustPhone(o);
       const cleanPhone = custPhone.replace(/\D/g, '');
-      const displayLocation = custLandmark || custTown;
+      const displayLocation = formatDeliveryDisplayLocation(custTown, custLandmark);
 
       // Priority pill
       const urgencyPill = isUrgent
@@ -2022,7 +2057,7 @@
       const custLandmark = getCustLandmark(o);
       const custPhone = getCustPhone(o);
       const cleanPhone = custPhone.replace(/\D/g, '');
-      const displayLocation = custLandmark || custTown;
+      const displayLocation = formatDeliveryDisplayLocation(custTown, custLandmark);
 
       // Priority pill
       const urgencyPill = isUrgent
@@ -2219,7 +2254,11 @@
     function getCustTown(o) {
       if (!o.customer) return '';
       if (typeof o.customer === 'object') {
-        return o.customer.town || o.customer.area || o.customer.location || '';
+        const direct = cleanDeliveryLocationText(o.customer.town || o.customer.area || '');
+        if (direct && direct.toLowerCase() !== 'local') return direct;
+        const loc = cleanDeliveryLocationText(o.customer.location || '');
+        if (loc && !loc.includes(',') && loc.toLowerCase() !== 'local') return loc;
+        return '';
       }
       return '';
     }
@@ -2227,12 +2266,12 @@
     function getCustLandmark(o) {
       if (!o || !o.customer) return '';
       if (typeof o.customer === 'object') {
-        if (o.customer.landmark && typeof o.customer.landmark === 'string' && o.customer.landmark.trim()) {
-          return o.customer.landmark.trim();
-        }
-        if (o.customer.place && typeof o.customer.place === 'string' && o.customer.place.trim() && o.customer.place !== o.customer.town && o.customer.place !== o.customer.area) {
-          return o.customer.place.trim();
-        }
+        const town = getCustTown(o);
+        const dist = cleanDeliveryLocationText(o.customer.district || '');
+        const lm = cleanDeliveryLandmark(o.customer.landmark || '', town, dist);
+        if (lm) return lm;
+        const pl = cleanDeliveryLandmark(o.customer.place || '', town, dist);
+        if (pl) return pl;
       }
       return '';
     }
