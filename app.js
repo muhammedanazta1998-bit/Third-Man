@@ -9037,11 +9037,11 @@ function renderOrdersTable() {
       if (orderAmountFilterVal === 'below-25k' && amt >= 25000) return false;
     }
 
-    // Area filter
+    // Area / Town filter
     if (orderAreaFilterVal !== 'all') {
-      const custArea = getCustomerArea(o.customer).toLowerCase();
-      const custLoc = getCustomerLocation(o.customer).toLowerCase();
-      if (custArea !== orderAreaFilterVal && !custLoc.includes(orderAreaFilterVal)) return false;
+      const orderTownKey = getTownNormalizedKey(getCustomerTown(o.customer));
+      const targetTownKey = getTownNormalizedKey(orderAreaFilterVal);
+      if (orderTownKey !== targetTownKey) return false;
     }
 
     if (searchQuery) {
@@ -11693,14 +11693,12 @@ function renderCustomersList() {
       if (cDistKey !== getTownNormalizedKey(customerDistrictFilter)) return false;
     }
 
-    // Town / Area Filter
+    // Town / Area Filter (Strict matching on customer town, isolated from District)
     const activeTownFilter = (customerTownFilter !== 'all' ? customerTownFilter : customerAreaFilter);
     if (activeTownFilter !== 'all') {
       const cTownKey = getTownNormalizedKey(getCustomerTown(c));
-      const cAreaKey = getTownNormalizedKey(getCustomerArea(c));
-      const cLocClean = cleanInvisibleAndWhitespace(getCustomerLocation(c)).toLowerCase();
       const filterVal = getTownNormalizedKey(activeTownFilter);
-      if (cTownKey !== filterVal && cAreaKey !== filterVal && !cLocClean.includes(filterVal)) return false;
+      if (cTownKey !== filterVal) return false;
     }
 
     // Category Filter

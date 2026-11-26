@@ -1743,6 +1743,35 @@ window.onerror = function(msg, url, line, col, err) {
     loadDataFromStorage();
     updatedPkbr = customers.find(c => c.id === 'c_hist_059');
     assert(updatedPkbr && updatedPkbr.town === 'Ernakulam', "PKBR town stays Ernakulam across localStorage reload / refresh");
+
+    // 12. Strict Town Filtering Isolation from District (MAJ Angamaly vs Ernakulam Town)
+    log("\n--- Testing Strict Town Filtering Isolation from District ---");
+    if (!customers.some(c => c.name === 'MAJ')) {
+      customers.push({ id: 'c_hist_017', name: 'MAJ', town: 'Angamaly', district: 'Ernakulam', category: 'Wholesaler' });
+    }
+    if (!customers.some(c => c.name === 'PKBR')) {
+      customers.push({ id: 'c_hist_059', name: 'PKBR', town: 'Ernakulam', district: 'Ernakulam', category: 'Wholesaler' });
+    }
+
+    // A. Filter town by 'Ernakulam'
+    setCustomerDistrictFilter('all');
+    setCustomerTownFilter('Ernakulam');
+    renderCustomersList();
+    const renderedErnHtml = document.getElementById('customersListContainer')?.innerHTML || '';
+    assert(renderedErnHtml.includes('PKBR'), "Ernakulam town filter includes PKBR (town: Ernakulam)");
+    assert(!renderedErnHtml.includes('MAJ'), "Ernakulam town filter STRICTLY EXCLUDES MAJ (town: Angamaly, district: Ernakulam)");
+
+    // B. Filter town by 'Angamaly'
+    setCustomerTownFilter('Angamaly');
+    renderCustomersList();
+    const renderedAngHtml = document.getElementById('customersListContainer')?.innerHTML || '';
+    assert(renderedAngHtml.includes('MAJ'), "Angamaly town filter includes MAJ (town: Angamaly)");
+    assert(!renderedAngHtml.includes('PKBR'), "Angamaly town filter STRICTLY EXCLUDES PKBR (town: Ernakulam)");
+
+    // Reset filters
+    setCustomerTownFilter('all');
+    setCustomerDistrictFilter('all');
+    renderCustomersList();
   } finally {
     window.confirm = origConfirmFn;
     window.alert = origAlertFn;
