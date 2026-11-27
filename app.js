@@ -1189,10 +1189,14 @@ function loadDataFromStorage() {
       o.totalAmount = parseFloat(o.totalAmount) || o.items.reduce((sum, it) => sum + (parseFloat(it.totalAmount) || 0), 0);
       o.deliveryStatus = o.deliveryStatus || 'Normal';
 
-      // All existing/historical orders placed up to now are marked Delivered as requested by business owner
-      if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
-        o.dispatchStatus = 'Delivered';
-        o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+      // Migrate only legacy records lacking any dispatchStatus; preserve explicit Pending / OutForDelivery even on backdated dates
+      if (!o.dispatchStatus) {
+        if (o.date && o.date <= '2026-11-21') {
+          o.dispatchStatus = 'Delivered';
+          o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+        } else {
+          o.dispatchStatus = 'Pending';
+        }
       }
 
       return o;
@@ -3211,10 +3215,14 @@ function applyRemoteOrdersSnapshotList(remoteOrders, options = {}) {
   const needsCloudDeliveredSync = [];
   sortCopy.forEach(o => {
     if (!o || !o.id) return;
-    if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
-      o.dispatchStatus = 'Delivered';
-      o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
-      needsCloudDeliveredSync.push(o);
+    if (!o.dispatchStatus) {
+      if (o.date && o.date <= '2026-11-21') {
+        o.dispatchStatus = 'Delivered';
+        o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+        needsCloudDeliveredSync.push(o);
+      } else {
+        o.dispatchStatus = 'Pending';
+      }
     }
 
     const prevStatus = knownOrderDeliveryStatuses.get(o.id);
@@ -3909,7 +3917,9 @@ function setupFirestoreRealtimeListeners(forceReattach = false) {
 
 function isOrderRelevantForDeliveryDispatch(order) {
   if (!order || !order.id || isOrderTombstoned(order.id)) return false;
-  const status = order.dispatchStatus || 'Pending';
+  const rawStatus = order.dispatchStatus;
+  if (!rawStatus && order.date && order.date <= '2026-11-21') return false;
+  const status = rawStatus || 'Pending';
   if (status === 'Cancelled') return false;
   if (status === 'Delivered') {
     if (!order.deliveredAt) return false;
@@ -3917,7 +3927,6 @@ function isOrderRelevantForDeliveryDispatch(order) {
     if (isNaN(ms)) return false;
     return (Date.now() - ms) <= (48 * 3600 * 1000);
   }
-  if (order.date && order.date <= '2026-11-21') return false;
   return true;
 }
 
@@ -4095,11 +4104,15 @@ function seedLocalOrdersToCloud() {
   hasPerformedInitialOrdersCloudSeed = true;
   updateCloudSyncStatus('syncing', 'Uploading Local Orders...');
 
-  // Ensure all historical orders up to now are marked Delivered before seeding
+  // Ensure only legacy orders without a dispatchStatus up to 2026-11-21 default to Delivered before seeding
   validOrders.forEach(o => {
-    if (!o.dispatchStatus || (o.date && o.date <= '2026-11-21' && o.dispatchStatus !== 'Delivered')) {
-      o.dispatchStatus = 'Delivered';
-      o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+    if (!o.dispatchStatus) {
+      if (o.date && o.date <= '2026-11-21') {
+        o.dispatchStatus = 'Delivered';
+        o.deliveredAt = o.deliveredAt || (o.date ? (o.date + 'T18:00:00.000Z') : '2026-11-21T14:30:00.000Z');
+      } else {
+        o.dispatchStatus = 'Pending';
+      }
     }
   });
 
@@ -6625,6 +6638,13 @@ function openNewOrderModal(preselectedCustomerId = null) {
     const delStatus = document.getElementById('orderDeliveryStatus');
     if (delStatus) delStatus.value = 'Normal';
 
+    // Hide Delivery Portal dispatch status selector during New Order creation to keep form minimal
+    editingOriginalDispatchStatus = null;
+    const dispatchGroup = document.getElementById('orderDispatchStatusGroup');
+    if (dispatchGroup) dispatchGroup.classList.add('hidden');
+    const dispatchSelect = document.getElementById('orderDispatchStatusSelect');
+    if (dispatchSelect) dispatchSelect.value = 'Pending';
+
     // 4. Customer inputs
     clearCustomerSearch();
     const nameEl = document.getElementById('customerName');
@@ -6720,6 +6740,17 @@ function openEditOrderModal(orderId) {
     const delStatus = document.getElementById('orderDeliveryStatus');
     if (delStatus) delStatus.value = order.deliveryStatus || 'Normal';
 
+    // Show & populate Delivery Portal dispatch status selector so admin can revert Delivered -> Pending (Not Delivered)
+    const currentDispatch = order.dispatchStatus || 'Pending';
+    editingOriginalDispatchStatus = currentDispatch;
+    const dispatchGroup = document.getElementById('orderDispatchStatusGroup');
+    if (dispatchGroup) dispatchGroup.classList.remove('hidden');
+    const dispatchSelect = document.getElementById('orderDispatchStatusSelect');
+    if (dispatchSelect) {
+      dispatchSelect.value = ['Pending', 'OutForDelivery', 'Delivered'].includes(currentDispatch) ? currentDispatch : 'Pending';
+      onOrderDispatchStatusSelectChange(dispatchSelect.value);
+    }
+
     clearCustomerSearch();
     const custInfo = getCanonicalCustomerInfo(order.customer);
     const selectedCustIdEl = document.getElementById('selectedCustomerId');
@@ -6798,6 +6829,37 @@ function openEditOrderModal(orderId) {
     }
   } catch (err) {
     console.error('Error opening edit order modal:', err);
+  }
+}
+
+let editingOriginalDispatchStatus = null;
+
+function onOrderDispatchStatusSelectChange(statusVal) {
+  const group = document.getElementById('orderDispatchStatusGroup');
+  const hint = document.getElementById('orderDispatchStatusHint');
+  if (group) {
+    group.classList.remove('border-slate-200', 'border-amber-300', 'bg-amber-50/30', 'border-blue-300', 'bg-blue-50/30', 'border-emerald-300', 'bg-emerald-50/30', 'bg-white');
+    if (statusVal === 'Pending') {
+      group.classList.add('border-amber-300', 'bg-amber-50/30');
+    } else if (statusVal === 'OutForDelivery') {
+      group.classList.add('border-blue-300', 'bg-blue-50/30');
+    } else {
+      group.classList.add('border-emerald-300', 'bg-emerald-50/30');
+    }
+  }
+  if (hint) {
+    if (statusVal === 'Pending') {
+      hint.textContent = (editingOriginalDispatchStatus === 'Delivered')
+        ? 'Will move back to Delivery Portal (Pending)'
+        : 'Visible in Delivery Portal (Pending)';
+      hint.className = 'text-[10px] font-bold text-amber-700';
+    } else if (statusVal === 'OutForDelivery') {
+      hint.textContent = 'Visible in Delivery Portal (Out for Delivery)';
+      hint.className = 'text-[10px] font-bold text-blue-700';
+    } else {
+      hint.textContent = 'Marked Delivered';
+      hint.className = 'text-[10px] font-bold text-emerald-700';
+    }
   }
 }
 
@@ -7887,11 +7949,57 @@ async function handleSaveOrder(event) {
       if (existingIndex !== -1) {
         const prevOrder = orders[existingIndex];
         const nowIso = new Date().toISOString();
+        const prevDispatchStatus = prevOrder.dispatchStatus || 'Pending';
+        const dispatchSelectEl = document.getElementById('orderDispatchStatusSelect');
+        const selectedDispatch = dispatchSelectEl ? dispatchSelectEl.value : prevDispatchStatus;
+        const nextDispatchStatus = ['Pending', 'OutForDelivery', 'Delivered'].includes(selectedDispatch)
+          ? selectedDispatch
+          : prevDispatchStatus;
+
+        let nextDeliveredAt = prevOrder.deliveredAt || null;
+        let nextDeliveryNote = prevOrder.deliveryNote || '';
+        if (nextDispatchStatus === 'Delivered') {
+          if (prevDispatchStatus !== 'Delivered' || !nextDeliveredAt) {
+            nextDeliveredAt = nowIso;
+          }
+        } else {
+          // Reverting to Pending (Not Delivered) or OutForDelivery clears Delivered timestamp & old delivery note
+          nextDeliveredAt = null;
+          if (prevDispatchStatus === 'Delivered' && nextDispatchStatus === 'Pending') {
+            nextDeliveryNote = '';
+          }
+        }
+
+        const prevItemsSig = JSON.stringify((prevOrder.items || []).map(it => ({
+          productId: String(it.productId || ''),
+          productName: String(it.productName || ''),
+          bagSize: parseFloat(it.bagSize) || 0,
+          bagQty: parseFloat(it.bagQty) || 0,
+          perKgRate: parseFloat(it.perKgRate) || 0
+        })));
+        const nextItemsSig = JSON.stringify(sanitizedItems.map(it => ({
+          productId: String(it.productId || ''),
+          productName: String(it.productName || ''),
+          bagSize: parseFloat(it.bagSize) || 0,
+          bagQty: parseFloat(it.bagQty) || 0,
+          perKgRate: parseFloat(it.perKgRate) || 0
+        })));
+        const isCustomerChanged = getCustomerName(prevOrder.customer).trim() !== customerName.trim() ||
+          getCustomerTown(prevOrder.customer).trim() !== customerTown.trim();
+        const isPriorityChanged = (prevOrder.deliveryStatus || 'Normal') !== deliveryStatus;
+        const isNotesChanged = (prevOrder.notes || '').trim() !== notes.trim();
+        const isOrderDetailsChanged = isCustomerChanged || isPriorityChanged || isNotesChanged || (prevItemsSig !== nextItemsSig);
+        const isRevertedToNotDelivered = (prevDispatchStatus === 'Delivered' && nextDispatchStatus !== 'Delivered');
+
         const updatedOrder = {
           ...prevOrder,
           id: editingOrderId,
           date: orderDate,
           deliveryStatus: deliveryStatus,
+          dispatchStatus: nextDispatchStatus,
+          deliveredAt: nextDeliveredAt,
+          deliveryNote: nextDeliveryNote,
+          customerName: customerName,
           customer: {
             id: finalCustomerId || (prevOrder.customer && prevOrder.customer.id) || ('c_' + Date.now()),
             name: customerName,
@@ -7922,18 +8030,34 @@ async function handleSaveOrder(event) {
           updatedAt: nowIso
         };
 
-        // Explicitly write to Cloud Firestore before closing
+        // Explicitly write to Cloud Firestore (both orders and delivery_dispatch) before closing
         await syncCloudOrder(updatedOrder);
 
         markOrderAsViewed(editingOrderId, nowIso);
+        knownOrderDeliveryStatuses.set(editingOrderId, nextDispatchStatus);
+        mainOrdersStateMap[editingOrderId] = {
+          updatedAt: nowIso,
+          dispatchStatus: nextDispatchStatus,
+          itemsHash: JSON.stringify(sanitizedItems),
+          bagQty: totalBags,
+          notes: notes,
+          rate: Math.round(averagePerKgRate * 100) / 100
+        };
         orders[existingIndex] = updatedOrder;
         saveDataToStorage();
         savedOrderId = editingOrderId;
 
         closeOrderModal();
         updateDashboard();
-        showNotification(`✓ Order ${editingOrderId} updated successfully in Firebase!`);
-        showOrderSuccessWhatsAppModal(editingOrderId);
+        if (isRevertedToNotDelivered) {
+          showNotification(`✓ Order ${editingOrderId} set to Not Delivered (${nextDispatchStatus}) & restored to Delivery Portal!`);
+        } else {
+          showNotification(`✓ Order ${editingOrderId} updated successfully in Firebase!`);
+        }
+        // Only open WhatsApp modal when customer/items/priority/notes changed (skip for status-only edits)
+        if (isOrderDetailsChanged) {
+          showOrderSuccessWhatsAppModal(editingOrderId);
+        }
       }
     } else {
       const newId = generateNextOrderId();
@@ -14606,6 +14730,7 @@ window.deletedOrderTombstones = deletedOrderTombstones;
 // Guarantees all onclick handlers work in all browser contexts
 window.openNewOrderModal = openNewOrderModal;
 window.openEditOrderModal = openEditOrderModal;
+window.onOrderDispatchStatusSelectChange = onOrderDispatchStatusSelectChange;
 window.closeOrderModal = closeOrderModal;
 window.handleSaveOrder = handleSaveOrder;
 window.deleteOrder = deleteOrder;

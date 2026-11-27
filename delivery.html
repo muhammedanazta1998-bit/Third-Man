@@ -635,12 +635,13 @@
     function isDeliveryRelevantOrder(o) {
       if (!o || !o.id) return false;
       if (isOrderTombstoned(o.id)) return false;
-      const status = o.dispatchStatus || 'Pending';
+      const rawStatus = o.dispatchStatus;
+      if (!rawStatus && o.date && o.date <= '2026-11-21') return false;
+      const status = rawStatus || 'Pending';
       if (status === 'Cancelled') return false;
       if (status === 'Delivered') {
         return isDeliveredToday(o);
       }
-      if (o.date && o.date <= '2026-11-21') return false;
       return true;
     }
 
@@ -1425,7 +1426,9 @@
                 if (!order || !isDeliveryRelevantOrder(order)) return;
 
                 if (change.type === 'added') {
-                  if (!knownDeliveryOrderIds.has(order.id)) {
+                  const prev = previousOrdersStateMap[order.id];
+                  const wasDeliveredBefore = Boolean(prev && prev.dispatchStatus === 'Delivered');
+                  if (!knownDeliveryOrderIds.has(order.id) || wasDeliveredBefore) {
                     knownDeliveryOrderIds.add(order.id);
                     previousOrdersStateMap[order.id] = {
                       updatedAt: order.updatedAt || order.createdAt || '',

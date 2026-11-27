@@ -3618,6 +3618,22 @@
               </div>
             </div>
 
+            <!-- Dispatch / Delivery Tracking Status (Shown only in Edit Order mode) -->
+            <div id="orderDispatchStatusGroup" class="hidden bg-white p-3.5 rounded-2xl border border-slate-200 shadow-xs transition-colors">
+              <div class="flex items-center justify-between gap-2 mb-1.5">
+                <label for="orderDispatchStatusSelect" class="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                  <i data-lucide="package-check" class="w-3.5 h-3.5 text-blue-600"></i>
+                  <span>Delivery Portal Status</span>
+                </label>
+                <span id="orderDispatchStatusHint" class="text-[10px] font-semibold text-slate-400">Syncs with Delivery Portal</span>
+              </div>
+              <select id="orderDispatchStatusSelect" onchange="onOrderDispatchStatusSelectChange(this.value)" class="w-full text-xs p-2.5 bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-800 focus:bg-white focus:ring-2 focus:ring-blue-500/30">
+                <option value="Pending">⏳ Not Delivered (Pending) — Show in Delivery Portal</option>
+                <option value="OutForDelivery">🚚 Out for Delivery</option>
+                <option value="Delivered">✅ Delivered</option>
+              </select>
+            </div>
+
             <!-- Customer Selection Card (Ultra-minimal) -->
             <div class="space-y-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs relative">
               <div class="flex items-center justify-between">
@@ -4707,6 +4723,6 @@
   <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
   <!-- JAVASCRIPT LOGIC -->
-  <script src="app.js?v=2.22.0"></script>
+  <script src="app.js?v=2.22.1"></script>
 </body>
 </html>

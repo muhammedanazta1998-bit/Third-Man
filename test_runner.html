@@ -195,6 +195,54 @@
     <span id="orderSuccessModalSubtext"></span>
     <textarea id="orderSuccessWhatsAppPreview"></textarea>
   </div>
+
+  <!-- Order Modal Fixtures (Edit / Dispatch Status Tests) -->
+  <div id="orderModal" class="hidden">
+    <span id="modalTitleText"></span>
+    <span id="modalOrderIdBadge"></span>
+    <button type="button" id="btnDeleteInsideModal" class="hidden"></button>
+    <form id="orderForm">
+      <input type="text" id="orderIdDisplay" />
+      <input type="date" id="orderDate" />
+      <select id="orderDeliveryStatus"><option value="Normal">Normal</option><option value="Urgent">Urgent</option></select>
+      <div id="orderDispatchStatusGroup" class="hidden">
+        <span id="orderDispatchStatusHint"></span>
+        <select id="orderDispatchStatusSelect">
+          <option value="Pending">Pending</option>
+          <option value="OutForDelivery">OutForDelivery</option>
+          <option value="Delivered">Delivered</option>
+        </select>
+      </div>
+      <input type="text" id="custSearchInput" />
+      <button type="button" id="clearCustSearchBtn" class="hidden"></button>
+      <div id="custSearchDropdown" class="hidden"></div>
+      <input type="hidden" id="customerName" />
+      <input type="hidden" id="selectedCustomerId" />
+      <div id="selectedCustomerPill" class="hidden"><span id="selectedCustomerNameText"></span><span id="selectedCustomerMetaText"></span></div>
+      <div id="customerHistoryAlert" class="hidden"><span id="customerHistoryText"></span></div>
+      <select id="customerCategory"><option value="Caterer">Caterer</option><option value="Wholesaler">Wholesaler</option></select>
+      <select id="orderDistrictSelect"><option value="Ernakulam">Ernakulam</option></select>
+      <input type="text" id="orderTownInput" />
+      <input type="text" id="orderLandmarkInput" />
+      <input type="text" id="orderPanchayathInput" />
+      <input type="hidden" id="customerLocation" />
+      <input type="hidden" id="customerArea" />
+      <input type="hidden" id="customerPlace" />
+      <input type="text" id="customerOwnerName" />
+      <input type="text" id="customerOwnerPhone" />
+      <input type="text" id="customerStaffName" />
+      <select id="customerStaffRole"><option value="Chef / Cook">Chef / Cook</option></select>
+      <input type="text" id="customerStaffPhone" />
+      <input type="text" id="customerPhone" />
+      <input type="checkbox" id="saveCustomerCheckbox" checked />
+      <textarea id="orderNotes"></textarea>
+      <div id="orderItemsContainer"></div>
+      <span id="summaryTotalBags"></span>
+      <span id="summaryTotalKg"></span>
+      <span id="summaryTotalAmount"></span>
+      <button type="submit" id="btnSubmitOrder"><span id="btnSubmitOrderText">Save Order</span></button>
+    </form>
+  </div>
   <button type="button" id="btnToggleCustFilters"></button>
   <span id="custActiveFiltersBadge" class="hidden"></span>
   <i id="custFiltersChevron"></i>
@@ -2539,6 +2587,118 @@ window.onerror = function(msg, url, line, col, err) {
     else localStorage.removeItem(STORAGE_CUSTOMERS);
     if (snap25LsOrd !== null) localStorage.setItem(STORAGE_ORDERS, snap25LsOrd);
     else localStorage.removeItem(STORAGE_ORDERS);
+    updateDashboard();
+  }
+
+  // ==========================================
+  // TEST 26: Backdated Order Protection & Delivered -> Not Delivered (Pending) Reversion
+  // ==========================================
+  log("\n--- TEST 26: Backdated Order Protection & Delivered -> Not Delivered (Pending) Reversion ---");
+  const snap26Orders = [...orders];
+  const snap26Customers = [...customers];
+  const snap26Db = db;
+  const masterWrites26 = [];
+  const dispatchWrites26 = [];
+  const dispatchDeletes26 = [];
+  const mockDb26 = {
+    collection: (colName) => ({
+      doc: (docId) => ({
+        set: (payload) => {
+          if (colName === 'orders') masterWrites26.push({ docId, payload });
+          if (colName === 'delivery_dispatch') dispatchWrites26.push({ docId, payload });
+          return Promise.resolve();
+        },
+        delete: () => {
+          if (colName === 'delivery_dispatch') dispatchDeletes26.push(docId);
+          return Promise.resolve();
+        }
+      }),
+      where: () => ({ get: () => Promise.resolve({ empty: true, forEach: () => {} }) }),
+      get: () => Promise.resolve({ empty: true, forEach: () => {} })
+    }),
+    batch: () => ({ set: () => {}, delete: () => {}, commit: () => Promise.resolve() })
+  };
+
+  try {
+    setRealtimeDbForTest(mockDb26);
+    setAdminAuthForTest(true);
+
+    // 1. Explicitly Pending order dated 2026-11-20 MUST remain Pending after remote snapshot & stay relevant for delivery_dispatch
+    const backdatedPending = {
+      id: 'ORD-BACKDATED-26',
+      date: '2026-11-20',
+      dispatchStatus: 'Pending',
+      deliveryStatus: 'Normal',
+      customer: { id: 'c_riyas_test', name: 'Riyas Traders', town: 'Kalady', district: 'Ernakulam' },
+      items: [{ productId: 'prod_mg', productName: 'Mohabbath Green', bagSize: 30, bagQty: 3, perKgRate: 125, totalKg: 90, totalAmount: 11250 }],
+      totalKg: 90,
+      totalAmount: 11250
+    };
+    applyRemoteOrdersSnapshotList([backdatedPending], { triggerAlerts: false });
+    const afterSnap = orders.find(o => o.id === 'ORD-BACKDATED-26');
+    assert(afterSnap && afterSnap.dispatchStatus === 'Pending',
+      "applyRemoteOrdersSnapshotList preserves explicit 'Pending' status on backdated 2026-11-20 order");
+    assert(isOrderRelevantForDeliveryDispatch(afterSnap) === true,
+      "isOrderRelevantForDeliveryDispatch keeps backdated 2026-11-20 Pending order active for Delivery Portal");
+    assert(isOrderRelevantForDeliveryDispatch({ id: 'ORD-LEGACY-NO-STATUS', date: '2026-11-20' }) === false,
+      "Legacy pre-2026-11-21 order lacking dispatchStatus remains excluded from Delivery Portal");
+
+    // 2. New Order modal hides Dispatch Status group to keep creation minimal, and backdated new order saves as Pending
+    openNewOrderModal();
+    assert(document.getElementById('orderDispatchStatusGroup').classList.contains('hidden'),
+      "openNewOrderModal hides Delivery Portal status dropdown");
+    document.getElementById('orderDate').value = '2026-11-20';
+    document.getElementById('custSearchInput').value = 'Riyas Traders';
+    document.getElementById('customerName').value = 'Riyas Traders';
+    document.getElementById('orderTownInput').value = 'Kalady';
+    await handleSaveOrder({ preventDefault: () => {} });
+    const createdBackdated = orders.find(o => o.date === '2026-11-20' && getCustomerName(o.customer) === 'Riyas Traders' && o.id !== 'ORD-BACKDATED-26');
+    assert(createdBackdated && createdBackdated.dispatchStatus === 'Pending' && createdBackdated.deliveredAt === null,
+      "Creating a new order with backdated 2026-11-20 date saves as Pending (Not Delivered)");
+    assert(dispatchWrites26.some(w => createdBackdated && w.docId === createdBackdated.id && w.payload.dispatchStatus === 'Pending'),
+      "Backdated new Pending order mirrors immediately into delivery_dispatch collection");
+    closeOrderSuccessModal();
+
+    // 3. Edit Order modal exposes Delivered -> Pending (Not Delivered), clears deliveredAt, syncs delivery_dispatch, and skips WhatsApp popup for status-only edits
+    const deliveredSeed = {
+      id: 'ORD-REVERT-26',
+      date: '2026-11-27',
+      dispatchStatus: 'Delivered',
+      deliveredAt: '2026-11-20T18:00:00.000Z',
+      deliveryNote: 'Auto migrated note',
+      deliveryStatus: 'Normal',
+      customer: { id: 'c_riyas_test', name: 'Riyas Traders', town: 'Kalady', district: 'Ernakulam' },
+      items: [{ productId: 'prod_mg', productName: 'Mohabbath Green', bagSize: 30, bagQty: 3, perKgRate: 125, totalKg: 90, totalAmount: 11250 }],
+      totalKg: 90,
+      totalAmount: 11250,
+      notes: ''
+    };
+    orders.unshift(deliveredSeed);
+    openEditOrderModal('ORD-REVERT-26');
+    const dispGroup = document.getElementById('orderDispatchStatusGroup');
+    const dispSel = document.getElementById('orderDispatchStatusSelect');
+    assert(!dispGroup.classList.contains('hidden') && dispSel.value === 'Delivered',
+      "openEditOrderModal reveals Delivery Portal status selector populated with current status");
+    dispSel.value = 'Pending';
+    document.getElementById('orderDate').value = '2026-11-20';
+    masterWrites26.length = 0;
+    dispatchWrites26.length = 0;
+    closeOrderSuccessModal();
+    await handleSaveOrder({ preventDefault: () => {} });
+    const reverted = orders.find(o => o.id === 'ORD-REVERT-26');
+    assert(reverted && reverted.dispatchStatus === 'Pending' && reverted.deliveredAt === null && reverted.deliveryNote === '' && reverted.date === '2026-11-20',
+      "Saving Edit Order as Pending clears deliveredAt/deliveryNote and preserves backdated 2026-11-20 date");
+    assert(dispatchWrites26.some(w => w.docId === 'ORD-REVERT-26' && w.payload.dispatchStatus === 'Pending'),
+      "Reverting Delivered -> Pending syncs order back into delivery_dispatch for Delivery Portal");
+    assert(document.getElementById('orderSuccessWhatsAppModal').classList.contains('hidden'),
+      "Status/date-only Edit Order update does not pop up WhatsApp modal");
+  } finally {
+    setAdminAuthForTest(false);
+    setRealtimeDbForTest(snap26Db);
+    orders = snap26Orders;
+    customers = snap26Customers;
+    closeOrderModal();
+    closeOrderSuccessModal();
     updateDashboard();
   }
 
